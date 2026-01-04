@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to SIMS Plus</title>
+    <!--[if mso]>
+    <style type="text/css">
+        table { border-collapse: collapse; }
+        .button { padding: 12px 24px !important; }
+    </style>
+    <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f5f5f5; line-height: 1.6;">
+    <!-- Email Container -->
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f5f5f5;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                <!-- Main Content Card -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #1B4F72; padding: 30px 40px; border-radius: 8px 8px 0 0; text-align: center;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">
+                                🎉 Welcome to SIMS Plus!
+                            </h1>
+                        </td>
+                    </tr>
+
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <!-- Greeting -->
+                            <p style="margin: 0 0 20px; font-size: 16px; color: #333;">
+                                Dear <strong>{{ admin_name }}</strong>,
+                            </p>
+
+                            <p style="margin: 0 0 25px; font-size: 16px; color: #333;">
+                                Congratulations! Your school <strong>{{ school_name }}</strong> has been successfully registered on SIMS Plus. Your school portal is now ready to use.
+                            </p>
+
+                            <!-- Portal URL Box -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 30px;">
+                                <tr>
+                                    <td style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 25px; text-align: center;">
+                                        <p style="margin: 0 0 10px; font-size: 14px; color: #666; text-transform: uppercase; letter-spacing: 1px;">
+                                            Your School Portal
+                                        </p>
+                                        <p style="margin: 0 0 20px; font-size: 18px; font-weight: 600;">
+                                            <a href="{{ portal_url }}" style="color: #1B4F72; text-decoration: none;">
+                                                {{ subdomain }}.simsplus.io
+                                            </a>
+                                        </p>
+                                        <a href="{{ portal_url }}"
+                                           style="display: inline-block; padding: 14px 32px; background-color: #1B4F72; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px;">
+                                            Access Your Portal →
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Login Details -->
+                            <h2 style="margin: 0 0 15px; font-size: 18px; color: #1B4F72; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">
+                                📧 Login Details
+                            </h2>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <strong style="color: #666;">Email:</strong>
+                                        <span style="color: #333;">{{ admin_email }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0;">
+                                        <strong style="color: #666;">Password:</strong>
+                                        <span style="color: #333;">The password you created during registration</span>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% if trial_ends_at %}
+                            <!-- Trial Notice -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 30px;">
+                                <tr>
+                                    <td style="background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 15px 20px;">
+                                        <p style="margin: 0; font-size: 14px; color: #856404;">
+                                            ⏰ <strong>Free Trial:</strong> Your 30-day free trial ends on <strong>{{ trial_ends_at }}</strong>.
+                                            Explore all features and upgrade anytime!
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                            {% endif %}
+
+                            <!-- Getting Started -->
+                            <h2 style="margin: 0 0 15px; font-size: 18px; color: #1B4F72; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">
+                                🚀 Getting Started
+                            </h2>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 30px;">
+                                <tr>
+                                    <td style="padding: 10px 0;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                            <tr>
+                                                <td style="width: 30px; vertical-align: top; color: #1B4F72; font-weight: bold;">1.</td>
+                                                <td style="color: #333;">Login to your school portal</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                            <tr>
+                                                <td style="width: 30px; vertical-align: top; color: #1B4F72; font-weight: bold;">2.</td>
+                                                <td style="color: #333;">Complete your school profile and branding</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                            <tr>
+                                                <td style="width: 30px; vertical-align: top; color: #1B4F72; font-weight: bold;">3.</td>
+                                                <td style="color: #333;">Set up your academic year and terms</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                            <tr>
+                                                <td style="width: 30px; vertical-align: top; color: #1B4F72; font-weight: bold;">4.</td>
+                                                <td style="color: #333;">Add your classes and subjects</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px 0;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                            <tr>
+                                                <td style="width: 30px; vertical-align: top; color: #1B4F72; font-weight: bold;">5.</td>
+                                                <td style="color: #333;">Start adding students and staff</td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Help Section -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom: 20px;">
+                                <tr>
+                                    <td style="background-color: #e8f4fd; border-radius: 6px; padding: 20px; text-align: center;">
+                                        <p style="margin: 0 0 10px; font-size: 14px; color: #333;">
+                                            <strong>Need help getting started?</strong>
+                                        </p>
+                                        <p style="margin: 0; font-size: 14px; color: #666;">
+                                            Contact us at <a href="mailto:support@simsplus.io" style="color: #1B4F72;">support@simsplus.io</a>
+                                            or call <strong>+233 XX XXX XXXX</strong>
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0; font-size: 16px; color: #333;">
+                                We're excited to have <strong>{{ school_name }}</strong> on board!
+                            </p>
+                            <p style="margin: 15px 0 0; font-size: 16px; color: #333;">
+                                Best regards,<br>
+                                <strong>The SIMS Plus Team</strong>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 25px 40px; border-radius: 0 0 8px 8px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0 0 10px; font-size: 12px; color: #666;">
+                                This email was sent to {{ admin_email }} because you registered a school on SIMS Plus.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #999;">
+                                &copy; {{ current_year }} SIMS Plus. All rights reserved.<br>
+                                <a href="https://simsplus.io" style="color: #1B4F72;">simsplus.io</a>
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -1,0 +1,9 @@
+export { Navbar } from "./navbar";
+export { Hero } from "./hero";
+export { Stats } from "./stats";
+export { Features } from "./features";
+export { Pricing } from "./pricing";
+export { Testimonials } from "./testimonials";
+export { CTASection } from "./cta-section";
+export { Footer } from "./footer";
+export { SchoolFinder } from "./school-finder";
