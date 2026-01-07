@@ -118,6 +118,8 @@ sims-plus/
 │   │   │   ├── auth.py        # Authentication
 │   │   │   ├── academic.py    # Classes, subjects, grading
 │   │   │   ├── students.py    # Student & guardian management
+│   │   │   ├── staff.py       # Staff management
+│   │   │   ├── attendance.py  # Student/staff attendance
 │   │   │   ├── schools.py     # School settings
 │   │   │   └── users.py       # User management
 │   │   ├── core/              # Security, config
@@ -133,6 +135,8 @@ sims-plus/
 │   │   ├── (auth)/            # Login, register, password reset
 │   │   └── (dashboard)/       # Protected pages
 │   │       ├── students/      # Student management
+│   │       ├── staff/         # Staff management
+│   │       ├── attendance/    # Attendance marking & reports
 │   │       ├── classes/       # Class/section management
 │   │       └── settings/      # School & academic settings
 │   ├── components/
@@ -156,10 +160,11 @@ sims-plus/
 | **Student Management** | Profiles, guardians, import/export, enrollment | ✅ Complete |
 | **Academic** | Classes, sections, subjects, grading scales | ✅ Complete |
 | **School Settings** | School profile, branding, student ID prefix | ✅ Complete |
-| **Attendance** | Daily attendance, reports | 🔜 Next |
-| **Finance** | Fees, invoices, Mobile Money payments | Planned |
+| **Staff Management** | Staff profiles, employment details, departments | ✅ Complete |
+| **Attendance** | Student/staff attendance, bulk marking, reports | ✅ Complete |
+| **Finance** | Fees, invoices, Mobile Money payments | 🔜 Next |
 | **Boarding** | Dormitories, exeats, roll calls | Planned |
-| **Staff/HR** | Staff management, roles, payroll | Planned |
+| **Examinations** | Exam management, score entry, grade calculations | Planned |
 
 ## API Documentation
 
@@ -279,12 +284,31 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 - [x] Gender-based enrollment statistics per class/section
 - [x] Click-through from classes to filtered students
 
-### Sprint 5-6: Attendance & Dashboards (Next)
+### Sprint 5-6: Staff Management (Completed)
 
-- [ ] Daily attendance marking interface
-- [ ] Attendance reports and analytics
-- [ ] Student/class dashboards
-- [ ] Dashboard widgets and statistics
+- [x] Staff CRUD with comprehensive profiles
+- [x] Employment details (date joined, job title, department)
+- [x] Staff types (teaching, non-teaching, administrative)
+- [x] Employment status tracking (active, on leave, terminated)
+- [x] Staff qualification and emergency contact info
+
+### Sprint 7-8: Attendance Module (Completed)
+
+- [x] Daily student attendance marking with bulk operations
+- [x] Staff attendance tracking
+- [x] Attendance status types (present, absent, late, excused, sick)
+- [x] Section-based attendance with summary statistics
+- [x] Attendance reports with weekly overview
+- [x] School-wide and class-by-class report views
+- [x] CSV export for attendance data
+- [x] Search/filter students in attendance marking
+
+### Sprint 9-10: Examinations & Finance (Next)
+
+- [ ] Exam creation and scheduling
+- [ ] Score entry interface
+- [ ] Grade calculations
+- [ ] Fee structures and invoice generation
 
 ---
 

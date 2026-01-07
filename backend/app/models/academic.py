@@ -28,6 +28,7 @@ from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
     from app.models.student import Student
+    from app.models.staff import StaffClassAssignment
 
 
 # =========================
@@ -386,6 +387,12 @@ class ClassSection(Base, TenantMixin, SoftDeleteMixin):
     students: Mapped[list["Student"]] = relationship(
         "Student",
         back_populates="section",
+        lazy="selectin",
+    )
+    staff_assignments: Mapped[list["StaffClassAssignment"]] = relationship(
+        "StaffClassAssignment",
+        back_populates="section",
+        cascade="all, delete-orphan",
         lazy="selectin",
     )
 

@@ -31,6 +31,17 @@ from app.models.student import (
     StudentGuardian,
     GuardianRelationship,
 )
+from app.models.staff import (
+    Staff,
+    StaffType,
+    StaffStatus,
+    StaffClassAssignment,
+)
+from app.models.attendance import (
+    AttendanceStatus,
+    StudentAttendance,
+    StaffAttendance,
+)
 
 __all__ = [
     "Base",
@@ -72,4 +83,13 @@ __all__ = [
     "Guardian",
     "StudentGuardian",
     "GuardianRelationship",
+    # Staff models
+    "Staff",
+    "StaffType",
+    "StaffStatus",
+    "StaffClassAssignment",
+    # Attendance models
+    "AttendanceStatus",
+    "StudentAttendance",
+    "StaffAttendance",
 ]

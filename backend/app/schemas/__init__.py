@@ -52,6 +52,33 @@ from app.schemas.student import (
     StudentFilterParams,
 )
 
+from app.schemas.staff import (
+    StaffCreate,
+    StaffUpdate,
+    StaffResponse,
+    StaffListResponse,
+    StaffStatsResponse,
+    StaffWithAssignmentsResponse,
+    StaffAssignmentCreate,
+    StaffAssignmentUpdate,
+    StaffAssignmentResponse,
+)
+
+from app.schemas.attendance import (
+    StudentAttendanceMark,
+    BulkStudentAttendanceMark,
+    StudentAttendanceResponse,
+    StudentAttendanceListItem,
+    StudentAttendanceSummary,
+    SectionAttendanceSummary,
+    DailyAttendanceReport,
+    BulkAttendanceResult,
+    StaffAttendanceMark,
+    BulkStaffAttendanceMark,
+    StaffAttendanceResponse,
+    StaffAttendanceSummary,
+)
+
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""

@@ -6,7 +6,7 @@ Aggregates all API endpoints under /api/v1.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance
 
 api_router = APIRouter()
 
@@ -71,6 +71,18 @@ api_router.include_router(users.router, prefix="/users", tags=["Users"])
 # =========================
 api_router.include_router(students.router, prefix="/students", tags=["Students"])
 api_router.include_router(students.guardians_router, prefix="/guardians", tags=["Guardians"])
+
+
+# =========================
+# Staff
+# =========================
+api_router.include_router(staff.router, prefix="/staff", tags=["Staff"])
+
+
+# =========================
+# Attendance
+# =========================
+api_router.include_router(attendance.router, prefix="/attendance", tags=["Attendance"])
 
 
 # =========================

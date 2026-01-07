@@ -335,7 +335,7 @@ export function ImportStudentsDialog({
           <TableBody>
             {previewData?.preview.map((row, idx) => {
               // API returns { parsed: {...}, raw: {...}, errors: [...] }
-              const data = row.parsed || row;
+              const data = (row.parsed || row) as Record<string, unknown>;
               return (
                 <TableRow key={idx}>
                   <TableCell className="font-mono text-xs">{idx + 1}</TableCell>

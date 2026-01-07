@@ -8,12 +8,17 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
+
+if TYPE_CHECKING:
+    from app.models.staff import Staff
 
 
 class UserRole(str, Enum):
@@ -110,9 +115,13 @@ class User(Base, TenantMixin, SoftDeleteMixin):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     timezone: Mapped[str] = mapped_column(String(50), default="Africa/Accra")
 
-    # Relationships (will be added)
-    # tenant = relationship("Tenant", back_populates="users")
-    # school = relationship("School", back_populates="users")
+    # Relationships
+    staff_profile: Mapped["Staff | None"] = relationship(
+        "Staff",
+        back_populates="user",
+        uselist=False,
+        lazy="selectin",
+    )
 
     @property
     def full_name(self) -> str:

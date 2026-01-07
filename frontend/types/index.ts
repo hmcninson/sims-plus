@@ -708,5 +708,328 @@ export interface AcademicSettingsUpdate {
   enable_continuous_assessment?: boolean;
 }
 
+// =========================
+// Staff Types
+// =========================
+
+export type StaffType = "teaching" | "non_teaching" | "administrative";
+export type StaffStatus = "active" | "on_leave" | "suspended" | "terminated" | "retired";
+
+export interface Staff {
+  id: string;
+  staff_id: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  date_of_birth?: string;
+  gender: Gender;
+  email: string;
+  phone: string;
+  phone_secondary?: string;
+  address?: string;
+  city?: string;
+  region?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  ghana_card_number?: string;
+  ssnit_number?: string;
+  teacher_license_number?: string;
+  staff_type: StaffType;
+  status: StaffStatus;
+  job_title: string;
+  department?: string;
+  employment_date: string;
+  termination_date?: string;
+  qualifications?: Record<string, unknown>[];
+  bank_name?: string;
+  bank_branch?: string;
+  account_number?: string;
+  photo_url?: string;
+  notes?: string;
+  school_id?: string;
+  user_id?: string;
+  school_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StaffListItem {
+  id: string;
+  staff_id: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  gender: Gender;
+  email: string;
+  phone: string;
+  staff_type: StaffType;
+  status: StaffStatus;
+  job_title: string;
+  department?: string;
+  photo_url?: string;
+}
+
+export interface StaffCreate {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  gender: Gender;
+  job_title: string;
+  employment_date: string;
+  middle_name?: string;
+  date_of_birth?: string;
+  phone_secondary?: string;
+  address?: string;
+  city?: string;
+  region?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  ghana_card_number?: string;
+  ssnit_number?: string;
+  teacher_license_number?: string;
+  staff_type?: StaffType;
+  status?: StaffStatus;
+  department?: string;
+  termination_date?: string;
+  qualifications?: Record<string, unknown>[];
+  bank_name?: string;
+  bank_branch?: string;
+  account_number?: string;
+  photo_url?: string;
+  notes?: string;
+  school_id?: string;
+  user_id?: string;
+}
+
+export interface StaffUpdate {
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  date_of_birth?: string;
+  gender?: Gender;
+  email?: string;
+  phone?: string;
+  phone_secondary?: string;
+  address?: string;
+  city?: string;
+  region?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  ghana_card_number?: string;
+  ssnit_number?: string;
+  teacher_license_number?: string;
+  staff_type?: StaffType;
+  status?: StaffStatus;
+  job_title?: string;
+  department?: string;
+  employment_date?: string;
+  termination_date?: string;
+  qualifications?: Record<string, unknown>[];
+  bank_name?: string;
+  bank_branch?: string;
+  account_number?: string;
+  photo_url?: string;
+  notes?: string;
+  school_id?: string;
+  user_id?: string;
+}
+
+export interface StaffStats {
+  total: number;
+  active: number;
+  on_leave: number;
+  suspended: number;
+  terminated: number;
+  retired: number;
+  teaching: number;
+  non_teaching: number;
+  administrative: number;
+  male: number;
+  female: number;
+}
+
+export interface StaffAssignment {
+  id: string;
+  staff_id: string;
+  section_id: string;
+  is_class_teacher: boolean;
+  subject_id?: string;
+  created_at: string;
+  updated_at: string;
+  section_name?: string;
+  class_name?: string;
+}
+
+export interface StaffWithAssignments extends Staff {
+  assignments: StaffAssignment[];
+}
+
+// =========================
+// Attendance Types
+// =========================
+
+export type AttendanceStatus = "present" | "absent" | "late" | "excused" | "sick";
+
+export interface StudentAttendance {
+  id: string;
+  student_id: string;
+  section_id: string;
+  date: string;
+  status: AttendanceStatus;
+  term_id?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+  marked_by?: string;
+  created_at: string;
+  updated_at: string;
+  student_name?: string;
+  student_number?: string;
+  section_name?: string;
+}
+
+export interface StudentAttendanceListItem {
+  student_id: string;
+  student_number: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  gender: Gender;
+  photo_url?: string;
+  attendance_id?: string;
+  status?: AttendanceStatus;
+  check_in_time?: string;
+  remarks?: string;
+}
+
+export interface StudentAttendanceMark {
+  student_id: string;
+  section_id: string;
+  date: string;
+  status: AttendanceStatus;
+  term_id?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+}
+
+export interface BulkStudentAttendanceRecord {
+  student_id: string;
+  status: AttendanceStatus;
+  check_in_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+}
+
+export interface BulkStudentAttendanceMark {
+  section_id: string;
+  date: string;
+  term_id?: string;
+  records: BulkStudentAttendanceRecord[];
+}
+
+export interface StudentAttendanceSummary {
+  total_days: number;
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+  sick: number;
+  attendance_rate: number;
+}
+
+export interface SectionAttendanceSummary {
+  date: string;
+  total_students: number;
+  marked: number;
+  unmarked: number;
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+  sick: number;
+  attendance_rate: number;
+}
+
+export interface DailyAttendanceReport {
+  date: string;
+  total_students: number;
+  marked: number;
+  unmarked: number;
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+  sick: number;
+  attendance_rate: number;
+  marking_rate: number;
+}
+
+export interface BulkAttendanceResult {
+  created: number;
+  updated: number;
+  failed: number;
+  errors: Array<{ student_id?: string; staff_id?: string; error: string }>;
+}
+
+export interface StaffAttendance {
+  id: string;
+  staff_id: string;
+  date: string;
+  status: AttendanceStatus;
+  term_id?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+  marked_by?: string;
+  created_at: string;
+  updated_at: string;
+  staff_name?: string;
+  staff_number?: string;
+}
+
+export interface StaffAttendanceMark {
+  staff_id: string;
+  date: string;
+  status: AttendanceStatus;
+  term_id?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+}
+
+export interface BulkStaffAttendanceRecord {
+  staff_id: string;
+  status: AttendanceStatus;
+  check_in_time?: string;
+  check_out_time?: string;
+  remarks?: string;
+  excuse_reason?: string;
+}
+
+export interface BulkStaffAttendanceMark {
+  date: string;
+  term_id?: string;
+  records: BulkStaffAttendanceRecord[];
+}
+
+export interface StaffAttendanceSummary {
+  total_days: number;
+  present: number;
+  absent: number;
+  late: number;
+  excused: number;
+  sick: number;
+  attendance_rate: number;
+}
+
 // Re-export School types
 export type { SchoolProfile, SchoolProfileUpdate, SchoolBrandingUpdate } from "./school.type";

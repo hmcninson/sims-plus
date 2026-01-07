@@ -18,6 +18,7 @@ from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
     from app.models.student import Student
+    from app.models.staff import Staff
 
 
 class SchoolType(str, Enum):
@@ -159,6 +160,11 @@ class School(Base, TenantMixin, SoftDeleteMixin):
     # Relationships
     students: Mapped[list["Student"]] = relationship(
         "Student",
+        back_populates="school",
+        lazy="selectin",
+    )
+    staff_members: Mapped[list["Staff"]] = relationship(
+        "Staff",
         back_populates="school",
         lazy="selectin",
     )

@@ -168,8 +168,8 @@ https://{school-code}.simsplus.io
 | Academic | `/academic` | Years, terms, classes, sections, subjects | ✓ |
 | Users | `/users` | User management | ✓ |
 | Media | `/media` | File uploads (S3) | ✓ |
-| Staff | `/staff` | Staff management | Planned |
-| Attendance | `/attendance` | Student/staff attendance | Planned |
+| Staff | `/staff` | Staff CRUD, employment details, departments | ✓ |
+| Attendance | `/attendance` | Student/staff attendance, reports, bulk marking | ✓ |
 | Exams | `/exams` | Exam management, score entry | Planned |
 | Finance | `/finance` | Fees, invoices, payments | Planned |
 | Boarding | `/boarding` | Dormitories, exeats, roll calls | Planned |
@@ -366,36 +366,48 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 - Class enrollment with section assignments ✓
 - Student ID auto-generation with school prefix ✓
 
-**Sprint 5-6: Attendance & Initial Reports**
-- Daily attendance marking
-- Attendance reports
-- Student/class dashboards
+**Sprint 5-6: Staff Management** ✓
+- Staff CRUD with comprehensive profiles ✓
+- Employment details (date joined, job title, department) ✓
+- Staff types (teaching, non-teaching, administrative) ✓
+- Employment status tracking (active, on leave, terminated) ✓
+- Staff qualification and emergency contact info ✓
 
-### Phase 2: MVP Launch (Sprints 7-12, Apr - Jun 2026)
+**Sprint 7-8: Attendance Module** ✓
+- Daily student attendance marking with bulk operations ✓
+- Staff attendance tracking ✓
+- Attendance status types (present, absent, late, excused, sick) ✓
+- Section-based attendance with summary statistics ✓
+- Attendance reports with weekly overview ✓
+- School-wide and class-by-class report views ✓
+- CSV export for attendance data ✓
+- Search/filter students in attendance marking ✓
 
-**Sprint 7-8: Examinations**
+### Phase 2: MVP Launch (Sprints 9-14, Apr - Jun 2026)
+
+**Sprint 9-10: Examinations**
 - Exam creation and scheduling
 - Score entry interface
 - Grade calculations
 
-**Sprint 9-10: Finance Core**
+**Sprint 11-12: Finance Core**
 - Fee structures
 - Invoice generation
 - Mobile Money integration (MTN MoMo)
 
-**Sprint 11-12: Report Cards & Beta**
+**Sprint 13-14: Report Cards & Beta**
 - Report card generation (PDF)
 - Parent portal
 - Beta launch to pilot schools
 
-### Phase 3: Enhancement (Sprints 13-18, Jul - Sep 2026)
+### Phase 3: Enhancement (Sprints 15-20, Jul - Sep 2026)
 
 - Boarding management
 - Transport management
 - Enrollment/admissions module
 - Additional payment providers
 
-### Phase 4: Scale & Mobile (Sprints 19-24, Oct - Dec 2026)
+### Phase 4: Scale & Mobile (Sprints 21-26, Oct - Dec 2026)
 
 - Mobile apps (iOS/Android)
 - Multi-curriculum support
