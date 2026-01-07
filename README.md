@@ -114,41 +114,52 @@ npm run dev
 sims-plus/
 ├── backend/                 # FastAPI backend
 │   ├── app/
-│   │   ├── api/            # API routes
-│   │   ├── core/           # Security, config
-│   │   ├── db/             # Database session
-│   │   ├── models/         # SQLAlchemy models
-│   │   ├── schemas/        # Pydantic schemas
-│   │   └── services/       # Business logic
-│   ├── alembic/            # Database migrations
+│   │   ├── api/v1/endpoints/  # Route handlers
+│   │   │   ├── auth.py        # Authentication
+│   │   │   ├── academic.py    # Classes, subjects, grading
+│   │   │   ├── students.py    # Student & guardian management
+│   │   │   ├── schools.py     # School settings
+│   │   │   └── users.py       # User management
+│   │   ├── core/              # Security, config
+│   │   ├── db/                # Database session
+│   │   ├── models/            # SQLAlchemy models
+│   │   ├── schemas/           # Pydantic schemas
+│   │   ├── services/          # Business logic
+│   │   └── middleware/        # Tenant, rate limiting
+│   ├── alembic/               # Database migrations
 │   └── tests/
-├── frontend/               # Next.js 16 frontend
-│   ├── app/               # App Router pages
-│   │   ├── (auth)/        # Auth pages (login, register)
-│   │   └── (dashboard)/   # Dashboard pages
-│   ├── components/        # React components
-│   │   ├── ui/            # Shadcn components
-│   │   └── landing/       # Landing page sections
-│   ├── actions/           # Server Actions
-│   ├── lib/               # Utilities
-│   └── types/             # TypeScript types
-├── infrastructure/        # Terraform IaC
-├── docs/                  # Documentation
+├── frontend/                  # Next.js 16 frontend
+│   ├── app/
+│   │   ├── (auth)/            # Login, register, password reset
+│   │   └── (dashboard)/       # Protected pages
+│   │       ├── students/      # Student management
+│   │       ├── classes/       # Class/section management
+│   │       └── settings/      # School & academic settings
+│   ├── components/
+│   │   ├── ui/                # Shadcn components
+│   │   ├── dashboard/         # Sidebar, header
+│   │   └── academic/          # Academic settings
+│   ├── actions/               # Server Actions (*.action.ts)
+│   ├── lib/                   # Utilities
+│   └── types/                 # TypeScript types
+├── infrastructure/            # Terraform IaC
+├── docs/                      # Documentation
 └── docker-compose.yml
 ```
 
 ## Core Modules
 
-| Module | Description | Sprint |
+| Module | Description | Status |
 |--------|-------------|--------|
-| **Multi-Tenancy** | Subdomain routing, tenant context, RLS | Sprint 1-2 |
-| **Authentication** | Login, JWT, password reset, MFA | Sprint 2 |
-| **Student Management** | Enrollment, profiles, guardians, transfers | Sprint 2-3 |
-| **Academic** | Classes, subjects, exams, report cards | Sprint 3-4 |
-| **Attendance** | Daily attendance, reports | Sprint 5-6 |
-| **Finance** | Fees, invoices, Mobile Money payments | Sprint 9-10 |
-| **Boarding** | Dormitories, exeats, roll calls | Sprint 13-14 |
-| **Staff/HR** | Staff management, roles, payroll | Sprint 15-16 |
+| **Multi-Tenancy** | Subdomain routing, tenant context, RLS | ✅ Complete |
+| **Authentication** | Login, JWT, password reset, email verification | ✅ Complete |
+| **Student Management** | Profiles, guardians, import/export, enrollment | ✅ Complete |
+| **Academic** | Classes, sections, subjects, grading scales | ✅ Complete |
+| **School Settings** | School profile, branding, student ID prefix | ✅ Complete |
+| **Attendance** | Daily attendance, reports | 🔜 Next |
+| **Finance** | Fees, invoices, Mobile Money payments | Planned |
+| **Boarding** | Dormitories, exeats, roll calls | Planned |
+| **Staff/HR** | Staff management, roles, payroll | Planned |
 
 ## API Documentation
 
@@ -245,12 +256,35 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
   - Email verification endpoints
   - Security headers (CSP, HSTS, X-Frame-Options)
 
-### Sprint 3-4: Student & Academic Foundation (Next)
+### Sprint 3-4: Academic Foundation (Completed)
 
-- [ ] Student CRUD with guardian management
-- [ ] Academic year and term setup
-- [ ] Class/section management
-- [ ] Subject configuration
+- [x] Academic year and term setup with status management
+- [x] Class/section management with student enrollment counts
+- [x] Subject configuration (core, elective, vocational, extra)
+- [x] Grading scales (WAEC, GPA, percentage, custom)
+- [x] Assessment weight configuration
+- [x] Academic settings (auto-promote, show positions, etc.)
+- [x] Class-level categorization (Preschool, Primary, JHS, SHS)
+
+### Sprint 4-5: Student Management (Completed)
+
+- [x] Student CRUD with comprehensive profiles
+- [x] Guardian management with relationship types
+- [x] Student-guardian many-to-many linking
+- [x] Student import from CSV/Excel with validation
+- [x] Previous student ID support for data migration
+- [x] Student ID auto-generation with school-specific prefix
+- [x] Class and section enrollment
+- [x] Student status tracking (active, graduated, transferred, etc.)
+- [x] Gender-based enrollment statistics per class/section
+- [x] Click-through from classes to filtered students
+
+### Sprint 5-6: Attendance & Dashboards (Next)
+
+- [ ] Daily attendance marking interface
+- [ ] Attendance reports and analytics
+- [ ] Student/class dashboards
+- [ ] Dashboard widgets and statistics
 
 ---
 

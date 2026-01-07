@@ -157,20 +157,23 @@ https://{school-code}.simsplus.io
 
 ### Key Endpoints
 
-| Module | Base Path | Description |
-|--------|-----------|-------------|
-| Auth | `/auth` | Login, register, refresh, password reset |
-| Tenant | `/tenant` | Current tenant info, branding |
-| Onboarding | `/onboarding` | School registration, subdomain check |
-| Schools | `/schools` | School profiles (for chains) |
-| Students | `/students` | Student CRUD, enrollment |
-| Staff | `/staff` | Staff management |
-| Classes | `/classes` | Class/section management |
-| Attendance | `/attendance` | Student/staff attendance |
-| Exams | `/exams` | Exam management, score entry |
-| Finance | `/finance` | Fees, invoices, payments |
-| Boarding | `/boarding` | Dormitories, exeats, roll calls |
-| Reports | `/reports` | Dashboard, report generation |
+| Module | Base Path | Description | Status |
+|--------|-----------|-------------|--------|
+| Auth | `/auth` | Login, register, refresh, password reset | ✓ |
+| Tenant | `/tenant` | Current tenant info, branding | ✓ |
+| Onboarding | `/onboarding` | School registration, subdomain check | ✓ |
+| Schools | `/schools` | School profiles, settings, branding | ✓ |
+| Students | `/students` | Student CRUD, guardians, import/export | ✓ |
+| Guardians | `/guardians` | Guardian management, student links | ✓ |
+| Academic | `/academic` | Years, terms, classes, sections, subjects | ✓ |
+| Users | `/users` | User management | ✓ |
+| Media | `/media` | File uploads (S3) | ✓ |
+| Staff | `/staff` | Staff management | Planned |
+| Attendance | `/attendance` | Student/staff attendance | Planned |
+| Exams | `/exams` | Exam management, score entry | Planned |
+| Finance | `/finance` | Fees, invoices, payments | Planned |
+| Boarding | `/boarding` | Dormitories, exeats, roll calls | Planned |
+| Reports | `/reports` | Dashboard, report generation | Planned |
 
 ### Rate Limits
 
@@ -192,9 +195,21 @@ https://{school-code}.simsplus.io
 |-------|---------|
 | `tenants` | Multi-tenant root with subdomain, subscription, features |
 | `reserved_subdomains` | Protected subdomain list (www, api, admin, etc.) |
-| `schools` | School profiles (1 or more per tenant) |
-| `academic_years` | Academic year definitions |
+| `schools` | School profiles with branding and student ID prefix |
+| `users` | User accounts with roles and permissions |
+| `students` | Student profiles with enrollment status |
+| `guardians` | Parent/guardian information |
+| `student_guardians` | Many-to-many relationship with relationship type |
+| `academic_years` | Academic year definitions with status |
 | `terms` | Term/semester definitions |
+| `classes` | Class levels (Nursery, KG, Primary, JHS, SHS) |
+| `class_sections` | Sections within classes (A, B, C) |
+| `subjects` | Subject catalog (core, elective, vocational) |
+| `class_subjects` | Subject assignments to classes |
+| `grading_scales` | Grading systems (WAEC, GPA, custom) |
+| `grades` | Grade definitions within scales |
+| `assessment_weights` | Continuous assessment weight configuration |
+| `academic_settings` | School-wide academic preferences |
 
 ### Tenants Table (Key Fields)
 
@@ -336,11 +351,20 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 - Password reset flow ✓
 - Email verification endpoints ✓
 
-**Sprint 3-4: Academic Foundation**
-- Academic year/term setup
-- Class/section management
-- Subject configuration
-- Teacher class assignments
+**Sprint 3-4: Academic Foundation** ✓
+- Academic year/term setup ✓
+- Class/section management with student counts ✓
+- Subject configuration ✓
+- Grading scales (WAEC, GPA, custom) ✓
+- Assessment weight configuration ✓
+
+**Sprint 4-5: Student Management** ✓
+- Student CRUD with profiles ✓
+- Guardian management (multiple per student) ✓
+- Student import from CSV/Excel ✓
+- Previous student ID support for migrations ✓
+- Class enrollment with section assignments ✓
+- Student ID auto-generation with school prefix ✓
 
 **Sprint 5-6: Attendance & Initial Reports**
 - Daily attendance marking
@@ -443,31 +467,49 @@ app.add_middleware(CORSMiddleware, ...)   # 3. Handle CORS
 sims-plus/
 ├── backend/                    # FastAPI backend
 │   ├── app/
-│   │   ├── api/               # API routes
-│   │   │   └── v1/
-│   │   │       ├── endpoints/ # Route handlers
-│   │   │       └── router.py  # API router
+│   │   ├── api/v1/endpoints/  # Route handlers
+│   │   │   ├── auth.py        # Authentication
+│   │   │   ├── academic.py    # Classes, subjects, grading
+│   │   │   ├── students.py    # Student management
+│   │   │   ├── schools.py     # School settings
+│   │   │   ├── users.py       # User management
+│   │   │   └── media.py       # File uploads
 │   │   ├── core/              # Config, security
 │   │   ├── db/                # Database session
 │   │   ├── models/            # SQLAlchemy models
+│   │   │   ├── tenant.py      # Tenant, User
+│   │   │   ├── school.py      # School profiles
+│   │   │   ├── student.py     # Student, Guardian
+│   │   │   └── academic.py    # Classes, Subjects, Grading
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic
-│   │   └── utils/             # Utilities
+│   │   │   ├── auth.py        # Authentication service
+│   │   │   ├── student.py     # Student service with import
+│   │   │   ├── academic.py    # Academic service
+│   │   │   └── s3.py          # S3 upload service
+│   │   └── middleware/        # Tenant, rate limiting
 │   ├── alembic/               # Database migrations
-│   ├── tests/                 # Test suite
 │   └── requirements.txt
 ├── frontend/                   # Next.js 16 frontend
-│   ├── app/                   # App Router pages
-│   │   ├── (auth)/            # Auth route group
-│   │   └── (dashboard)/       # Dashboard route group
-│   ├── components/            # React components
+│   ├── app/
+│   │   ├── (auth)/            # Login, register, password reset
+│   │   └── (dashboard)/       # Protected dashboard pages
+│   │       ├── students/      # Student list, detail, edit, import
+│   │       ├── classes/       # Class/section management
+│   │       ├── settings/      # School, academic, user settings
+│   │       └── ...            # Other modules (placeholder)
+│   ├── components/
 │   │   ├── ui/                # Shadcn components
-│   │   └── landing/           # Landing page sections
+│   │   ├── dashboard/         # Sidebar, header
+│   │   ├── academic/          # Academic settings components
+│   │   └── setup-wizard/      # School setup wizard
 │   ├── actions/               # Server Actions (*.action.ts)
-│   ├── lib/                   # Utilities, API client
+│   │   ├── auth.action.ts
+│   │   ├── students.action.ts
+│   │   ├── academic.action.ts
+│   │   └── school.action.ts
 │   ├── hooks/                 # Custom hooks
 │   └── types/                 # TypeScript types
-├── mobile/                     # React Native app (Phase 4)
 ├── infrastructure/             # Terraform IaC
 ├── docs/                       # Documentation
 ├── docker-compose.yml
