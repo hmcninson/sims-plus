@@ -32,6 +32,26 @@ from app.schemas.onboarding import (
     SchoolRegistrationResponse,
 )
 
+from app.schemas.student import (
+    GuardianCreate,
+    GuardianUpdate,
+    GuardianResponse,
+    GuardianListResponse,
+    StudentGuardianCreate,
+    StudentGuardianWithNewGuardian,
+    StudentGuardianUpdate,
+    StudentGuardianResponse,
+    StudentCreate,
+    StudentUpdate,
+    StudentResponse,
+    StudentWithGuardiansResponse,
+    StudentListResponse,
+    StudentBulkCreate,
+    StudentBulkResponse,
+    StudentStatsResponse,
+    StudentFilterParams,
+)
+
 
 class BaseSchema(BaseModel):
     """Base schema with common configuration."""

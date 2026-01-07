@@ -281,6 +281,82 @@ class EmailService:
         </html>
         """
 
+    async def send_user_credentials_email(
+        self,
+        to_email: str,
+        user_name: str,
+        password: str,
+        role: str,
+        school_name: str,
+        portal_url: str,
+    ) -> bool:
+        """
+        Send login credentials to a newly created user.
+
+        Args:
+            to_email: User's email address
+            user_name: User's full name
+            password: Temporary password
+            role: User's role
+            school_name: Name of the school
+            portal_url: URL to access the portal
+
+        Returns:
+            True if sent successfully
+        """
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Your SIMS Plus Account</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h1 style="color: #1B4F72;">Welcome to SIMS Plus!</h1>
+
+                <p>Dear {user_name},</p>
+
+                <p>An account has been created for you at <strong>{school_name}</strong> on SIMS Plus.</p>
+
+                <h2 style="color: #1B4F72;">Your Login Credentials</h2>
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 4px; margin: 20px 0;">
+                    <p style="margin: 5px 0;"><strong>Email:</strong> {to_email}</p>
+                    <p style="margin: 5px 0;"><strong>Password:</strong> {password}</p>
+                    <p style="margin: 5px 0;"><strong>Role:</strong> {role}</p>
+                </div>
+
+                <p>
+                    <a href="{portal_url}"
+                       style="display: inline-block; padding: 12px 24px;
+                              background-color: #1B4F72; color: white;
+                              text-decoration: none; border-radius: 4px;">
+                        Login to Your Account
+                    </a>
+                </p>
+
+                <p style="color: #e74c3c; font-weight: bold;">
+                    Important: Please change your password after your first login.
+                </p>
+
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+
+                <p style="color: #666; font-size: 12px;">
+                    This email was sent by SIMS Plus.<br>
+                    If you did not expect this email, please contact your school administrator.<br>
+                    &copy; {datetime.now().year} SIMS Plus. All rights reserved.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"Your SIMS Plus Account - {school_name}",
+            html_content=html_content,
+        )
+
     async def send_password_reset_email(
         self,
         to_email: str,

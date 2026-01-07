@@ -6,7 +6,7 @@ Aggregates all API endpoints under /api/v1.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenant, onboarding
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students
 
 api_router = APIRouter()
 
@@ -40,6 +40,37 @@ api_router.include_router(tenant.router, prefix="/tenant", tags=["Tenant"])
 # Onboarding
 # =========================
 api_router.include_router(onboarding.router, prefix="/onboarding", tags=["Onboarding"])
+
+
+# =========================
+# Academic (Sprint 6)
+# =========================
+api_router.include_router(academic.router, prefix="/academic", tags=["Academic"])
+
+
+# =========================
+# Schools
+# =========================
+api_router.include_router(schools.router, prefix="/schools", tags=["Schools"])
+
+
+# =========================
+# Media / File Uploads
+# =========================
+api_router.include_router(media.router, prefix="/media", tags=["Media"])
+
+
+# =========================
+# User Management
+# =========================
+api_router.include_router(users.router, prefix="/users", tags=["Users"])
+
+
+# =========================
+# Students
+# =========================
+api_router.include_router(students.router, prefix="/students", tags=["Students"])
+api_router.include_router(students.guardians_router, prefix="/guardians", tags=["Guardians"])
 
 
 # =========================

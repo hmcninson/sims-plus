@@ -34,7 +34,6 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (result.success) {
-      toast.success("Welcome back!");
       router.push("/dashboard");
     } else {
       toast.error(result.error || "Login failed");

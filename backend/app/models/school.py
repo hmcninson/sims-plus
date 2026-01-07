@@ -7,12 +7,17 @@ School entity within a tenant.
 import uuid
 from enum import Enum
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from typing import TYPE_CHECKING
+
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
+
+if TYPE_CHECKING:
+    from app.models.student import Student
 
 
 class SchoolType(str, Enum):
@@ -119,6 +124,16 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         nullable=True,
         comment="School motto",
     )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="School description/about",
+    )
+    year_established: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Year the school was established",
+    )
 
     # Academic Settings
     uses_boarding: Mapped[bool] = mapped_column(
@@ -131,14 +146,22 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         default=False,
         comment="Provides transport services",
     )
+    student_id_prefix: Mapped[str] = mapped_column(
+        String(10),
+        default="STU",
+        nullable=False,
+        comment="Prefix for auto-generated student IDs (e.g., STU, ADM)",
+    )
 
     # Active flags
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # Relationships (will be added)
-    # users = relationship("User", back_populates="school")
-    # students = relationship("Student", back_populates="school")
-    # classes = relationship("Class", back_populates="school")
+    # Relationships
+    students: Mapped[list["Student"]] = relationship(
+        "Student",
+        back_populates="school",
+        lazy="selectin",
+    )
 
     @property
     def full_address(self) -> str:

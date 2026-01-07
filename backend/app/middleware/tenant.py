@@ -104,6 +104,8 @@ PUBLIC_PATHS = {
 PUBLIC_PATH_PREFIXES = (
     "/api/v1/tenant/",  # Tenant validation endpoints are public
     "/api/v1/auth/register",  # Registration is public
+    "/api/v1/auth/validate-reset-token",  # Token validation doesn't need tenant
+    "/api/v1/auth/reset-password",  # Password reset uses token for tenant context
     "/api/v1/onboarding/",  # Onboarding is public
 )
 

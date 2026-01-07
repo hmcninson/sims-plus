@@ -48,13 +48,25 @@ function isValidSubdomainFormat(subdomain: string): boolean {
 }
 
 /**
+ * Get subdomain from cookie.
+ */
+function getSubdomainFromCookie(request: NextRequest): string | null {
+  const cookieValue = request.cookies.get("x-subdomain")?.value;
+  if (cookieValue && !RESERVED_SUBDOMAINS.has(cookieValue) && isValidSubdomainFormat(cookieValue)) {
+    return cookieValue;
+  }
+  return null;
+}
+
+/**
  * Extract subdomain from hostname.
  *
  * @param hostname - Full hostname (e.g., "presec.simsplus.io")
  * @param searchParams - URL search params for dev mode override
+ * @param request - NextRequest for cookie access
  * @returns Subdomain or null if none
  */
-function extractSubdomain(hostname: string, searchParams?: URLSearchParams): string | null {
+function extractSubdomain(hostname: string, searchParams?: URLSearchParams, request?: NextRequest): string | null {
   // Remove port if present
   const hostWithoutPort = hostname.split(":")[0];
 
@@ -67,11 +79,16 @@ function extractSubdomain(hostname: string, searchParams?: URLSearchParams): str
     return null;
   }
 
-  // Development mode: support ?subdomain=presec query param
+  // Development mode: support ?subdomain=presec query param OR cookie
   if (hostWithoutPort === "localhost" || hostWithoutPort === "127.0.0.1") {
+    // First check query param (allows switching tenants)
     const devSubdomain = searchParams?.get("subdomain")?.toLowerCase();
     if (devSubdomain && !RESERVED_SUBDOMAINS.has(devSubdomain) && isValidSubdomainFormat(devSubdomain)) {
       return devSubdomain;
+    }
+    // Fallback to cookie (persists across navigation)
+    if (request) {
+      return getSubdomainFromCookie(request);
     }
     return null;
   }
@@ -109,6 +126,9 @@ function isPublicRoute(pathname: string): boolean {
     "/login",
     "/register",
     "/register/success",
+    "/forgot-password",
+    "/reset-password",
+    "/verify-email",
     "/pricing",
     "/features",
     "/about",
@@ -135,8 +155,8 @@ export function proxy(request: NextRequest): NextResponse {
   const pathname = request.nextUrl.pathname;
   const searchParams = request.nextUrl.searchParams;
 
-  // Extract subdomain from hostname (with dev mode support)
-  const subdomain = extractSubdomain(hostname, searchParams);
+  // Extract subdomain from hostname (with dev mode support via query param or cookie)
+  const subdomain = extractSubdomain(hostname, searchParams, request);
 
   // Create response headers with subdomain info
   const requestHeaders = new Headers(request.headers);

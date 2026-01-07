@@ -8,6 +8,7 @@ from app.services.tenant import TenantService
 from app.services.auth import AuthService, AuthenticationError
 from app.services.onboarding import OnboardingService, OnboardingError
 from app.services.audit import AuditService, AuditEventType
+from app.services.student import StudentService, StudentServiceError
 
 __all__ = [
     "TenantService",
@@ -17,4 +18,6 @@ __all__ = [
     "OnboardingError",
     "AuditService",
     "AuditEventType",
+    "StudentService",
+    "StudentServiceError",
 ]

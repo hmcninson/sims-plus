@@ -207,7 +207,9 @@ class SchoolProfileUpdate(BaseSchema):
     # Branding
     logo_url: Optional[str] = None
     primary_color: Optional[str] = None
-    motto: Optional[str] = None
+    motto: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    year_established: Optional[int] = Field(None, ge=1800, le=2100)
 
     # Features
     uses_boarding: bool = False

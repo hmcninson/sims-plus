@@ -69,6 +69,11 @@ services:
       SMTP_START_TLS: ${SMTP_START_TLS:-true}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@simsplus.io}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-SIMS Plus}
+      # AWS S3 Configuration
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-sims-plus-files}
     ports:
       - "8000:8000"
     volumes:
@@ -93,6 +98,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
       - NEXT_PUBLIC_APP_NAME=SIMS Plus
+      - API_URL=http://backend:8000/api/v1
     ports:
       - "3000:3000"
     volumes:

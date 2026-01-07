@@ -15,26 +15,15 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import type { TenantPublic, TenantBranding, TenantValidationResponse } from "@/types";
+
+// Re-export types for backward compatibility
+export type { TenantBranding };
 
 /**
- * Tenant branding information.
+ * Public tenant information (alias for TenantPublic).
  */
-export interface TenantBranding {
-  logo_url: string | null;
-  primary_color: string | null;
-}
-
-/**
- * Public tenant information.
- */
-export interface TenantInfo {
-  id: string;
-  name: string;
-  subdomain: string;
-  tenant_type: string;
-  is_active: boolean;
-  branding: TenantBranding | null;
-}
+export type TenantInfo = TenantPublic;
 
 /**
  * Tenant context state.
@@ -87,15 +76,6 @@ function getSubdomainFromCookie(): string | null {
     }
   }
   return null;
-}
-
-/**
- * Tenant validation response from API.
- */
-interface TenantValidationResponse {
-  valid: boolean;
-  tenant: TenantInfo | null;
-  error: string | null;
 }
 
 /**

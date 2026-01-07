@@ -243,7 +243,7 @@ export default function RegisterPage() {
     if (result.success) {
       toast.success("School registered successfully!");
       // In production, redirect to the new subdomain
-      router.push(`/register/success?subdomain=${subdomain}`);
+      router.push(`/register/success?school=${subdomain}`);
     } else {
       toast.error(result.error || "Registration failed");
     }

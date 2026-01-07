@@ -6,6 +6,31 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.school import School, SchoolType, SchoolStatus
 from app.models.reserved_subdomain import ReservedSubdomain, DEFAULT_RESERVED_SUBDOMAINS
 from app.models.audit_log import AuditLog
+from app.models.academic import (
+    AcademicYear,
+    AcademicYearStatus,
+    Term,
+    TermStatus,
+    Class,
+    ClassLevel,
+    ClassSection,
+    Subject,
+    SubjectCategory,
+    ClassSubject,
+    GradingScale,
+    GradingScaleType,
+    Grade,
+    AssessmentWeight,
+    AcademicSettings,
+)
+from app.models.student import (
+    Student,
+    StudentStatus,
+    Gender,
+    Guardian,
+    StudentGuardian,
+    GuardianRelationship,
+)
 
 __all__ = [
     "Base",
@@ -24,4 +49,27 @@ __all__ = [
     "ReservedSubdomain",
     "DEFAULT_RESERVED_SUBDOMAINS",
     "AuditLog",
+    # Academic models
+    "AcademicYear",
+    "AcademicYearStatus",
+    "Term",
+    "TermStatus",
+    "Class",
+    "ClassLevel",
+    "ClassSection",
+    "Subject",
+    "SubjectCategory",
+    "ClassSubject",
+    "GradingScale",
+    "GradingScaleType",
+    "Grade",
+    "AssessmentWeight",
+    "AcademicSettings",
+    # Student models
+    "Student",
+    "StudentStatus",
+    "Gender",
+    "Guardian",
+    "StudentGuardian",
+    "GuardianRelationship",
 ]

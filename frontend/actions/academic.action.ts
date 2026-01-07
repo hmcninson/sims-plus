@@ -1,0 +1,655 @@
+"use server";
+
+import { cookies } from "next/headers";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { getValidAccessToken } from "./auth.action";
+import type {
+  ActionResult,
+  AcademicYear,
+  AcademicYearCreate,
+  AcademicYearUpdate,
+  Term,
+  TermCreate,
+  TermUpdate,
+  Class,
+  ClassCreate,
+  ClassUpdate,
+  ClassSection,
+  ClassSectionCreate,
+  ClassSectionUpdate,
+  Subject,
+  SubjectCreate,
+  SubjectUpdate,
+  ClassSubject,
+  ClassSubjectCreate,
+  GradingScale,
+  GradingScaleCreate,
+  GradingScaleUpdate,
+  GradeCreate,
+  AssessmentWeight,
+  AssessmentWeightCreate,
+  AcademicSettings,
+  AcademicSettingsUpdate,
+} from "@/types";
+
+/**
+ * Get auth context from cookies with token refresh
+ */
+async function getAuthContext() {
+  const cookieStore = await cookies();
+  const token = await getValidAccessToken();
+  return {
+    token: token || undefined,
+    subdomain: cookieStore.get("x-subdomain")?.value,
+  };
+}
+
+// =========================
+// Academic Year Actions
+// =========================
+
+export async function getAcademicYears(): Promise<ActionResult<AcademicYear[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<AcademicYear[]>("/academic/academic-years", {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch academic years",
+    };
+  }
+}
+
+export async function getAcademicYear(id: string): Promise<ActionResult<AcademicYear>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<AcademicYear>(`/academic/academic-years/${id}`, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch academic year",
+    };
+  }
+}
+
+export async function createAcademicYear(
+  data: AcademicYearCreate
+): Promise<ActionResult<AcademicYear>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<AcademicYear>("/academic/academic-years", data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create academic year",
+    };
+  }
+}
+
+export async function updateAcademicYear(
+  id: string,
+  data: AcademicYearUpdate
+): Promise<ActionResult<AcademicYear>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<AcademicYear>(`/academic/academic-years/${id}`, data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update academic year",
+    };
+  }
+}
+
+export async function deleteAcademicYear(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/academic-years/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete academic year",
+    };
+  }
+}
+
+// =========================
+// Term Actions
+// =========================
+
+export async function getTerms(academicYearId?: string): Promise<ActionResult<Term[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const url = academicYearId
+      ? `/academic/terms?academic_year_id=${academicYearId}`
+      : "/academic/terms";
+    const response = await apiGet<Term[]>(url, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch terms",
+    };
+  }
+}
+
+export async function getTerm(id: string): Promise<ActionResult<Term>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Term>(`/academic/terms/${id}`, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch term",
+    };
+  }
+}
+
+export async function createTerm(data: TermCreate): Promise<ActionResult<Term>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<Term>("/academic/terms", data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create term",
+    };
+  }
+}
+
+export async function updateTerm(id: string, data: TermUpdate): Promise<ActionResult<Term>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<Term>(`/academic/terms/${id}`, data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update term",
+    };
+  }
+}
+
+export async function deleteTerm(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/terms/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete term",
+    };
+  }
+}
+
+// =========================
+// Class Actions
+// =========================
+
+export async function getClasses(includeSections: boolean = false): Promise<ActionResult<Class[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const url = includeSections ? "/academic/classes?include_sections=true" : "/academic/classes";
+    const response = await apiGet<Class[]>(url, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch classes",
+    };
+  }
+}
+
+export async function getClass(id: string): Promise<ActionResult<Class>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Class>(`/academic/classes/${id}`, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch class",
+    };
+  }
+}
+
+export async function createClass(data: ClassCreate): Promise<ActionResult<Class>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<Class>("/academic/classes", data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create class",
+    };
+  }
+}
+
+export async function updateClass(id: string, data: ClassUpdate): Promise<ActionResult<Class>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<Class>(`/academic/classes/${id}`, data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update class",
+    };
+  }
+}
+
+export async function deleteClass(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/classes/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete class",
+    };
+  }
+}
+
+// =========================
+// Class Section Actions
+// =========================
+
+export async function getSections(classId?: string): Promise<ActionResult<ClassSection[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const url = classId ? `/academic/sections?class_id=${classId}` : "/academic/sections";
+    const response = await apiGet<ClassSection[]>(url, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch sections",
+    };
+  }
+}
+
+export async function getSection(id: string): Promise<ActionResult<ClassSection>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<ClassSection>(`/academic/sections/${id}`, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch section",
+    };
+  }
+}
+
+export async function createSection(data: ClassSectionCreate): Promise<ActionResult<ClassSection>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<ClassSection>("/academic/sections", data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create section",
+    };
+  }
+}
+
+export async function updateSection(
+  id: string,
+  data: ClassSectionUpdate
+): Promise<ActionResult<ClassSection>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<ClassSection>(`/academic/sections/${id}`, data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update section",
+    };
+  }
+}
+
+export async function deleteSection(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/sections/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete section",
+    };
+  }
+}
+
+// =========================
+// Subject Actions
+// =========================
+
+export async function getSubjects(): Promise<ActionResult<Subject[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Subject[]>("/academic/subjects", { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subjects",
+    };
+  }
+}
+
+export async function getSubject(id: string): Promise<ActionResult<Subject>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Subject>(`/academic/subjects/${id}`, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subject",
+    };
+  }
+}
+
+export async function createSubject(data: SubjectCreate): Promise<ActionResult<Subject>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<Subject>("/academic/subjects", data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create subject",
+    };
+  }
+}
+
+export async function updateSubject(
+  id: string,
+  data: SubjectUpdate
+): Promise<ActionResult<Subject>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<Subject>(`/academic/subjects/${id}`, data, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update subject",
+    };
+  }
+}
+
+export async function deleteSubject(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/subjects/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete subject",
+    };
+  }
+}
+
+// =========================
+// Class Subject Assignment Actions
+// =========================
+
+export async function getClassSubjects(classId: string): Promise<ActionResult<ClassSubject[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<ClassSubject[]>(`/academic/classes/${classId}/subjects`, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch class subjects",
+    };
+  }
+}
+
+export async function assignSubjectToClass(
+  data: ClassSubjectCreate
+): Promise<ActionResult<ClassSubject>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<ClassSubject>(
+      `/academic/classes/${data.class_id}/subjects`,
+      data,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to assign subject",
+    };
+  }
+}
+
+export async function removeSubjectFromClass(
+  classId: string,
+  subjectId: string
+): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/classes/${classId}/subjects/${subjectId}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to remove subject",
+    };
+  }
+}
+
+// =========================
+// Grading Scale Actions
+// =========================
+
+export async function getGradingScales(): Promise<ActionResult<GradingScale[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<GradingScale[]>("/academic/grading-scales?include_grades=true", { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch grading scales",
+    };
+  }
+}
+
+export async function getGradingScale(id: string): Promise<ActionResult<GradingScale>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<GradingScale>(`/academic/grading-scales/${id}`, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch grading scale",
+    };
+  }
+}
+
+export async function createGradingScale(
+  data: GradingScaleCreate
+): Promise<ActionResult<GradingScale>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<GradingScale>("/academic/grading-scales", data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create grading scale",
+    };
+  }
+}
+
+export async function updateGradingScale(
+  id: string,
+  data: GradingScaleUpdate
+): Promise<ActionResult<GradingScale>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<GradingScale>(`/academic/grading-scales/${id}`, data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update grading scale",
+    };
+  }
+}
+
+export async function deleteGradingScale(id: string): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/academic/grading-scales/${id}`, { token, subdomain });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete grading scale",
+    };
+  }
+}
+
+export async function addGradeToScale(
+  scaleId: string,
+  data: GradeCreate
+): Promise<ActionResult<GradingScale>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<GradingScale>(
+      `/academic/grading-scales/${scaleId}/grades`,
+      data,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to add grade",
+    };
+  }
+}
+
+// =========================
+// Assessment Weight Actions
+// =========================
+
+export async function getAssessmentWeights(): Promise<ActionResult<AssessmentWeight>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<AssessmentWeight>("/academic/assessment-weights", {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch assessment weights",
+    };
+  }
+}
+
+export async function setAssessmentWeights(
+  data: AssessmentWeightCreate
+): Promise<ActionResult<AssessmentWeight>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<AssessmentWeight>("/academic/assessment-weights", data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to set assessment weights",
+    };
+  }
+}
+
+// =========================
+// Academic Settings Actions
+// =========================
+
+export async function getAcademicSettings(): Promise<ActionResult<AcademicSettings>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<AcademicSettings>("/academic/settings", {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch academic settings",
+    };
+  }
+}
+
+export async function updateAcademicSettings(
+  data: AcademicSettingsUpdate
+): Promise<ActionResult<AcademicSettings>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<AcademicSettings>("/academic/settings", data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update academic settings",
+    };
+  }
+}

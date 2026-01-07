@@ -11,14 +11,14 @@ import {
 } from "lucide-react";
 
 interface SuccessPageProps {
-  searchParams: Promise<{ subdomain?: string }>;
+  searchParams: Promise<{ school?: string }>;
 }
 
 export default async function RegistrationSuccessPage({
   searchParams,
 }: SuccessPageProps) {
   const params = await searchParams;
-  const subdomain = params.subdomain || "yourschool";
+  const subdomain = params.school || "yourschool";
   const portalUrl = `https://${subdomain}.simsplus.io`;
 
   return (
@@ -62,17 +62,18 @@ export default async function RegistrationSuccessPage({
           </CardContent>
         </Card>
 
-        {/* Email Notification */}
-        <Card className="mb-6">
+        {/* Email Verification Notice */}
+        <Card className="mb-6 border-amber-200 bg-amber-50">
           <CardContent className="flex items-start gap-4 p-6">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-              <Mail className="h-5 w-5 text-primary" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <Mail className="h-5 w-5 text-amber-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-foreground">Check your email</h3>
-              <p className="text-sm text-muted-foreground">
-                We&apos;ve sent login instructions to your email address. Please
-                check your inbox (and spam folder) for the welcome email.
+              <h3 className="font-semibold text-amber-900">Verify your email</h3>
+              <p className="text-sm text-amber-800">
+                We&apos;ve sent a verification link to your email address. Please
+                click the link to verify your email before logging in. Check your
+                spam folder if you don&apos;t see it.
               </p>
             </div>
           </CardContent>
@@ -86,7 +87,7 @@ export default async function RegistrationSuccessPage({
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
                 1
               </span>
-              <span>Check your email for login credentials</span>
+              <span>Check your email and click the verification link</span>
             </li>
             <li className="flex items-start gap-3">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">

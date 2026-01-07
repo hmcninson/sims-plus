@@ -215,6 +215,31 @@ class TenantInfo(BaseSchema):
 
 
 # =========================
+# Profile Update
+# =========================
+
+class ProfileUpdateRequest(BaseSchema):
+    """Update user profile request."""
+
+    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    avatar_url: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        # Remove spaces and validate phone format
+        phone = re.sub(r"\s+", "", v)
+        # Allow Ghana format or international
+        if not re.match(r"^(\+233|0)[0-9]{9}$|^\+[0-9]{10,15}$", phone):
+            raise ValueError("Invalid phone number format")
+        return phone
+
+
+# =========================
 # Email Verification
 # =========================
 

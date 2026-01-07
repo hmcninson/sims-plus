@@ -27,6 +27,7 @@ from app.schemas.auth import (
     LoginResponse,
     PasswordResetConfirm,
     PasswordResetRequest,
+    ProfileUpdateRequest,
     RefreshTokenRequest,
     RegisterRequest,
     RegisterResponse,
@@ -37,10 +38,14 @@ from app.schemas.auth import (
     TenantInfo,
     VerifyEmailRequest,
 )
+from sqlalchemy import select
+
+from app.models.user import User
 from app.services.auth import AuthService, AuthenticationError
 from app.services.token_blacklist import get_token_blacklist_service
 from app.services.password_reset import PasswordResetService, PasswordResetError
 from app.services.email_verification import EmailVerificationService, EmailVerificationError
+from app.services.email import email_service
 
 router = APIRouter()
 
@@ -343,6 +348,67 @@ async def get_current_user(
     )
 
 
+@router.put(
+    "/profile",
+    response_model=UserResponse,
+    summary="Update user profile",
+    description="Update the current user's profile information.",
+)
+async def update_profile(
+    current_user_id: CurrentUserId,
+    profile_data: ProfileUpdateRequest,
+    db: DatabaseSession,
+    _: ValidatedTokenTenant,
+) -> UserResponse:
+    """
+    Update current user's profile.
+
+    - **first_name**: User's first name
+    - **last_name**: User's last name
+    - **phone**: Phone number (Ghana or international format)
+    - **avatar_url**: URL to profile image
+    """
+    # Get current user
+    result = await db.execute(
+        select(User).where(
+            User.id == current_user_id,
+            User.deleted_at.is_(None),
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Update fields that are provided
+    update_data = profile_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    await db.flush()
+    await db.refresh(user)
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        phone=user.phone,
+        role=user.role.value,
+        status=user.status.value,
+        tenant_id=user.tenant_id,
+        school_id=user.school_id,
+        avatar_url=user.avatar_url,
+        email_verified=user.email_verified,
+        mfa_enabled=user.mfa_enabled,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
 @router.post(
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -424,10 +490,28 @@ async def forgot_password(
 
         # Send email if token was generated
         if token:
-            await reset_service.send_reset_email(
-                email=reset_request.email,
-                token=token,
-                subdomain=subdomain,
+            # Get user name for email
+            result = await db.execute(
+                select(User).where(
+                    User.email == reset_request.email.lower(),
+                    User.tenant_id == tenant_id,
+                )
+            )
+            user = result.scalar_one_or_none()
+            user_name = f"{user.first_name} {user.last_name}" if user else "User"
+
+            # Build reset URL (include subdomain for dev mode tenant detection)
+            if settings.is_production:
+                reset_url = f"https://{subdomain}.simsplus.io/reset-password?token={token}"
+            else:
+                reset_url = f"http://localhost:3000/reset-password?token={token}&subdomain={subdomain}"
+
+            # Send via EmailService (uses SMTP)
+            await email_service.send_password_reset_email(
+                to_email=reset_request.email,
+                user_name=user_name,
+                reset_url=reset_url,
+                expires_in_hours=1,  # Token expires in 30 minutes, but say 1 hour for UX
             )
 
     except PasswordResetError as e:
