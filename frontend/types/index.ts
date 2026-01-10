@@ -587,6 +587,7 @@ export interface Subject {
   code: string;
   description?: string;
   category: SubjectCategory;
+  applicable_levels?: ClassLevel[] | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -597,6 +598,7 @@ export interface SubjectCreate {
   code: string;
   description?: string;
   category?: SubjectCategory;
+  applicable_levels?: ClassLevel[];
 }
 
 export interface SubjectUpdate {
@@ -604,6 +606,7 @@ export interface SubjectUpdate {
   code?: string;
   description?: string;
   category?: SubjectCategory;
+  applicable_levels?: ClassLevel[];
   is_active?: boolean;
 }
 
@@ -771,6 +774,7 @@ export interface StaffListItem {
 }
 
 export interface StaffCreate {
+  staff_id?: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -1029,6 +1033,707 @@ export interface StaffAttendanceSummary {
   excused: number;
   sick: number;
   attendance_rate: number;
+}
+
+// =========================
+// Exam Types
+// =========================
+
+export type ExamType = "quiz" | "midterm" | "end_term" | "mock" | "practical" | "project";
+export type ExamStatus = "draft" | "scheduled" | "ongoing" | "completed" | "results_published" | "cancelled";
+export type ExamSubjectStatus = "pending" | "scores_entered" | "submitted" | "published";
+export type AssessmentType = "class_work" | "homework" | "test" | "project" | "assignment";
+
+export interface Exam {
+  id: string;
+  academic_year_id: string;
+  term_id: string;
+  name: string;
+  exam_type: ExamType;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  status: ExamStatus;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  academic_year_name?: string;
+  term_name?: string;
+  subjects_count?: number;
+}
+
+export interface ExamCreate {
+  academic_year_id: string;
+  term_id: string;
+  name: string;
+  exam_type: ExamType;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  status?: ExamStatus;
+}
+
+export interface ExamUpdate {
+  name?: string;
+  exam_type?: ExamType;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  status?: ExamStatus;
+}
+
+export interface ExamWithContext extends Exam {
+  academic_year: AcademicYear;
+  term: Term;
+  exam_subjects: ExamSubjectWithDetails[];
+}
+
+export interface ExamSubject {
+  id: string;
+  exam_id: string;
+  subject_id: string;
+  class_id: string;
+  max_score: number;
+  pass_mark: number;
+  exam_date?: string;
+  exam_time?: string;
+  duration_minutes?: number;
+  venue?: string;
+  status: ExamSubjectStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExamSubjectWithDetails extends ExamSubject {
+  subject_name: string;
+  subject_code: string;
+  class_name: string;
+  scores_entered: number;
+  total_students: number;
+}
+
+export interface ExamSubjectCreate {
+  subject_id: string;
+  class_id: string;
+  max_score?: number;
+  pass_mark?: number;
+  exam_date?: string;
+  exam_time?: string;
+  duration_minutes?: number;
+  venue?: string;
+}
+
+export interface ExamSubjectBulkCreate {
+  subjects: ExamSubjectCreate[];
+}
+
+export interface ExamSubjectUpdate {
+  max_score?: number;
+  pass_mark?: number;
+  exam_date?: string;
+  exam_time?: string;
+  duration_minutes?: number;
+  venue?: string;
+  status?: ExamSubjectStatus;
+}
+
+export interface ExamScore {
+  id: string;
+  exam_subject_id: string;
+  student_id: string;
+  score?: number;
+  grade?: string;
+  grade_point?: number;
+  grade_remark?: string;
+  is_absent: boolean;
+  teacher_remark?: string;
+  entered_by?: string;
+  entered_at: string;
+  updated_at: string;
+}
+
+export interface ExamScoreWithStudent extends ExamScore {
+  student_name: string;
+  student_number: string;
+}
+
+export interface ScoreEntry {
+  student_id: string;
+  score?: number;
+  is_absent?: boolean;
+  teacher_remark?: string;
+}
+
+export interface ExamScoreBulkCreate {
+  grading_scale_id?: string;
+  scores: ScoreEntry[];
+}
+
+export interface ExamScoreUpdate {
+  score?: number;
+  is_absent?: boolean;
+  teacher_remark?: string;
+  grading_scale_id?: string;
+}
+
+export interface ScoreEntryForm {
+  exam_subject_id: string;
+  subject_name: string;
+  subject_code: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  max_score: number;
+  pass_mark: number;
+  grading_scale_id?: string;
+  students: ScoreEntryStudent[];
+}
+
+export interface ScoreEntryStudent {
+  student_id: string;
+  student_number: string;
+  first_name: string;
+  last_name: string;
+  current_score?: number;
+  current_grade?: string;
+  is_absent: boolean;
+  teacher_remark?: string;
+}
+
+export interface BulkScoreResult {
+  created: number;
+  updated: number;
+  failed: number;
+  errors: Array<{ student_id: string; error: string }>;
+}
+
+export interface ContinuousAssessment {
+  id: string;
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  subject_id: string;
+  student_id: string;
+  assessment_type: AssessmentType;
+  title: string;
+  max_score: number;
+  score?: number;
+  assessment_date: string;
+  entered_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CAWithDetails extends ContinuousAssessment {
+  class_name: string;
+  subject_name: string;
+  subject_code?: string;
+  student_name: string;
+  student_id_number: string;
+}
+
+export interface CACreate {
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  subject_id: string;
+  student_id: string;
+  assessment_type: AssessmentType;
+  title: string;
+  max_score?: number;
+  score?: number;
+  date: string;
+}
+
+export interface CABulkEntry {
+  student_id: string;
+  score?: number;
+}
+
+export interface CABulkCreate {
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  subject_id: string;
+  assessment_type: AssessmentType;
+  title: string;
+  max_score?: number;
+  date: string;
+  entries: CABulkEntry[];
+}
+
+export interface CAUpdate {
+  assessment_type?: AssessmentType;
+  title?: string;
+  max_score?: number;
+  score?: number;
+  assessment_date?: string;
+}
+
+export interface CASummary {
+  student_id: string;
+  student_name: string;
+  student_number: string;
+  subject_id: string;
+  subject_name: string;
+  class_work_total: number;
+  class_work_max: number;
+  homework_total: number;
+  homework_max: number;
+  test_total: number;
+  test_max: number;
+  project_total: number;
+  project_max: number;
+  assignment_total: number;
+  assignment_max: number;
+  overall_total: number;
+  overall_max: number;
+  percentage: number;
+}
+
+export interface TermReport {
+  id: string;
+  academic_year_id: string;
+  term_id: string;
+  student_id: string;
+  class_id: string;
+  section_id: string;
+  total_score: number;
+  average_score: number;
+  class_position?: number;
+  section_position?: number;
+  attendance_percentage?: number;
+  days_present: number;
+  days_absent: number;
+  total_school_days: number;
+  conduct_grade?: string;
+  interest?: string;
+  class_teacher_remark?: string;
+  headmaster_remark?: string;
+  is_published: boolean;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TermReportWithDetails extends TermReport {
+  student_name: string;
+  student_number: string;
+  class_name: string;
+  section_name: string;
+  academic_year_name: string;
+  term_name: string;
+  subject_results: SubjectResult[];
+}
+
+export interface TermReportGenerate {
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  section_id?: string;
+}
+
+export interface TermReportRemarksUpdate {
+  class_teacher_remark?: string;
+  headmaster_remark?: string;
+  conduct_grade?: string;
+  interest?: string;
+}
+
+export interface SubjectResult {
+  subject_id: string;
+  subject_name: string;
+  subject_code?: string;
+  ca_score?: number;
+  ca_max?: number;
+  midterm_score?: number;
+  midterm_max?: number;
+  end_term_score?: number;
+  end_term_max?: number;
+  total_score?: number;
+  grade?: string;
+  grade_point?: number;
+  grade_remark?: string;
+  teacher_remark?: string;
+  subject_position?: number;
+  is_absent?: boolean;
+}
+
+export interface StudentExamResult {
+  student_id: string;
+  student_name: string;
+  student_id_number: string;
+  class_name: string;
+  section_name?: string;
+  subjects: SubjectResult[];
+  total_score: number;
+  average_score: number;
+  subjects_count: number;
+  class_position: number;
+  section_position?: number;
+  class_size: number;
+  section_size?: number;
+}
+
+export interface ClassResultsResponse {
+  exam_id: string;
+  exam_name: string;
+  class_id: string;
+  class_name: string;
+  term_name: string;
+  students: StudentExamResult[];
+  class_average: number;
+  highest_score: number;
+  lowest_score: number;
+}
+
+// =========================
+// Preschool Types
+// =========================
+
+export type ObservationType = "anecdote" | "milestone" | "photo" | "video" | "incident";
+export type MoodType = "happy" | "tired" | "upset" | "excited" | "calm" | "sick";
+export type MealAmount = "none" | "little" | "some" | "most" | "all";
+export type NapQuality = "good" | "restless" | "didnt_sleep";
+
+export interface LearningArea {
+  id: string;
+  tenant_id: string;
+  name: string;
+  code: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  skills?: DevelopmentalSkill[];
+}
+
+export interface LearningAreaCreate {
+  name: string;
+  code: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  display_order?: number;
+  is_active?: boolean;
+}
+
+export interface LearningAreaUpdate {
+  name?: string;
+  code?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  display_order?: number;
+  is_active?: boolean;
+}
+
+export interface DevelopmentalSkill {
+  id: string;
+  tenant_id: string;
+  learning_area_id: string;
+  name: string;
+  description?: string;
+  age_range_months_min?: number;
+  age_range_months_max?: number;
+  display_order: number;
+  is_active: boolean;
+  applicable_levels?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DevelopmentalSkillCreate {
+  learning_area_id: string;
+  name: string;
+  description?: string;
+  age_range_months_min?: number;
+  age_range_months_max?: number;
+  display_order?: number;
+  is_active?: boolean;
+  applicable_levels?: string[];
+}
+
+export interface DevelopmentalSkillUpdate {
+  name?: string;
+  description?: string;
+  age_range_months_min?: number;
+  age_range_months_max?: number;
+  display_order?: number;
+  is_active?: boolean;
+  applicable_levels?: string[];
+}
+
+export interface PreschoolRating {
+  id: string;
+  scale_id: string;
+  name: string;
+  short_code: string;
+  description?: string;
+  numeric_value: number;
+  color?: string;
+  icon?: string;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PreschoolRatingCreate {
+  name: string;
+  short_code: string;
+  description?: string;
+  numeric_value: number;
+  color?: string;
+  icon?: string;
+  display_order?: number;
+}
+
+export interface PreschoolRatingScale {
+  id: string;
+  tenant_id: string;
+  name: string;
+  description?: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+  ratings?: PreschoolRating[];
+}
+
+export interface PreschoolRatingScaleCreate {
+  name: string;
+  description?: string;
+  is_default?: boolean;
+  ratings?: PreschoolRatingCreate[];
+}
+
+export interface PreschoolRatingScaleUpdate {
+  name?: string;
+  description?: string;
+  is_default?: boolean;
+}
+
+export interface StudentSkillAssessment {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  skill_id: string;
+  academic_year_id: string;
+  term_id: string;
+  rating_id?: string;
+  observation_notes?: string;
+  evidence_url?: string;
+  assessed_by?: string;
+  assessed_at?: string;
+  created_at: string;
+  updated_at: string;
+  rating?: PreschoolRating;
+  skill?: DevelopmentalSkill;
+}
+
+export interface StudentSkillAssessmentCreate {
+  student_id: string;
+  skill_id: string;
+  academic_year_id: string;
+  term_id: string;
+  rating_id?: string;
+  observation_notes?: string;
+  evidence_url?: string;
+}
+
+export interface SkillAssessmentEntry {
+  skill_id: string;
+  rating_id?: string;
+  observation_notes?: string;
+}
+
+export interface StudentSkillAssessmentBulk {
+  student_id: string;
+  academic_year_id: string;
+  term_id: string;
+  assessments: SkillAssessmentEntry[];
+}
+
+export interface ProgressObservationAttachment {
+  url: string;
+  type: string;
+  thumbnail?: string;
+  filename?: string;
+}
+
+export interface ProgressObservation {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  learning_area_id?: string;
+  observation_type: ObservationType;
+  title: string;
+  description?: string;
+  observation_date: string;
+  attachments?: ProgressObservationAttachment[];
+  share_with_parents: boolean;
+  is_highlight: boolean;
+  recorded_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProgressObservationCreate {
+  student_id: string;
+  learning_area_id?: string;
+  observation_type?: ObservationType;
+  title: string;
+  description?: string;
+  observation_date: string;
+  attachments?: ProgressObservationAttachment[];
+  share_with_parents?: boolean;
+  is_highlight?: boolean;
+}
+
+export interface ProgressObservationUpdate {
+  learning_area_id?: string;
+  observation_type?: ObservationType;
+  title?: string;
+  description?: string;
+  observation_date?: string;
+  attachments?: ProgressObservationAttachment[];
+  share_with_parents?: boolean;
+  is_highlight?: boolean;
+}
+
+export interface MealEntry {
+  type: string;
+  time?: string;
+  amount: MealAmount;
+  notes?: string;
+}
+
+export interface DailyActivityLog {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  log_date: string;
+  arrival_time?: string;
+  arrival_mood?: MoodType;
+  departure_time?: string;
+  departure_mood?: MoodType;
+  meals?: MealEntry[];
+  nap_start?: string;
+  nap_end?: string;
+  nap_quality?: NapQuality;
+  diaper_changes?: number;
+  potty_successes?: number;
+  accidents?: number;
+  activities?: string[];
+  notes?: string;
+  highlights?: string;
+  logged_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DailyActivityLogCreate {
+  student_id: string;
+  log_date: string;
+  arrival_time?: string;
+  arrival_mood?: MoodType;
+  departure_time?: string;
+  departure_mood?: MoodType;
+  meals?: MealEntry[];
+  nap_start?: string;
+  nap_end?: string;
+  nap_quality?: NapQuality;
+  diaper_changes?: number;
+  potty_successes?: number;
+  accidents?: number;
+  activities?: string[];
+  notes?: string;
+  highlights?: string;
+}
+
+export interface DailyActivityLogUpdate {
+  arrival_time?: string;
+  arrival_mood?: MoodType;
+  departure_time?: string;
+  departure_mood?: MoodType;
+  meals?: MealEntry[];
+  nap_start?: string;
+  nap_end?: string;
+  nap_quality?: NapQuality;
+  diaper_changes?: number;
+  potty_successes?: number;
+  accidents?: number;
+  activities?: string[];
+  notes?: string;
+  highlights?: string;
+}
+
+export interface LearningAreaSummary {
+  learning_area_id: string;
+  learning_area_name: string;
+  rating: string;
+  summary?: string;
+}
+
+export interface PreschoolReport {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  days_present?: number;
+  days_absent?: number;
+  total_school_days?: number;
+  learning_area_summaries?: LearningAreaSummary[];
+  overall_progress?: string;
+  strengths?: string;
+  areas_for_growth?: string;
+  teacher_recommendations?: string;
+  highlights?: string[];
+  next_term_goals?: string[];
+  class_teacher_remark?: string;
+  head_teacher_remark?: string;
+  is_published: boolean;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PreschoolReportCreate {
+  student_id: string;
+  academic_year_id: string;
+  term_id: string;
+  class_id: string;
+  days_present?: number;
+  days_absent?: number;
+  total_school_days?: number;
+  learning_area_summaries?: LearningAreaSummary[];
+  overall_progress?: string;
+  strengths?: string;
+  areas_for_growth?: string;
+  teacher_recommendations?: string;
+  highlights?: string[];
+  next_term_goals?: string[];
+  class_teacher_remark?: string;
+  head_teacher_remark?: string;
+}
+
+export interface PreschoolReportUpdate {
+  days_present?: number;
+  days_absent?: number;
+  total_school_days?: number;
+  learning_area_summaries?: LearningAreaSummary[];
+  overall_progress?: string;
+  strengths?: string;
+  areas_for_growth?: string;
+  teacher_recommendations?: string;
+  highlights?: string[];
+  next_term_goals?: string[];
+  class_teacher_remark?: string;
+  head_teacher_remark?: string;
 }
 
 // Re-export School types
