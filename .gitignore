@@ -42,6 +42,9 @@ env/
 *~
 .DS_Store
 
+# Don't ignore frontend utilities
+!frontend/lib/
+
 # Logs
 *.log
 logs/
