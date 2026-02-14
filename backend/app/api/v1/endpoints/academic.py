@@ -106,7 +106,7 @@ async def create_academic_year(
 
 @router.get(
     "/academic-years",
-    response_model=list[AcademicYearResponse],
+    response_model=list[AcademicYearWithTermsResponse],
     summary="List academic years",
     dependencies=[Depends(require_permissions("academics.read"))],
 )
@@ -834,11 +834,20 @@ async def list_subjects(
     tenant: RequestTenant,
     db: DatabaseSession,
     category: Optional[str] = Query(None),
+    class_level: Optional[str] = Query(
+        None,
+        description="Filter by class level (preschool, primary, jhs, shs). Returns subjects applicable to this level.",
+    ),
     active_only: bool = Query(True),
 ) -> list[SubjectResponse]:
-    """List all subjects."""
+    """List all subjects, optionally filtered by class level."""
     service = AcademicService(db)
-    subjects = await service.list_subjects(tenant.tenant_id, category=category, active_only=active_only)
+    subjects = await service.list_subjects(
+        tenant.tenant_id,
+        category=category,
+        class_level=class_level,
+        active_only=active_only,
+    )
     return [
         SubjectResponse(
             id=s.id,
@@ -846,6 +855,7 @@ async def list_subjects(
             code=s.code,
             description=s.description,
             category=s.category.value if hasattr(s.category, 'value') else s.category,
+            applicable_levels=s.applicable_levels,
             is_active=s.is_active,
             created_at=s.created_at,
             updated_at=s.updated_at,
@@ -876,6 +886,7 @@ async def get_subject(
         code=subject.code,
         description=subject.description,
         category=subject.category.value if hasattr(subject.category, 'value') else subject.category,
+        applicable_levels=subject.applicable_levels,
         is_active=subject.is_active,
         created_at=subject.created_at,
         updated_at=subject.updated_at,
@@ -1021,6 +1032,43 @@ async def remove_subject_from_class(
     deleted = await service.remove_subject_from_class(class_id, subject_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject assignment not found")
+
+
+@router.post(
+    "/classes/subjects/bulk",
+    response_model=list[ClassSubjectResponse],
+    summary="Get subjects for multiple classes",
+    dependencies=[Depends(require_permissions("classes.read"))],
+)
+async def get_subjects_for_classes(
+    class_ids: list[UUID],
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> list[ClassSubjectResponse]:
+    """Get all subjects assigned to multiple classes in a single request."""
+    service = AcademicService(db)
+    assignments = await service.get_subjects_for_classes(tenant.tenant_id, class_ids)
+    return [
+        ClassSubjectResponse(
+            id=a.id,
+            class_id=a.class_id,
+            subject_id=a.subject_id,
+            periods_per_week=a.periods_per_week,
+            is_compulsory=a.is_compulsory,
+            created_at=a.created_at,
+            subject=SubjectResponse(
+                id=a.subject.id,
+                name=a.subject.name,
+                code=a.subject.code,
+                description=a.subject.description,
+                category=a.subject.category.value if hasattr(a.subject.category, 'value') else a.subject.category,
+                is_active=a.subject.is_active,
+                created_at=a.subject.created_at,
+                updated_at=a.subject.updated_at,
+            ) if a.subject else None,
+        )
+        for a in assignments
+    ]
 
 
 # =========================
@@ -1236,6 +1284,8 @@ async def get_assessment_weights(
             homework_weight=10,
             midterm_weight=20,
             end_term_weight=50,
+            ca_total_weight=50,
+            exam_total_weight=50,
             created_at=None,
             updated_at=None,
         )
@@ -1247,6 +1297,8 @@ async def get_assessment_weights(
         homework_weight=weights.homework_weight,
         midterm_weight=weights.midterm_weight,
         end_term_weight=weights.end_term_weight,
+        ca_total_weight=weights.ca_total_weight,
+        exam_total_weight=weights.exam_total_weight,
         created_at=weights.created_at,
         updated_at=weights.updated_at,
     )
@@ -1272,6 +1324,8 @@ async def set_assessment_weights(
         homework_weight=data.homework_weight,
         midterm_weight=data.midterm_weight,
         end_term_weight=data.end_term_weight,
+        ca_total_weight=data.ca_total_weight,
+        exam_total_weight=data.exam_total_weight,
     )
 
     return AssessmentWeightResponse(
@@ -1281,6 +1335,8 @@ async def set_assessment_weights(
         homework_weight=weights.homework_weight,
         midterm_weight=weights.midterm_weight,
         end_term_weight=weights.end_term_weight,
+        ca_total_weight=weights.ca_total_weight,
+        exam_total_weight=weights.exam_total_weight,
         created_at=weights.created_at,
         updated_at=weights.updated_at,
     )

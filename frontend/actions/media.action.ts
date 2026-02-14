@@ -66,6 +66,47 @@ export async function uploadStudentPhoto(
 }
 
 /**
+ * Upload staff photo
+ */
+export async function uploadStaffPhoto(
+  staffId: string,
+  formData: FormData
+): Promise<ActionResult<FileUploadResponse>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const response = await fetch(
+      `${process.env.API_URL || "http://localhost:8000/api/v1"}/media/upload/staff-photo/${staffId}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Subdomain": subdomain,
+        },
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Upload failed");
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to upload photo",
+    };
+  }
+}
+
+/**
  * Upload school logo
  */
 export async function uploadSchoolLogo(

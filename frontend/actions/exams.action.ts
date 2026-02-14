@@ -14,6 +14,7 @@ import type {
   ExamSubjectWithDetails,
   ExamSubjectCreate,
   ExamSubjectBulkCreate,
+  ExamSubjectAutoPopulate,
   ExamSubjectUpdate,
   ExamScore,
   ExamScoreWithStudent,
@@ -207,6 +208,26 @@ export async function addExamSubjects(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to add exam subjects",
+    };
+  }
+}
+
+export async function autoPopulateExamSubjects(
+  examId: string,
+  data: ExamSubjectAutoPopulate
+): Promise<ActionResult<ExamSubjectWithDetails[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<ExamSubjectWithDetails[]>(
+      `/exams/${examId}/subjects/auto-populate`,
+      data,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to auto-populate exam subjects",
     };
   }
 }
@@ -502,11 +523,10 @@ export async function getCASummary(
 // =========================
 
 export interface TermReportFilters {
-  academic_year_id?: string;
+  academic_year_id?: string; // Not used by backend but kept for UI filtering
   term_id?: string;
   class_id?: string;
   section_id?: string;
-  student_id?: string;
   is_published?: boolean;
   page?: number;
   page_size?: number;
@@ -514,22 +534,21 @@ export interface TermReportFilters {
 
 export async function getTermReports(
   filters: TermReportFilters = {}
-): Promise<ActionResult<PaginatedResponse<TermReport>>> {
+): Promise<ActionResult<PaginatedResponse<TermReportWithDetails>>> {
   try {
     const { token, subdomain } = await getAuthContext();
 
     const params = new URLSearchParams();
-    if (filters.academic_year_id) params.append("academic_year_id", filters.academic_year_id);
+    // Note: academic_year_id is not supported by backend - filter by term_id instead
     if (filters.term_id) params.append("term_id", filters.term_id);
     if (filters.class_id) params.append("class_id", filters.class_id);
     if (filters.section_id) params.append("section_id", filters.section_id);
-    if (filters.student_id) params.append("student_id", filters.student_id);
     if (filters.is_published !== undefined) params.append("is_published", String(filters.is_published));
     if (filters.page) params.append("page", String(filters.page));
     if (filters.page_size) params.append("page_size", String(filters.page_size));
 
     const url = `/exams/reports/term${params.toString() ? `?${params.toString()}` : ""}`;
-    const response = await apiGet<PaginatedResponse<TermReport>>(url, { token, subdomain });
+    const response = await apiGet<PaginatedResponse<TermReportWithDetails>>(url, { token, subdomain });
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -551,6 +570,35 @@ export async function getTermReport(id: string): Promise<ActionResult<TermReport
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch term report",
+    };
+  }
+}
+
+/**
+ * Get the URL for downloading a term report PDF
+ * This returns credentials needed to fetch the PDF from the client
+ */
+export async function getTermReportPdfUrl(id: string): Promise<ActionResult<{ url: string; token: string; subdomain: string }>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+    // Return the URL and credentials for client-side fetch
+    // NEXT_PUBLIC_API_URL already includes /api/v1
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    return {
+      success: true,
+      data: {
+        url: `${baseUrl}/exams/reports/term/${id}/pdf`,
+        token,
+        subdomain,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get PDF URL",
     };
   }
 }
@@ -612,6 +660,304 @@ export async function publishTermReports(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to publish term reports",
+    };
+  }
+}
+
+// =========================
+// Analytics Actions
+// =========================
+
+export interface GradeCount {
+  grade: string;
+  count: number;
+  percentage: number;
+}
+
+export interface GradeDistribution {
+  exam_id: string;
+  exam_name: string;
+  class_id: string;
+  class_name: string;
+  subject_id?: string;
+  subject_name?: string;
+  total_students: number;
+  graded_students: number;
+  absent_students: number;
+  grades: GradeCount[];
+}
+
+export interface PassFailStatistics {
+  total_students: number;
+  passed: number;
+  failed: number;
+  absent: number;
+  pass_rate: number;
+  fail_rate: number;
+}
+
+export interface ClassStatistics {
+  exam_id: string;
+  exam_name: string;
+  class_id: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  total_students: number;
+  students_with_scores: number;
+  class_average?: number;
+  highest_score?: number;
+  lowest_score?: number;
+  median_score?: number;
+  pass_fail: PassFailStatistics;
+  grade_distribution: GradeCount[];
+}
+
+export interface SubjectStatistics {
+  subject_id: string;
+  subject_name: string;
+  subject_code?: string;
+  total_students: number;
+  students_with_scores: number;
+  absent_students: number;
+  average_score?: number;
+  highest_score?: number;
+  lowest_score?: number;
+  median_score?: number;
+  pass_rate: number;
+  grade_distribution: GradeCount[];
+}
+
+export interface SubjectRankingStudent {
+  student_id: string;
+  student_name: string;
+  student_id_number: string;
+  score?: number;
+  grade?: string;
+  position: number;
+}
+
+export interface SubjectRankings {
+  exam_id: string;
+  exam_name: string;
+  subject_id: string;
+  subject_name: string;
+  class_id: string;
+  class_name: string;
+  total_students: number;
+  rankings: SubjectRankingStudent[];
+}
+
+export async function getGradeDistribution(
+  examId: string,
+  classId: string,
+  subjectId?: string
+): Promise<ActionResult<GradeDistribution>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams({ class_id: classId });
+    if (subjectId) params.append("subject_id", subjectId);
+
+    const response = await apiGet<GradeDistribution>(
+      `/exams/${examId}/analytics/grade-distribution?${params.toString()}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch grade distribution",
+    };
+  }
+}
+
+export async function getClassStatistics(
+  examId: string,
+  classId: string,
+  sectionId?: string
+): Promise<ActionResult<ClassStatistics>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams({ class_id: classId });
+    if (sectionId) params.append("section_id", sectionId);
+
+    const response = await apiGet<ClassStatistics>(
+      `/exams/${examId}/analytics/class-statistics?${params.toString()}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch class statistics",
+    };
+  }
+}
+
+export async function getSubjectStatistics(
+  examId: string,
+  classId: string,
+  sectionId?: string
+): Promise<ActionResult<SubjectStatistics[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams({ class_id: classId });
+    if (sectionId) params.append("section_id", sectionId);
+
+    const response = await apiGet<SubjectStatistics[]>(
+      `/exams/${examId}/analytics/subject-statistics?${params.toString()}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subject statistics",
+    };
+  }
+}
+
+export async function getSubjectRankings(
+  examId: string,
+  subjectId: string,
+  classId: string,
+  sectionId?: string
+): Promise<ActionResult<SubjectRankings>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams({ class_id: classId });
+    if (sectionId) params.append("section_id", sectionId);
+
+    const response = await apiGet<SubjectRankings>(
+      `/exams/${examId}/analytics/subject-rankings/${subjectId}?${params.toString()}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subject rankings",
+    };
+  }
+}
+
+// =========================
+// Timetabling Actions
+// =========================
+
+export interface TimetableEntry {
+  exam_subject_id: string;
+  subject_id: string;
+  subject_name: string;
+  subject_code?: string;
+  class_id: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  exam_date?: string;
+  exam_time?: string;
+  duration_minutes?: number;
+  venue?: string;
+  max_score: number;
+  status: string;
+}
+
+export interface ExamTimetable {
+  exam_id: string;
+  exam_name: string;
+  exam_type: string;
+  start_date?: string;
+  end_date?: string;
+  entries: TimetableEntry[];
+  total_subjects: number;
+  scheduled_subjects: number;
+  unscheduled_subjects: number;
+}
+
+export interface TimetableConflict {
+  conflict_type: string;
+  severity: string;
+  message: string;
+  exam_subject_1_id: string;
+  exam_subject_1_name: string;
+  exam_subject_2_id?: string;
+  exam_subject_2_name?: string;
+}
+
+export interface TimetableConflicts {
+  exam_id: string;
+  has_conflicts: boolean;
+  total_conflicts: number;
+  conflicts: TimetableConflict[];
+}
+
+export interface TimetableEntryUpdate {
+  exam_subject_id: string;
+  exam_date?: string;
+  exam_time?: string;
+  duration_minutes?: number;
+  venue?: string;
+}
+
+export interface BulkTimetableUpdateResult {
+  updated: number;
+  failed: number;
+  errors: Array<{ exam_subject_id: string; error: string }>;
+  conflicts: TimetableConflict[];
+}
+
+export async function getExamTimetable(
+  examId: string
+): Promise<ActionResult<ExamTimetable>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<ExamTimetable>(
+      `/exams/${examId}/timetable`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch exam timetable",
+    };
+  }
+}
+
+export async function checkTimetableConflicts(
+  examId: string
+): Promise<ActionResult<TimetableConflicts>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<TimetableConflicts>(
+      `/exams/${examId}/timetable/conflicts`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to check timetable conflicts",
+    };
+  }
+}
+
+export async function bulkUpdateTimetable(
+  examId: string,
+  entries: TimetableEntryUpdate[]
+): Promise<ActionResult<BulkTimetableUpdateResult>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<BulkTimetableUpdateResult>(
+      `/exams/${examId}/timetable/bulk`,
+      { entries },
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update timetable",
     };
   }
 }

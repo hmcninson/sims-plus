@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Progress Report - {{ student.first_name }} {{ student.last_name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.4;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 3px solid {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 20px;
+        }
+
+        .school-logo {
+            max-height: 70px;
+            max-width: 70px;
+            margin-bottom: 8px;
+        }
+
+        .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 3px;
+        }
+
+        .school-address {
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .report-title {
+            font-size: 14pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .term-info {
+            font-size: 11pt;
+            color: #555;
+            margin-top: 5px;
+        }
+
+        /* Student Info */
+        .student-info {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+        }
+
+        .student-info table {
+            width: 100%;
+        }
+
+        .student-info td {
+            padding: 4px 10px;
+            font-size: 10pt;
+        }
+
+        .student-info .label {
+            font-weight: 600;
+            color: #555;
+            width: 120px;
+        }
+
+        .student-info .value {
+            color: #333;
+        }
+
+        .student-photo {
+            width: 80px;
+            height: 80px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 2px solid #ddd;
+        }
+
+        /* Section Titles */
+        .section-title {
+            font-size: 12pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            padding: 8px 12px;
+            background-color: #f0f7ff;
+            border-left: 4px solid {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 12px;
+            margin-top: 20px;
+        }
+
+        /* Rating Legend */
+        .rating-legend {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 8px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            font-size: 9pt;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.nyo { background-color: #9ca3af; }
+        .legend-dot.emerging { background-color: #ef4444; }
+        .legend-dot.developing { background-color: #eab308; }
+        .legend-dot.proficient { background-color: #22c55e; }
+        .legend-dot.advanced { background-color: #3b82f6; }
+
+        /* Learning Area Table */
+        .learning-area {
+            margin-bottom: 15px;
+            page-break-inside: avoid;
+        }
+
+        .learning-area-title {
+            font-size: 11pt;
+            font-weight: 600;
+            color: #333;
+            padding: 6px 10px;
+            background-color: #e9ecef;
+            border-radius: 4px 4px 0 0;
+        }
+
+        .skills-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .skills-table th,
+        .skills-table td {
+            padding: 6px 10px;
+            text-align: left;
+            border: 1px solid #dee2e6;
+            font-size: 10pt;
+        }
+
+        .skills-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .skills-table td.skill-name {
+            width: 60%;
+        }
+
+        .skills-table td.rating {
+            width: 40%;
+            text-align: center;
+        }
+
+        .rating-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 9pt;
+            font-weight: 600;
+            color: white;
+        }
+
+        .rating-badge.nyo { background-color: #9ca3af; }
+        .rating-badge.emerging { background-color: #ef4444; }
+        .rating-badge.developing { background-color: #eab308; color: #333; }
+        .rating-badge.proficient { background-color: #22c55e; }
+        .rating-badge.advanced { background-color: #3b82f6; }
+        .rating-badge.not-assessed { background-color: #e5e7eb; color: #666; }
+
+        /* Attendance Box */
+        .attendance-box {
+            display: flex;
+            justify-content: space-around;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+
+        .attendance-item {
+            text-align: center;
+        }
+
+        .attendance-value {
+            font-size: 18pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+        }
+
+        .attendance-label {
+            font-size: 9pt;
+            color: #666;
+        }
+
+        /* Comments Section */
+        .comments-section {
+            margin-top: 15px;
+        }
+
+        .comment-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            min-height: 60px;
+        }
+
+        .comment-label {
+            font-size: 10pt;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .comment-text {
+            font-size: 10pt;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        /* Signatures */
+        .signatures {
+            margin-top: 25px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .signature-box {
+            width: 45%;
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            margin-top: 40px;
+            padding-top: 5px;
+        }
+
+        .signature-label {
+            font-size: 10pt;
+            color: #555;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #e9ecef;
+            text-align: center;
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .published-date {
+            font-size: 9pt;
+            color: #666;
+            text-align: right;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            {% if school.logo_url %}
+            <img src="{{ school.logo_url }}" alt="School Logo" class="school-logo">
+            {% endif %}
+            <div class="school-name">{{ school.name }}</div>
+            <div class="school-address">
+                {% if school.address %}{{ school.address }}{% endif %}
+                {% if school.phone %} | Tel: {{ school.phone }}{% endif %}
+                {% if school.email %} | {{ school.email }}{% endif %}
+            </div>
+            <div class="report-title">Preschool Progress Report</div>
+            <div class="term-info">{{ term.name }} - {{ academic_year.name }}</div>
+        </div>
+
+        <!-- Student Information -->
+        <div class="student-info">
+            <table>
+                <tr>
+                    <td class="label">Student Name:</td>
+                    <td class="value"><strong>{{ student.first_name }} {% if student.middle_name %}{{ student.middle_name }} {% endif %}{{ student.last_name }}</strong></td>
+                    <td class="label">Student ID:</td>
+                    <td class="value">{{ student.student_id }}</td>
+                    {% if student.photo_url %}
+                    <td rowspan="3" style="text-align: right; vertical-align: top;">
+                        <img src="{{ student.photo_url }}" alt="Student Photo" class="student-photo">
+                    </td>
+                    {% endif %}
+                </tr>
+                <tr>
+                    <td class="label">Class:</td>
+                    <td class="value">{{ class_name }}</td>
+                    <td class="label">Date of Birth:</td>
+                    <td class="value">{{ student.date_of_birth.strftime('%d/%m/%Y') if student.date_of_birth else '-' }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Gender:</td>
+                    <td class="value">{{ student.gender | title }}</td>
+                    <td class="label">Age:</td>
+                    <td class="value">{{ age }} years</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Attendance -->
+        <div class="section-title">Attendance Summary</div>
+        <div class="attendance-box">
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.days_present or 0 }}</div>
+                <div class="attendance-label">Days Present</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.days_absent or 0 }}</div>
+                <div class="attendance-label">Days Absent</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.total_school_days or 0 }}</div>
+                <div class="attendance-label">Total School Days</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ attendance_percentage }}%</div>
+                <div class="attendance-label">Attendance Rate</div>
+            </div>
+        </div>
+
+        <!-- Developmental Progress -->
+        <div class="section-title">Developmental Progress</div>
+
+        <!-- Rating Legend -->
+        <div class="rating-legend">
+            <div class="legend-item">
+                <span class="legend-dot nyo"></span>
+                <span>NYO - Not Yet Observed</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot emerging"></span>
+                <span>E - Emerging</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot developing"></span>
+                <span>D - Developing</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot proficient"></span>
+                <span>P - Proficient</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-dot advanced"></span>
+                <span>A - Advanced</span>
+            </div>
+        </div>
+
+        <!-- Learning Areas with Assessments -->
+        {% for area in learning_areas %}
+        <div class="learning-area">
+            <div class="learning-area-title">{{ area.name }}</div>
+            <table class="skills-table">
+                <thead>
+                    <tr>
+                        <th class="skill-name">Skill</th>
+                        <th class="rating">Rating</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for skill in area.skills %}
+                    <tr>
+                        <td class="skill-name">{{ skill.name }}</td>
+                        <td class="rating">
+                            {% set assessment = assessments.get(skill.id) %}
+                            {% if assessment and assessment.rating %}
+                                {% set rating_code = assessment.rating.code | lower %}
+                                <span class="rating-badge {{ rating_code }}">{{ assessment.rating.name }}</span>
+                            {% else %}
+                                <span class="rating-badge not-assessed">Not Assessed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+
+        <!-- Teacher Comments -->
+        <div class="section-title">Teacher's Comments</div>
+        <div class="comments-section">
+            {% if report.overall_progress %}
+            <div class="comment-box">
+                <div class="comment-label">Overall Progress</div>
+                <div class="comment-text">{{ report.overall_progress }}</div>
+            </div>
+            {% endif %}
+
+            {% if report.strengths %}
+            <div class="comment-box">
+                <div class="comment-label">Strengths</div>
+                <div class="comment-text">{{ report.strengths }}</div>
+            </div>
+            {% endif %}
+
+            {% if report.areas_for_growth %}
+            <div class="comment-box">
+                <div class="comment-label">Areas for Growth</div>
+                <div class="comment-text">{{ report.areas_for_growth }}</div>
+            </div>
+            {% endif %}
+
+            {% if report.teacher_recommendations %}
+            <div class="comment-box">
+                <div class="comment-label">Recommendations for Parents</div>
+                <div class="comment-text">{{ report.teacher_recommendations }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Remarks -->
+        <div class="section-title">Remarks</div>
+        <div class="comments-section">
+            <div class="comment-box">
+                <div class="comment-label">Class Teacher's Remark</div>
+                <div class="comment-text">{{ report.class_teacher_remark or '-' }}</div>
+            </div>
+
+            <div class="comment-box">
+                <div class="comment-label">Head Teacher's Remark</div>
+                <div class="comment-text">{{ report.head_teacher_remark or '-' }}</div>
+            </div>
+        </div>
+
+        <!-- Signatures -->
+        <div class="signatures">
+            <div class="signature-box">
+                <div class="signature-line">Class Teacher</div>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line">Head Teacher</div>
+            </div>
+        </div>
+
+        <!-- Published Date -->
+        <div class="published-date">
+            Published: {{ report.published_at.strftime('%d/%m/%Y') if report.published_at else '-' }}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            Generated by SIMS Plus | {{ school.name }} | {{ current_date }}
+        </div>
+    </div>
+</body>
+</html>

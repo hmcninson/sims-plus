@@ -76,6 +76,7 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
     uses_boarding: initialData.uses_boarding || false,
     uses_transport: initialData.uses_transport || false,
     student_id_prefix: initialData.student_id_prefix || "STU",
+    staff_id_prefix: initialData.staff_id_prefix || "STF",
   });
 
   const handleInputChange = (
@@ -190,6 +191,7 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
         uses_boarding: formData.uses_boarding,
         uses_transport: formData.uses_transport,
         student_id_prefix: formData.student_id_prefix || undefined,
+        staff_id_prefix: formData.staff_id_prefix || undefined,
       };
 
       const result = await updateSchoolProfile(updateData);
@@ -560,34 +562,59 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Hash className="h-5 w-5" />
-            Academic Settings
+            ID Settings
           </CardTitle>
           <CardDescription>
-            Configure academic-related settings for your school
+            Configure ID prefixes for students and staff
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="student_id_prefix">Student ID Prefix</Label>
-            <div className="relative">
-              <Hash className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="student_id_prefix"
-                name="student_id_prefix"
-                placeholder="STU"
-                className="pl-9 uppercase"
-                maxLength={10}
-                value={formData.student_id_prefix}
-                onChange={(e) => {
-                  // Only allow alphanumeric characters
-                  const value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-                  setFormData((prev) => ({ ...prev, student_id_prefix: value }));
-                }}
-              />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="student_id_prefix">Student ID Prefix</Label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="student_id_prefix"
+                  name="student_id_prefix"
+                  placeholder="STU"
+                  className="pl-9 uppercase"
+                  maxLength={10}
+                  value={formData.student_id_prefix}
+                  onChange={(e) => {
+                    // Only allow alphanumeric characters
+                    const value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                    setFormData((prev) => ({ ...prev, student_id_prefix: value }));
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                e.g., {formData.student_id_prefix || "STU"}-2026-001
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              This prefix will be used when auto-generating student IDs (e.g., {formData.student_id_prefix || "STU"}-2026-001)
-            </p>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff_id_prefix">Staff ID Prefix</Label>
+              <div className="relative">
+                <Hash className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="staff_id_prefix"
+                  name="staff_id_prefix"
+                  placeholder="STF"
+                  className="pl-9 uppercase"
+                  maxLength={10}
+                  value={formData.staff_id_prefix}
+                  onChange={(e) => {
+                    // Only allow alphanumeric characters
+                    const value = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                    setFormData((prev) => ({ ...prev, staff_id_prefix: value }));
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                e.g., {formData.staff_id_prefix || "STF"}-2026-001
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

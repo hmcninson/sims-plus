@@ -4,10 +4,15 @@ SIMS Plus - Staff Endpoints
 API endpoints for staff management.
 """
 
+import csv
+import io
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 
 from app.api.deps import (
     DatabaseSession,
@@ -15,6 +20,10 @@ from app.api.deps import (
     require_permissions,
 )
 from app.schemas.staff import (
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentResponse,
+    DepartmentListResponse,
     StaffCreate,
     StaffUpdate,
     StaffResponse,
@@ -25,14 +34,471 @@ from app.schemas.staff import (
     StaffAssignmentUpdate,
     StaffAssignmentResponse,
 )
-from app.services.staff import StaffService, StaffServiceError
+from app.services.staff import StaffService, DepartmentService, StaffServiceError
+from app.models.school import School
 
 router = APIRouter()
 
 
 # =========================
+# Department Endpoints
+# =========================
+# NOTE: These must be defined BEFORE /{staff_id} routes to avoid route conflicts
+
+
+@router.post(
+    "/departments",
+    response_model=DepartmentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create department",
+    dependencies=[Depends(require_permissions("staff.create"))],
+)
+async def create_department(
+    data: DepartmentCreate,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> DepartmentResponse:
+    """Create a new department."""
+    service = DepartmentService(db)
+
+    try:
+        department = await service.create_department(
+            tenant_id=tenant.tenant_id,
+            name=data.name,
+            code=data.code,
+            description=data.description,
+            head_id=data.head_id,
+        )
+
+        # Get staff count
+        staff_count = await service.get_department_staff_count(
+            tenant.tenant_id, department.id
+        )
+
+        return DepartmentResponse(
+            id=department.id,
+            name=department.name,
+            code=department.code,
+            description=department.description,
+            head_id=department.head_id,
+            created_at=department.created_at,
+            updated_at=department.updated_at,
+            staff_count=staff_count,
+        )
+    except StaffServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
+    "/departments",
+    response_model=list[DepartmentListResponse],
+    summary="List departments",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def list_departments(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    search: Optional[str] = Query(None, description="Search by name or code"),
+) -> list[DepartmentListResponse]:
+    """List all departments."""
+    service = DepartmentService(db)
+    departments = await service.list_departments(tenant.tenant_id, search)
+
+    result = []
+    for dept in departments:
+        staff_count = await service.get_department_staff_count(
+            tenant.tenant_id, dept.id
+        )
+        result.append(
+            DepartmentListResponse(
+                id=dept.id,
+                name=dept.name,
+                code=dept.code,
+                description=dept.description,
+                staff_count=staff_count,
+            )
+        )
+    return result
+
+
+@router.get(
+    "/departments/{department_id}",
+    response_model=DepartmentResponse,
+    summary="Get department",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def get_department(
+    department_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> DepartmentResponse:
+    """Get a department by ID."""
+    service = DepartmentService(db)
+    department = await service.get_department(tenant.tenant_id, department_id)
+
+    if not department:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Department not found",
+        )
+
+    staff_count = await service.get_department_staff_count(
+        tenant.tenant_id, department.id
+    )
+
+    return DepartmentResponse(
+        id=department.id,
+        name=department.name,
+        code=department.code,
+        description=department.description,
+        head_id=department.head_id,
+        created_at=department.created_at,
+        updated_at=department.updated_at,
+        staff_count=staff_count,
+    )
+
+
+@router.put(
+    "/departments/{department_id}",
+    response_model=DepartmentResponse,
+    summary="Update department",
+    dependencies=[Depends(require_permissions("staff.update"))],
+)
+async def update_department(
+    department_id: UUID,
+    data: DepartmentUpdate,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> DepartmentResponse:
+    """Update a department."""
+    service = DepartmentService(db)
+
+    try:
+        department = await service.update_department(
+            tenant_id=tenant.tenant_id,
+            department_id=department_id,
+            name=data.name,
+            code=data.code,
+            description=data.description,
+            head_id=data.head_id,
+        )
+
+        if not department:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Department not found",
+            )
+
+        staff_count = await service.get_department_staff_count(
+            tenant.tenant_id, department.id
+        )
+
+        return DepartmentResponse(
+            id=department.id,
+            name=department.name,
+            code=department.code,
+            description=department.description,
+            head_id=department.head_id,
+            created_at=department.created_at,
+            updated_at=department.updated_at,
+            staff_count=staff_count,
+        )
+    except StaffServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.delete(
+    "/departments/{department_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete department",
+    dependencies=[Depends(require_permissions("staff.delete"))],
+)
+async def delete_department(
+    department_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> None:
+    """Delete a department."""
+    service = DepartmentService(db)
+    deleted = await service.delete_department(tenant.tenant_id, department_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Department not found",
+        )
+
+
+# =========================
+# Staff Import/Export Endpoints
+# =========================
+
+
+EXPORT_COLUMNS = [
+    "staff_id", "first_name", "middle_name", "last_name", "email", "phone",
+    "phone_secondary", "gender", "date_of_birth", "address", "city", "region",
+    "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relationship",
+    "ghana_card_number", "ssnit_number", "teacher_license_number",
+    "staff_type", "status", "job_title", "department", "employment_date",
+    "termination_date", "bank_name", "bank_branch", "account_number", "notes"
+]
+
+
+@router.get(
+    "/export",
+    summary="Export staff to CSV",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def export_staff(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    staff_type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+) -> StreamingResponse:
+    """Export staff to CSV format."""
+    service = StaffService(db)
+    staff_list, _ = await service.list_staff(
+        tenant_id=tenant.tenant_id,
+        staff_type=staff_type,
+        status=status,
+        department=department,
+        page=1,
+        page_size=10000,  # Export all
+    )
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=EXPORT_COLUMNS)
+    writer.writeheader()
+
+    for staff in staff_list:
+        row = {
+            "staff_id": staff.staff_id,
+            "first_name": staff.first_name,
+            "middle_name": staff.middle_name or "",
+            "last_name": staff.last_name,
+            "email": staff.email,
+            "phone": staff.phone,
+            "phone_secondary": staff.phone_secondary or "",
+            "gender": staff.gender.value if hasattr(staff.gender, 'value') else staff.gender,
+            "date_of_birth": str(staff.date_of_birth) if staff.date_of_birth else "",
+            "address": staff.address or "",
+            "city": staff.city or "",
+            "region": staff.region or "",
+            "emergency_contact_name": staff.emergency_contact_name or "",
+            "emergency_contact_phone": staff.emergency_contact_phone or "",
+            "emergency_contact_relationship": staff.emergency_contact_relationship or "",
+            "ghana_card_number": staff.ghana_card_number or "",
+            "ssnit_number": staff.ssnit_number or "",
+            "teacher_license_number": staff.teacher_license_number or "",
+            "staff_type": staff.staff_type.value if hasattr(staff.staff_type, 'value') else staff.staff_type,
+            "status": staff.status.value if hasattr(staff.status, 'value') else staff.status,
+            "job_title": staff.job_title,
+            "department": staff.department or "",
+            "employment_date": str(staff.employment_date) if staff.employment_date else "",
+            "termination_date": str(staff.termination_date) if staff.termination_date else "",
+            "bank_name": staff.bank_name or "",
+            "bank_branch": staff.bank_branch or "",
+            "account_number": staff.account_number or "",
+            "notes": staff.notes or "",
+        }
+        writer.writerow(row)
+
+    output.seek(0)
+
+    # Generate filename with timestamp
+    filename = f"staff_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get(
+    "/export/template",
+    summary="Download staff import template",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def export_template() -> StreamingResponse:
+    """Download a CSV template for staff import."""
+    output = io.StringIO()
+
+    # Columns for import (excluding auto-generated staff_id)
+    # Note: staff_id is NOT in template - it's always auto-generated
+    # previous_staff_id can be used to preserve IDs from previous/external systems
+    import_columns = [
+        "previous_staff_id", "first_name", "middle_name", "last_name", "email", "phone",
+        "phone_secondary", "gender", "date_of_birth", "address", "city", "region",
+        "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relationship",
+        "ghana_card_number", "ssnit_number", "teacher_license_number",
+        "staff_type", "status", "job_title", "department", "employment_date",
+        "bank_name", "bank_branch", "account_number", "notes"
+    ]
+
+    writer = csv.DictWriter(output, fieldnames=import_columns)
+    writer.writeheader()
+
+    # Add example row
+    example = {
+        "previous_staff_id": "OLD-SYS-001",
+        "first_name": "John",
+        "middle_name": "Kwame",
+        "last_name": "Mensah",
+        "email": "john.mensah@example.com",
+        "phone": "+233201234567",
+        "phone_secondary": "",
+        "gender": "male",
+        "date_of_birth": "1990-01-15",
+        "address": "123 Main Street",
+        "city": "Accra",
+        "region": "Greater Accra",
+        "emergency_contact_name": "Mary Mensah",
+        "emergency_contact_phone": "+233209876543",
+        "emergency_contact_relationship": "Spouse",
+        "ghana_card_number": "GHA-123456789-0",
+        "ssnit_number": "A12345678",
+        "teacher_license_number": "GES-2020-1234",
+        "staff_type": "teaching",
+        "status": "active",
+        "job_title": "Mathematics Teacher",
+        "department": "Science",
+        "employment_date": "2020-09-01",
+        "bank_name": "GCB Bank",
+        "bank_branch": "Accra Main",
+        "account_number": "1234567890",
+        "notes": "Sample staff member",
+    }
+    writer.writerow(example)
+
+    output.seek(0)
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=staff_import_template.csv"}
+    )
+
+
+@router.post(
+    "/import",
+    summary="Import staff from CSV",
+    description="Import staff from a CSV file. Supports preview mode to validate data before importing.",
+    dependencies=[Depends(require_permissions("staff.create"))],
+)
+async def import_staff(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    file: UploadFile = File(..., description="CSV file with staff data"),
+    preview: bool = Form(default=False, description="If true, only preview without creating"),
+) -> dict:
+    """
+    Import staff from a CSV file.
+
+    The file should have a header row with column names. Columns are auto-mapped to staff fields.
+
+    Supported columns:
+    - previous_staff_id (optional) - ID from previous/external system
+    - first_name (required)
+    - middle_name
+    - last_name (required)
+    - email (required)
+    - phone (required)
+    - gender (required) - values: M/F, Male/Female
+    - job_title (required)
+    - employment_date (required) - formats: YYYY-MM-DD, DD/MM/YYYY
+    - staff_type - values: teaching, non_teaching, administrative
+    - status - values: active, on_leave, suspended, terminated, retired
+    - department
+    - date_of_birth
+    - And many more optional fields...
+
+    Note: Staff ID is always auto-generated by the system using the school's prefix.
+    Use previous_staff_id to preserve IDs from previous/external systems.
+
+    Set preview=true to validate data without importing.
+    Returns preview data in preview mode, or import results in import mode.
+    """
+    # Validate file type
+    if not file.filename or not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a CSV file"
+        )
+
+    # Read file content
+    content = await file.read()
+
+    # Validate file is not empty
+    if len(content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty"
+        )
+
+    # Import staff using service
+    service = StaffService(db)
+    try:
+        result = await service.import_staff_from_file(
+            tenant_id=tenant.tenant_id,
+            file_content=content,
+            file_type="csv",
+            preview_only=preview,
+        )
+        return result
+    except StaffServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+
+# =========================
 # Staff Endpoints
 # =========================
+
+
+@router.get(
+    "/generate-id",
+    response_model=dict,
+    summary="Generate staff ID",
+    dependencies=[Depends(require_permissions("staff.create"))],
+)
+async def generate_staff_id(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    school_id: Optional[UUID] = Query(default=None, description="School ID to get prefix from"),
+) -> dict:
+    """Generate a unique staff ID for the tenant using school's configured prefix."""
+    service = StaffService(db)
+
+    # Get the school's staff_id_prefix
+    prefix = "STF"  # Default fallback
+
+    if school_id:
+        # Fetch prefix from specific school
+        result = await db.execute(
+            select(School.staff_id_prefix).where(School.id == school_id)
+        )
+        school_prefix = result.scalar_one_or_none()
+        if school_prefix:
+            prefix = school_prefix
+    else:
+        # Fetch prefix from tenant's first school (single-school tenants)
+        result = await db.execute(
+            select(School.staff_id_prefix).where(School.tenant_id == tenant.tenant_id).limit(1)
+        )
+        school_prefix = result.scalar_one_or_none()
+        if school_prefix:
+            prefix = school_prefix
+
+    try:
+        staff_id = await service.generate_staff_id(tenant.tenant_id, prefix)
+        return {"staff_id": staff_id}
+    except StaffServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
 @router.post(
@@ -49,18 +515,31 @@ async def create_staff(
 ) -> StaffResponse:
     """Create a new staff member.
 
-    Staff ID is auto-generated by the system.
+    Staff ID can be provided or will be auto-generated by the system.
     """
     service = StaffService(db)
 
-    max_retries = 5
+    # Check if staff_id was provided or needs to be generated
+    provided_staff_id = data.staff_id
+    prefix = "STF"  # Default fallback
+
+    if not provided_staff_id:
+        # Get the school's staff_id_prefix for auto-generation
+        result = await db.execute(
+            select(School.staff_id_prefix).where(School.tenant_id == tenant.tenant_id).limit(1)
+        )
+        school_prefix = result.scalar_one_or_none()
+        if school_prefix:
+            prefix = school_prefix
+
+    max_retries = 5 if not provided_staff_id else 1  # Only retry for auto-generated IDs
 
     # Retry loop for handling concurrent ID generation conflicts
     last_error = None
     for attempt in range(max_retries):
         try:
-            # Always auto-generate staff ID
-            staff_id = await service.generate_staff_id(tenant.tenant_id, "STF")
+            # Use provided ID or generate a new one
+            staff_id = provided_staff_id or await service.generate_staff_id(tenant.tenant_id, prefix)
 
             staff = await service.create_staff(
                 tenant_id=tenant.tenant_id,
@@ -153,26 +632,6 @@ async def create_staff(
 
 
 @router.get(
-    "/generate-id",
-    response_model=dict,
-    summary="Generate staff ID",
-    dependencies=[Depends(require_permissions("staff.create"))],
-)
-async def generate_staff_id(
-    tenant: RequestTenant,
-    db: DatabaseSession,
-) -> dict:
-    """Generate a unique staff ID for the tenant."""
-    service = StaffService(db)
-
-    try:
-        staff_id = await service.generate_staff_id(tenant.tenant_id, "STF")
-        return {"staff_id": staff_id}
-    except StaffServiceError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
-
-
-@router.get(
     "",
     response_model=dict,
     summary="List staff",
@@ -232,6 +691,48 @@ async def list_staff(
         "has_next": page < total_pages,
         "has_previous": page > 1,
     }
+
+
+@router.get(
+    "/teaching",
+    response_model=list[StaffListResponse],
+    summary="List teaching staff",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def list_teaching_staff(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    school_id: Optional[UUID] = Query(None, description="Filter by school"),
+) -> list[StaffListResponse]:
+    """List all teaching staff (no pagination, for dropdowns)."""
+    service = StaffService(db)
+    staff_list, _ = await service.list_staff(
+        tenant_id=tenant.tenant_id,
+        staff_type="teaching",
+        status="active",
+        school_id=school_id,
+        page=1,
+        page_size=1000,  # Get all teaching staff
+    )
+
+    return [
+        StaffListResponse(
+            id=s.id,
+            staff_id=s.staff_id,
+            first_name=s.first_name,
+            middle_name=s.middle_name,
+            last_name=s.last_name,
+            gender=s.gender.value,
+            email=s.email,
+            phone=s.phone,
+            staff_type=s.staff_type.value,
+            status=s.status.value,
+            job_title=s.job_title,
+            department=s.department,
+            photo_url=s.photo_url,
+        )
+        for s in staff_list
+    ]
 
 
 @router.get(
@@ -514,6 +1015,37 @@ async def get_staff_assignments(
     """Get all class assignments for a staff member."""
     service = StaffService(db)
     assignments = await service.get_staff_assignments(tenant.tenant_id, staff_id)
+
+    return [
+        StaffAssignmentResponse(
+            id=a.id,
+            staff_id=a.staff_id,
+            section_id=a.section_id,
+            is_class_teacher=a.is_class_teacher,
+            subject_id=a.subject_id,
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+            section_name=a.section.name if a.section else None,
+            class_name=a.section.class_.name if a.section and a.section.class_ else None,
+        )
+        for a in assignments
+    ]
+
+
+@router.get(
+    "/by-section/{section_id}",
+    response_model=list[StaffAssignmentResponse],
+    summary="Get staff assigned to a section",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def get_staff_by_section(
+    section_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> list[StaffAssignmentResponse]:
+    """Get all staff assigned to a specific class section."""
+    service = StaffService(db)
+    assignments = await service.get_section_staff(tenant.tenant_id, section_id)
 
     return [
         StaffAssignmentResponse(

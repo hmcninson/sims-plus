@@ -9,11 +9,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
+from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     Date,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Enum as SQLEnum,
@@ -138,6 +140,14 @@ class Student(Base, TenantMixin, SoftDeleteMixin):
 
     # Notes
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Finance
+    credit_balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        comment="Available credit balance from credit notes",
+    )
 
     # Relationships
     school: Mapped[Optional["School"]] = relationship(

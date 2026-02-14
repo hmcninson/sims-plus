@@ -1,19 +1,34 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Pencil, Mail, Phone, MapPin, Briefcase, Calendar, CreditCard, BadgeCheck, User } from "lucide-react";
-import { notFound } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Pencil,
+  Mail,
+  Phone,
+  MapPin,
+  Briefcase,
+  CreditCard,
+  BadgeCheck,
+  User,
+  Camera,
+  Loader2,
+  Upload,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
-import { getStaffMember } from "@/actions/staff.action";
-import type { StaffStatus, StaffType } from "@/types";
-
-export const metadata = {
-  title: "Staff Profile",
-};
+import { getStaffMember, updateStaff } from "@/actions/staff.action";
+import { uploadStaffPhoto } from "@/actions/media.action";
+import type { StaffStatus, StaffType, StaffWithAssignments } from "@/types";
 
 const STATUS_CONFIG: Record<StaffStatus, { label: string; color: string }> = {
   active: { label: "Active", color: "bg-green-500" },
@@ -24,24 +39,35 @@ const STATUS_CONFIG: Record<StaffStatus, { label: string; color: string }> = {
 };
 
 const TYPE_CONFIG: Record<StaffType, { label: string; color: string }> = {
-  teaching: { label: "Teaching", color: "bg-purple-500" },
-  non_teaching: { label: "Non-Teaching", color: "bg-blue-500" },
+  teaching: { label: "Teaching", color: "bg-blue-500" },
+  non_teaching: { label: "Non-Teaching", color: "bg-slate-500" },
   administrative: { label: "Administrative", color: "bg-indigo-500" },
 };
 
-interface StaffProfilePageProps {
-  params: Promise<{ id: string }>;
-}
+export default function StaffProfilePage() {
+  const params = useParams();
+  const router = useRouter();
+  const staffId = params.id as string;
 
-export default async function StaffProfilePage({ params }: StaffProfilePageProps) {
-  const { id } = await params;
-  const result = await getStaffMember(id);
+  const [staff, setStaff] = useState<StaffWithAssignments | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (!result.success || !result.data) {
-    notFound();
-  }
+  useEffect(() => {
+    const fetchStaff = async () => {
+      const result = await getStaffMember(staffId);
+      if (result.success && result.data) {
+        setStaff(result.data);
+      } else {
+        toast.error("Staff member not found");
+        router.push("/staff");
+      }
+      setIsLoading(false);
+    };
 
-  const staff = result.data;
+    fetchStaff();
+  }, [staffId, router]);
 
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
@@ -54,6 +80,85 @@ export default async function StaffProfilePage({ params }: StaffProfilePageProps
       year: "numeric",
     });
   };
+
+  const handlePhotoClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Invalid file type. Please upload PNG, JPEG, or WEBP.");
+      return;
+    }
+
+    // Validate file size (2MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("File too large. Maximum size is 2MB.");
+      return;
+    }
+
+    setIsUploading(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadResult = await uploadStaffPhoto(staffId, formData);
+
+    if (uploadResult.success && uploadResult.data) {
+      // Update staff record with new photo URL
+      const updateResult = await updateStaff(staffId, {
+        photo_url: uploadResult.data.url,
+      });
+
+      if (updateResult.success) {
+        setStaff((prev) => prev ? { ...prev, photo_url: uploadResult.data!.url } : null);
+        toast.success("Photo updated successfully");
+      } else {
+        toast.error(updateResult.error || "Failed to update profile");
+      }
+    } else {
+      toast.error(uploadResult.error || "Failed to upload photo");
+    }
+
+    setIsUploading(false);
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-10 w-10" />
+            <div>
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-4 w-64 mt-2" />
+            </div>
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Skeleton className="h-96" />
+          <div className="lg:col-span-2 space-y-6">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-48" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -87,13 +192,47 @@ export default async function StaffProfilePage({ params }: StaffProfilePageProps
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center text-center">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src={staff.photo_url || undefined} />
-                  <AvatarFallback className="text-2xl">
-                    {getInitials(staff.first_name, staff.last_name)}
-                  </AvatarFallback>
-                </Avatar>
-                <h2 className="mt-4 text-xl font-semibold">
+                {/* Photo with upload overlay */}
+                <div className="relative group">
+                  <Avatar className="h-28 w-28">
+                    <AvatarImage src={staff.photo_url || undefined} />
+                    <AvatarFallback className="text-3xl bg-primary/10">
+                      {getInitials(staff.first_name, staff.last_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <button
+                    type="button"
+                    onClick={handlePhotoClick}
+                    disabled={isUploading}
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-6 w-6 text-white animate-spin" />
+                    ) : (
+                      <Camera className="h-6 w-6 text-white" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* Upload hint */}
+                <button
+                  type="button"
+                  onClick={handlePhotoClick}
+                  disabled={isUploading}
+                  className="mt-2 text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                >
+                  <Upload className="h-3 w-3" />
+                  {staff.photo_url ? "Change photo" : "Upload photo"}
+                </button>
+
+                <h2 className="mt-3 text-xl font-semibold">
                   {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
                 </h2>
                 <p className="text-muted-foreground">{staff.job_title}</p>

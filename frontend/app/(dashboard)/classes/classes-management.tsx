@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   UserCheck,
+  BookOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -92,8 +93,8 @@ const CATEGORY_CONFIG = {
 const getLevelCategory = (level: ClassLevel | string | undefined): keyof typeof CATEGORY_CONFIG | null => {
   if (!level) return null;
   const levelStr = String(level).toLowerCase();
-  // Check for preschool levels (nursery, kg, kindergarten)
-  if (levelStr.includes("nursery") || levelStr.includes("kg") || levelStr.includes("kindergarten") || levelStr === "preschool") {
+  // Check for preschool levels (creche, nursery, kg, kindergarten)
+  if (levelStr.includes("creche") || levelStr.includes("nursery") || levelStr.includes("kg") || levelStr.includes("kindergarten") || levelStr === "preschool") {
     return "preschool";
   }
   // Check for primary levels
@@ -726,6 +727,18 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                               <Link href={`/students?class_id=${classItem.id}`}>
                                 <Users className="mr-2 h-4 w-4" />
                                 View Students
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/classes/${classItem.id}/subjects`}>
+                                <BookOpen className="mr-2 h-4 w-4" />
+                                Manage Subjects
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/classes/${classItem.id}/teachers`}>
+                                <UserCheck className="mr-2 h-4 w-4" />
+                                Manage Teachers
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEditClassDialog(classItem)}>

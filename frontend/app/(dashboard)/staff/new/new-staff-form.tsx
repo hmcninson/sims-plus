@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,6 +15,7 @@ import {
   CreditCard,
   CheckCircle2,
   Check,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,7 +41,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
-import { createStaff } from "@/actions/staff.action";
+import { createStaff, getDepartments, generateStaffId, type Department } from "@/actions/staff.action";
 
 // Ghana's 16 regions
 const GHANA_REGIONS = [
@@ -69,6 +70,7 @@ const STAFF_TYPES = [
 ];
 
 const staffFormSchema = z.object({
+  staff_id: z.string().min(1, "Staff ID is required"),
   first_name: z.string().min(1, "First name is required"),
   middle_name: z.string().optional(),
   last_name: z.string().min(1, "Last name is required"),
@@ -103,7 +105,7 @@ const steps = [
     id: 1,
     title: "Personal",
     icon: User,
-    fields: ["first_name", "last_name", "date_of_birth", "gender"],
+    fields: ["staff_id", "first_name", "last_name", "date_of_birth", "gender"],
   },
   {
     id: 2,
@@ -135,10 +137,13 @@ export function NewStaffForm() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGeneratingId, setIsGeneratingId] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
 
   const form = useForm<StaffFormValues>({
     resolver: zodResolver(staffFormSchema),
     defaultValues: {
+      staff_id: "",
       first_name: "",
       middle_name: "",
       last_name: "",
@@ -166,6 +171,32 @@ export function NewStaffForm() {
       notes: "",
     },
   });
+
+  // Fetch staff ID and departments on mount
+  useEffect(() => {
+    const fetchStaffId = async () => {
+      setIsGeneratingId(true);
+      try {
+        const result = await generateStaffId();
+        if (result.success && result.data) {
+          form.setValue("staff_id", result.data);
+        }
+      } finally {
+        setIsGeneratingId(false);
+      }
+    };
+
+    const fetchDepartments = async () => {
+      const result = await getDepartments();
+      if (result.success && result.data) {
+        setDepartments(result.data);
+      }
+    };
+
+    fetchStaffId();
+    fetchDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validateCurrentStep = async (): Promise<boolean> => {
     const currentStepFields = steps[currentStep - 1].fields as (keyof StaffFormValues)[];
@@ -200,6 +231,7 @@ export function NewStaffForm() {
     const data = form.getValues();
     const cleanData = {
       ...data,
+      staff_id: data.staff_id,
       middle_name: data.middle_name || undefined,
       date_of_birth: data.date_of_birth || undefined,
       phone_secondary: data.phone_secondary || undefined,
@@ -323,6 +355,50 @@ export function NewStaffForm() {
                         Basic details about the staff member
                       </p>
                     </div>
+
+                    {/* Staff ID */}
+                    <FormField
+                      control={form.control}
+                      name="staff_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Staff ID *</FormLabel>
+                          <div className="flex gap-2">
+                            <FormControl>
+                              <Input
+                                {...field}
+                                readOnly
+                                className="font-mono bg-muted"
+                                placeholder={isGeneratingId ? "Generating..." : "Staff ID"}
+                              />
+                            </FormControl>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={async () => {
+                                setIsGeneratingId(true);
+                                try {
+                                  const result = await generateStaffId();
+                                  if (result.success && result.data) {
+                                    form.setValue("staff_id", result.data);
+                                  }
+                                } finally {
+                                  setIsGeneratingId(false);
+                                }
+                              }}
+                              disabled={isGeneratingId}
+                            >
+                              <RefreshCw className={`h-4 w-4 ${isGeneratingId ? "animate-spin" : ""}`} />
+                            </Button>
+                          </div>
+                          <FormDescription>
+                            Auto-generated unique staff identifier
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
                     {/* Names */}
                     <div className="grid gap-4 sm:grid-cols-3">
@@ -632,9 +708,20 @@ export function NewStaffForm() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Department</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g. Science Department" {...field} />
-                            </FormControl>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                              <FormControl>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select department" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {departments.map((dept) => (
+                                  <SelectItem key={dept.id} value={dept.name}>
+                                    {dept.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -694,9 +781,8 @@ export function NewStaffForm() {
                             <FormItem>
                               <FormLabel>Teacher License</FormLabel>
                               <FormControl>
-                                <Input {...field} />
+                                <Input placeholder="GES license number" {...field} />
                               </FormControl>
-                              <FormDescription>GES license number</FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -799,6 +885,10 @@ export function NewStaffForm() {
                         Personal Information
                       </h4>
                       <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Staff ID:</span>{" "}
+                          <span className="font-medium font-mono">{formValues.staff_id}</span>
+                        </div>
                         <div>
                           <span className="text-muted-foreground">Full Name:</span>{" "}
                           <span className="font-medium">

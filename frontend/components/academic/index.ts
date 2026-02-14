@@ -5,3 +5,5 @@ export { Subjects } from "./Subjects";
 export { GradingScales } from "./GradingScales";
 export { AssessmentWeights } from "./AssessmentWeights";
 export { OtherSettings } from "./OtherSettings";
+export { SchoolPeriods } from "./SchoolPeriods";
+export { SchoolHolidays } from "./SchoolHolidays";

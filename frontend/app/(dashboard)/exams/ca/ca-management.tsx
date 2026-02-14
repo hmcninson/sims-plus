@@ -87,6 +87,7 @@ import type {
   AssessmentType,
   CAWithDetails,
   CABulkEntry,
+  Subject,
 } from "@/types";
 
 const ASSESSMENT_TYPE_CONFIG: Record<AssessmentType, { label: string; color: string }> = {
@@ -98,12 +99,12 @@ const ASSESSMENT_TYPE_CONFIG: Record<AssessmentType, { label: string; color: str
 };
 
 // Preschool levels to exclude from CA
-const PRESCHOOL_LEVELS = ["preschool", "nursery_1", "nursery_2", "kg_1", "kg_2"];
+const PRESCHOOL_LEVELS = ["creche", "preschool", "nursery_1", "nursery_2", "kg_1", "kg_2"];
 
 interface CAManagementProps {
   academicYears: AcademicYear[];
   classes: Class[];
-  subjects: never[]; // Not used, subjects come from class assignments
+  subjects: Subject[]; // Not used directly, subjects come from class assignments
 }
 
 export function CAManagement({
@@ -449,7 +450,7 @@ export function CAManagement({
     }
 
     // Validate scores don't exceed max
-    const invalidEntries = entries.filter((e) => e.score < 0 || e.score > maxScore);
+    const invalidEntries = entries.filter((e) => e.score !== undefined && (e.score < 0 || e.score > maxScore));
     if (invalidEntries.length > 0) {
       const invalidStudentNames = invalidEntries.map((e) => {
         const student = students.find((s) => s.id === e.student_id);
@@ -801,7 +802,7 @@ export function CAManagement({
                                 firstCA.assessment_type}
                             </Badge>
                           </TableCell>
-                          <TableCell>{format(new Date(firstCA.assessment_date), "MMM d, yyyy")}</TableCell>
+                          <TableCell suppressHydrationWarning>{format(new Date(firstCA.assessment_date), "MMM d, yyyy")}</TableCell>
                           <TableCell>{firstCA.max_score}</TableCell>
                           <TableCell>{assessments.length} students</TableCell>
                           <TableCell>

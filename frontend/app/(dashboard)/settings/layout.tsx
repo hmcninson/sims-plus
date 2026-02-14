@@ -14,6 +14,7 @@ import {
   CreditCard,
   Mail,
   Database,
+  Baby,
 } from "lucide-react";
 
 const settingsNavItems = [
@@ -60,6 +61,12 @@ const settingsNavItems = [
         href: "/settings/academic",
         icon: GraduationCap,
         description: "Years, terms, grading",
+      },
+      {
+        title: "Preschool",
+        href: "/settings/preschool",
+        icon: Baby,
+        description: "Configuration, learning areas",
       },
       {
         title: "Users & Roles",

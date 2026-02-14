@@ -19,6 +19,12 @@ import {
   School,
   LogOut,
   ChevronsUpDown,
+  Baby,
+  Star,
+  BookOpen,
+  CalendarDays,
+  FileHeart,
+  Calendar,
 } from "lucide-react";
 
 import {
@@ -94,6 +100,11 @@ const navigationGroups: NavGroup[] = [
         url: "/dashboard",
         icon: LayoutDashboard,
       },
+      {
+        title: "Calendar",
+        url: "/calendar",
+        icon: Calendar,
+      },
     ],
   },
   {
@@ -147,10 +158,26 @@ const navigationGroups: NavGroup[] = [
         url: "/exams",
         icon: FileText,
         subItems: [
-          { title: "Exams", url: "/exams" },
-          { title: "Score Entry", url: "/exams/scores" },
+          { title: "All Exams", url: "/exams" },
+          { title: "Continuous Assessment", url: "/exams/ca" },
           { title: "Report Cards", url: "/exams/report-cards" },
           { title: "Grading", url: "/exams/grading" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Preschool",
+    items: [
+      {
+        title: "Preschool",
+        url: "/preschool",
+        icon: Baby,
+        subItems: [
+          { title: "Skill Assessment", url: "/preschool/assessment" },
+          { title: "Observations", url: "/preschool/observations" },
+          { title: "Daily Logs", url: "/preschool/daily-logs" },
+          { title: "Reports", url: "/preschool/reports" },
         ],
       },
     ],
@@ -164,9 +191,12 @@ const navigationGroups: NavGroup[] = [
         icon: Wallet,
         subItems: [
           { title: "Overview", url: "/finance" },
-          { title: "Fee Structure", url: "/finance/fees" },
+          { title: "Fee Types", url: "/finance/fee-types" },
+          { title: "Fee Structures", url: "/finance/fee-structures" },
           { title: "Invoices", url: "/finance/invoices" },
           { title: "Payments", url: "/finance/payments" },
+          { title: "Scholarships", url: "/finance/scholarships" },
+          { title: "Credit Notes", url: "/finance/credit-notes" },
           { title: "Reports", url: "/finance/reports" },
         ],
       },

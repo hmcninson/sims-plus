@@ -21,12 +21,65 @@ class BaseSchema(BaseModel):
 
 
 # =========================
+# Department Schemas
+# =========================
+
+
+class DepartmentCreate(BaseSchema):
+    """Create department request."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    code: Optional[str] = Field(None, max_length=20)
+    description: Optional[str] = None
+    head_id: Optional[UUID] = None
+
+
+class DepartmentUpdate(BaseSchema):
+    """Update department request."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    code: Optional[str] = Field(None, max_length=20)
+    description: Optional[str] = None
+    head_id: Optional[UUID] = None
+
+
+class DepartmentResponse(BaseSchema):
+    """Department response."""
+
+    id: UUID
+    name: str
+    code: Optional[str] = None
+    description: Optional[str] = None
+    head_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: datetime
+
+    # Extended fields
+    head_name: Optional[str] = None
+    staff_count: int = 0
+
+
+class DepartmentListResponse(BaseSchema):
+    """Department list item response."""
+
+    id: UUID
+    name: str
+    code: Optional[str] = None
+    description: Optional[str] = None
+    head_name: Optional[str] = None
+    staff_count: int = 0
+
+
+# =========================
 # Staff Schemas
 # =========================
 
 
 class StaffCreate(BaseSchema):
     """Create staff request."""
+
+    # Staff ID - optional, will be auto-generated if not provided
+    staff_id: Optional[str] = Field(None, max_length=50)
 
     # Required fields
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -53,6 +106,7 @@ class StaffCreate(BaseSchema):
     staff_type: str = Field(default="teaching", pattern="^(teaching|non_teaching|administrative)$")
     status: str = Field(default="active", pattern="^(active|on_leave|suspended|terminated|retired)$")
     department: Optional[str] = Field(None, max_length=100)
+    department_id: Optional[UUID] = None
     termination_date: Optional[date] = None
     qualifications: Optional[list] = None
     bank_name: Optional[str] = Field(None, max_length=100)
@@ -88,6 +142,7 @@ class StaffUpdate(BaseSchema):
     status: Optional[str] = Field(None, pattern="^(active|on_leave|suspended|terminated|retired)$")
     job_title: Optional[str] = Field(None, min_length=1, max_length=100)
     department: Optional[str] = Field(None, max_length=100)
+    department_id: Optional[UUID] = None
     employment_date: Optional[date] = None
     termination_date: Optional[date] = None
     qualifications: Optional[list] = None
@@ -126,6 +181,7 @@ class StaffResponse(BaseSchema):
     status: str
     job_title: str
     department: Optional[str] = None
+    department_id: Optional[UUID] = None
     employment_date: date
     termination_date: Optional[date] = None
     qualifications: Optional[list] = None
@@ -141,6 +197,7 @@ class StaffResponse(BaseSchema):
 
     # Extended fields from relationships
     school_name: Optional[str] = None
+    department_name: Optional[str] = None
 
 
 class StaffListResponse(BaseSchema):
@@ -158,6 +215,8 @@ class StaffListResponse(BaseSchema):
     status: str
     job_title: str
     department: Optional[str] = None
+    department_id: Optional[UUID] = None
+    department_name: Optional[str] = None
     photo_url: Optional[str] = None
 
 

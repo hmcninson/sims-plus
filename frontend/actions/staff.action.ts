@@ -21,9 +21,11 @@ import type {
 async function getAuthContext() {
   const cookieStore = await cookies();
   const token = await getValidAccessToken();
+  const subdomain = cookieStore.get("x-subdomain")?.value;
+  console.log("[Staff.action] getAuthContext:", { hasToken: !!token, tokenLength: token?.length, subdomain });
   return {
     token: token || undefined,
-    subdomain: cookieStore.get("x-subdomain")?.value,
+    subdomain,
   };
 }
 
@@ -89,6 +91,25 @@ export async function getStaffMember(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch staff member",
+    };
+  }
+}
+
+export async function generateStaffId(): Promise<ActionResult<string>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    console.log("[Staff.action] generateStaffId called:", { hasToken: !!token, subdomain });
+    const response = await apiGet<{ staff_id: string }>("/staff/generate-id", {
+      token,
+      subdomain,
+    });
+    console.log("[Staff.action] generateStaffId response:", response);
+    return { success: true, data: response.staff_id };
+  } catch (error) {
+    console.error("[Staff.action] generateStaffId error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to generate staff ID",
     };
   }
 }
@@ -211,6 +232,24 @@ export async function getStaffAssignments(
   }
 }
 
+export async function getSectionStaff(
+  sectionId: string
+): Promise<ActionResult<StaffAssignment[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<StaffAssignment[]>(
+      `/staff/by-section/${sectionId}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch section staff",
+    };
+  }
+}
+
 export async function assignStaffToSection(
   staffId: string,
   data: StaffAssignmentCreate
@@ -267,6 +306,335 @@ export async function removeStaffFromSection(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to remove staff from section",
+    };
+  }
+}
+
+// =========================
+// Department Actions
+// =========================
+
+export interface Department {
+  id: string;
+  name: string;
+  code?: string;
+  description?: string;
+  head_id?: string;
+  head_name?: string;
+  staff_count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DepartmentCreate {
+  name: string;
+  code?: string;
+  description?: string;
+  head_id?: string;
+}
+
+export interface DepartmentUpdate {
+  name?: string;
+  code?: string;
+  description?: string;
+  head_id?: string;
+}
+
+export async function getDepartments(
+  search?: string
+): Promise<ActionResult<Department[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    console.log("[Departments] Fetching departments:", { subdomain, hasToken: !!token });
+    const params = search ? `?search=${encodeURIComponent(search)}` : "";
+    const response = await apiGet<Department[]>(`/staff/departments${params}`, {
+      token,
+      subdomain,
+    });
+    console.log("[Departments] Fetch response:", response);
+    return { success: true, data: response };
+  } catch (error) {
+    console.error("[Departments] Fetch error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch departments",
+    };
+  }
+}
+
+export async function getDepartment(
+  id: string
+): Promise<ActionResult<Department>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Department>(`/staff/departments/${id}`, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch department",
+    };
+  }
+}
+
+export async function createDepartment(
+  data: DepartmentCreate
+): Promise<ActionResult<Department>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<Department>("/staff/departments", data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create department",
+    };
+  }
+}
+
+export async function updateDepartment(
+  id: string,
+  data: DepartmentUpdate
+): Promise<ActionResult<Department>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPut<Department>(`/staff/departments/${id}`, data, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update department",
+    };
+  }
+}
+
+export async function deleteDepartment(
+  id: string
+): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/staff/departments/${id}`, {
+      token,
+      subdomain,
+    });
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete department",
+    };
+  }
+}
+
+// =========================
+// Import/Export Actions
+// =========================
+
+export interface StaffImportPreviewRow {
+  row: number;
+  parsed: {
+    first_name: string;
+    middle_name: string | null;
+    last_name: string;
+    email: string;
+    phone: string;
+    gender: string;
+    date_of_birth: string | null;
+    job_title: string;
+    staff_type: string;
+    status: string;
+    department: string | null;
+    employment_date: string;
+  };
+  valid: boolean;
+  errors: string[];
+}
+
+export interface StaffImportPreviewResult {
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  preview: StaffImportPreviewRow[];
+  errors: Array<{ row: number; error: string }>;
+}
+
+export interface StaffImportResult {
+  total: number;
+  success: number;
+  failed: number;
+  errors: Array<{ row: number; error: string }>;
+}
+
+/**
+ * Export staff to CSV
+ */
+export async function exportStaff(filters?: {
+  status?: string;
+  staff_type?: string;
+  department?: string;
+}): Promise<ActionResult<Blob>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const params = new URLSearchParams();
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.staff_type) params.append("staff_type", filters.staff_type);
+    if (filters?.department) params.append("department", filters.department);
+
+    const url = `${process.env.API_URL || "http://localhost:8000/api/v1"}/staff/export${params.toString() ? `?${params.toString()}` : ""}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Subdomain": subdomain,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Export failed");
+    }
+
+    const blob = await response.blob();
+    return { success: true, data: blob };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to export staff",
+    };
+  }
+}
+
+/**
+ * Download staff import template
+ */
+export async function downloadImportTemplate(): Promise<ActionResult<Blob>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    const url = `${process.env.API_URL || "http://localhost:8000/api/v1"}/staff/export/template`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Subdomain": subdomain,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Download failed");
+    }
+
+    const blob = await response.blob();
+    return { success: true, data: blob };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to download template",
+    };
+  }
+}
+
+/**
+ * Preview staff import from CSV (validates without saving)
+ */
+export async function previewStaffImport(
+  formData: FormData
+): Promise<ActionResult<StaffImportPreviewResult>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    // Add preview flag
+    formData.append("preview", "true");
+
+    const url = `${process.env.API_URL || "http://localhost:8000/api/v1"}/staff/import`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Subdomain": subdomain,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Preview failed");
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to preview import",
+    };
+  }
+}
+
+/**
+ * Import staff from CSV
+ */
+export async function importStaff(
+  formData: FormData
+): Promise<ActionResult<StaffImportResult>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    if (!token || !subdomain) {
+      return { success: false, error: "Not authenticated" };
+    }
+
+    // Add preview flag (false for actual import)
+    formData.append("preview", "false");
+
+    const url = `${process.env.API_URL || "http://localhost:8000/api/v1"}/staff/import`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Subdomain": subdomain,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Import failed");
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to import staff",
     };
   }
 }

@@ -30,6 +30,36 @@ if TYPE_CHECKING:
     from app.models.academic import ClassSection
 
 
+class Department(Base, TenantMixin, SoftDeleteMixin):
+    """
+    Department model.
+
+    Represents organizational departments within a school.
+    """
+    __tablename__ = "departments"
+    __table_args__ = (
+        UniqueConstraint("name", "tenant_id", "deleted_at", name="uq_department_name_tenant"),
+        {"extend_existing": True},
+    )
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    head_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("staff.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+        comment="Department head (staff member)",
+    )
+
+    # Relationships
+    staff_members: Mapped[list["Staff"]] = relationship(
+        "Staff",
+        back_populates="department_rel",
+        foreign_keys="Staff.department_id",
+        lazy="selectin",
+    )
+
+
 class StaffType(str, Enum):
     """Staff employment type."""
     TEACHING = "teaching"
@@ -66,6 +96,12 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
         index=True,
         comment="System-generated unique staff ID (e.g., STF-2026-001)",
     )
+    previous_staff_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+        comment="ID from previous/external system (for reference during migration)",
+    )
 
     # Basic Information
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -73,7 +109,7 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     date_of_birth: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     gender: Mapped[Gender] = mapped_column(
-        SQLEnum(Gender, name="gender", create_constraint=False),
+        SQLEnum(Gender, name="gender", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
 
@@ -111,7 +147,12 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
         default=StaffStatus.ACTIVE,
     )
     job_title: Mapped[str] = mapped_column(String(100), nullable=False)
-    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Legacy department name field")
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Reference to department",
+    )
     employment_date: Mapped[date] = mapped_column(Date, nullable=False)
     termination_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
@@ -151,6 +192,12 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
     user: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="staff_profile",
+        lazy="selectin",
+    )
+    department_rel: Mapped[Optional["Department"]] = relationship(
+        "Department",
+        back_populates="staff_members",
+        foreign_keys=[department_id],
         lazy="selectin",
     )
     class_assignments: Mapped[list["StaffClassAssignment"]] = relationship(

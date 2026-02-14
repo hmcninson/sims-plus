@@ -26,12 +26,10 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Form state
+  // Form state - only report card weights
   const [formData, setFormData] = useState({
-    class_work_weight: 20,
-    homework_weight: 10,
-    midterm_weight: 20,
-    end_term_weight: 50,
+    ca_total_weight: 50,
+    exam_total_weight: 50,
   });
 
   useEffect(() => {
@@ -39,10 +37,8 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
       loadWeights();
     } else {
       setFormData({
-        class_work_weight: Number(initialData.class_work_weight),
-        homework_weight: Number(initialData.homework_weight),
-        midterm_weight: Number(initialData.midterm_weight),
-        end_term_weight: Number(initialData.end_term_weight),
+        ca_total_weight: Number(initialData.ca_total_weight ?? 50),
+        exam_total_weight: Number(initialData.exam_total_weight ?? 50),
       });
     }
   }, [initialData]);
@@ -53,10 +49,8 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
     if (result.success && result.data) {
       setWeights(result.data);
       setFormData({
-        class_work_weight: Number(result.data.class_work_weight),
-        homework_weight: Number(result.data.homework_weight),
-        midterm_weight: Number(result.data.midterm_weight),
-        end_term_weight: Number(result.data.end_term_weight),
+        ca_total_weight: Number(result.data.ca_total_weight ?? 50),
+        exam_total_weight: Number(result.data.exam_total_weight ?? 50),
       });
     }
     setLoading(false);
@@ -67,14 +61,10 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
     setError(null);
     setSuccess(false);
 
-    const total =
-      formData.class_work_weight +
-      formData.homework_weight +
-      formData.midterm_weight +
-      formData.end_term_weight;
-
-    if (total !== 100) {
-      setError(`Weights must sum to 100%. Current total: ${total}%`);
+    // Validate report card weights
+    const reportCardTotal = formData.ca_total_weight + formData.exam_total_weight;
+    if (reportCardTotal !== 100) {
+      setError(`Report card weights (CA + Exams) must sum to 100%. Current total: ${reportCardTotal}%`);
       return;
     }
 
@@ -82,10 +72,14 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
 
     try {
       const data: AssessmentWeightCreate = {
-        class_work_weight: formData.class_work_weight,
-        homework_weight: formData.homework_weight,
-        midterm_weight: formData.midterm_weight,
-        end_term_weight: formData.end_term_weight,
+        // Keep defaults for individual weights (not used but required by backend)
+        class_work_weight: 20,
+        homework_weight: 10,
+        midterm_weight: 20,
+        end_term_weight: 50,
+        // Actual weights used for report cards
+        ca_total_weight: formData.ca_total_weight,
+        exam_total_weight: formData.exam_total_weight,
       };
 
       const result = await setAssessmentWeights(data);
@@ -108,11 +102,7 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
     setSuccess(false);
   };
 
-  const total =
-    formData.class_work_weight +
-    formData.homework_weight +
-    formData.midterm_weight +
-    formData.end_term_weight;
+  const reportCardTotal = formData.ca_total_weight + formData.exam_total_weight;
 
   if (loading) {
     return (
@@ -127,9 +117,9 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Assessment Weights</CardTitle>
+        <CardTitle>Report Card Weights</CardTitle>
         <CardDescription>
-          Configure how different assessments contribute to final grades.
+          Configure how Class Score (CA) and Exams Score are weighted on report cards.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -142,73 +132,53 @@ export function AssessmentWeights({ initialData }: AssessmentWeightsProps) {
             )}
             {success && (
               <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                Assessment weights saved successfully!
+                Report card weights saved successfully!
               </div>
             )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="class_work_weight">Class Work (%)</Label>
+                <Label htmlFor="ca_total_weight">Class Score / CA (%)</Label>
                 <Input
-                  id="class_work_weight"
+                  id="ca_total_weight"
                   type="number"
                   min="0"
                   max="100"
-                  value={formData.class_work_weight}
+                  value={formData.ca_total_weight}
                   onChange={(e) =>
-                    handleInputChange("class_work_weight", e.target.value)
+                    handleInputChange("ca_total_weight", e.target.value)
                   }
                 />
+                <p className="text-xs text-muted-foreground">
+                  All continuous assessments (classwork, homework, quizzes, midterm, etc.)
+                </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="homework_weight">Homework (%)</Label>
+                <Label htmlFor="exam_total_weight">Exams Score (%)</Label>
                 <Input
-                  id="homework_weight"
+                  id="exam_total_weight"
                   type="number"
                   min="0"
                   max="100"
-                  value={formData.homework_weight}
+                  value={formData.exam_total_weight}
                   onChange={(e) =>
-                    handleInputChange("homework_weight", e.target.value)
+                    handleInputChange("exam_total_weight", e.target.value)
                   }
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="midterm_weight">Mid-Term Exam (%)</Label>
-                <Input
-                  id="midterm_weight"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={formData.midterm_weight}
-                  onChange={(e) =>
-                    handleInputChange("midterm_weight", e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="end_term_weight">End of Term Exam (%)</Label>
-                <Input
-                  id="end_term_weight"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={formData.end_term_weight}
-                  onChange={(e) =>
-                    handleInputChange("end_term_weight", e.target.value)
-                  }
-                />
+                <p className="text-xs text-muted-foreground">
+                  End of term examination only
+                </p>
               </div>
             </div>
             <p
               className={`text-sm ${
-                total === 100 ? "text-muted-foreground" : "text-destructive"
+                reportCardTotal === 100 ? "text-muted-foreground" : "text-destructive"
               }`}
             >
-              Total must equal 100%. Current total:{" "}
-              <span className="font-medium">{total}%</span>
+              Weights must equal 100%. Current total:{" "}
+              <span className="font-medium">{reportCardTotal}%</span>
             </p>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={saving || total !== 100}>
+            <div className="flex justify-end pt-4">
+              <Button type="submit" disabled={saving || reportCardTotal !== 100}>
                 {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Weights
               </Button>

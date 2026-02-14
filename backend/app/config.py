@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_DEFAULT_REQUESTS: int = 500  # Increased for development
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # seconds
-    RATE_LIMIT_AUTH_REQUESTS: int = 5
+    RATE_LIMIT_AUTH_REQUESTS: int = 30  # Increased for development
     RATE_LIMIT_AUTH_WINDOW: int = 60  # seconds
     RATE_LIMIT_SUBDOMAIN_CHECK_REQUESTS: int = 20
     RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW: int = 60  # seconds

@@ -2,6 +2,30 @@
  * SIMS Plus - School Type Definitions
  */
 
+export interface PreschoolSettings {
+  enabled: boolean;
+  daily_logs_enabled: boolean;
+  meal_tracking: boolean;
+  nap_tracking: boolean;
+  diaper_tracking: boolean;
+  potty_training_tracking: boolean;
+  observation_photos_enabled: boolean;
+  parent_daily_updates: boolean;
+  default_rating_scale_id?: string;
+}
+
+export interface PreschoolSettingsUpdate {
+  enabled?: boolean;
+  daily_logs_enabled?: boolean;
+  meal_tracking?: boolean;
+  nap_tracking?: boolean;
+  diaper_tracking?: boolean;
+  potty_training_tracking?: boolean;
+  observation_photos_enabled?: boolean;
+  parent_daily_updates?: boolean;
+  default_rating_scale_id?: string;
+}
+
 export interface SchoolProfile {
   id: string;
   tenant_id: string;
@@ -32,8 +56,12 @@ export interface SchoolProfile {
   uses_boarding: boolean;
   uses_transport: boolean;
 
-  // Student ID Settings
+  // ID Prefix Settings
   student_id_prefix: string;
+  staff_id_prefix: string;
+
+  // Preschool Settings
+  preschool_settings?: PreschoolSettings;
 
   // Status
   is_active: boolean;
@@ -66,8 +94,9 @@ export interface SchoolProfileUpdate {
   uses_boarding?: boolean;
   uses_transport?: boolean;
 
-  // Student ID Settings
+  // ID Prefix Settings
   student_id_prefix?: string;
+  staff_id_prefix?: string;
 }
 
 export interface SchoolBrandingUpdate {

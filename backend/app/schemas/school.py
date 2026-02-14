@@ -6,10 +6,61 @@ Pydantic schemas for school profile management.
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+# =========================
+# Preschool Settings
+# =========================
+
+class PreschoolSettings(BaseModel):
+    """Preschool configuration settings."""
+
+    enabled: bool = False
+    daily_logs_enabled: bool = True
+    meal_tracking: bool = True
+    nap_tracking: bool = True
+    diaper_tracking: bool = True
+    potty_training_tracking: bool = True
+    observation_photos_enabled: bool = True
+    parent_daily_updates: bool = True
+    default_rating_scale_id: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("default_rating_scale_id", mode="before")
+    @classmethod
+    def parse_uuid(cls, v: Any) -> Optional[UUID]:
+        """Convert string UUID to UUID object."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, UUID):
+            return v
+        if isinstance(v, str):
+            try:
+                return UUID(v)
+            except ValueError:
+                return None
+        return None
+
+
+class PreschoolSettingsUpdate(BaseModel):
+    """Update preschool settings request."""
+
+    enabled: Optional[bool] = None
+    daily_logs_enabled: Optional[bool] = None
+    meal_tracking: Optional[bool] = None
+    nap_tracking: Optional[bool] = None
+    diaper_tracking: Optional[bool] = None
+    potty_training_tracking: Optional[bool] = None
+    observation_photos_enabled: Optional[bool] = None
+    parent_daily_updates: Optional[bool] = None
+    default_rating_scale_id: Optional[UUID] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BaseSchema(BaseModel):
@@ -57,8 +108,12 @@ class SchoolProfileResponse(BaseSchema):
     uses_boarding: bool = False
     uses_transport: bool = False
 
-    # Student ID Settings
+    # ID Prefix Settings
     student_id_prefix: str = "STU"
+    staff_id_prefix: str = "STF"
+
+    # Preschool Settings
+    preschool_settings: Optional[PreschoolSettings] = None
 
     # Status
     is_active: bool = True
@@ -93,10 +148,14 @@ class SchoolProfileUpdate(BaseSchema):
     uses_boarding: Optional[bool] = None
     uses_transport: Optional[bool] = None
 
-    # Student ID Settings
+    # ID Prefix Settings
     student_id_prefix: Optional[str] = Field(None, min_length=1, max_length=10)
+    staff_id_prefix: Optional[str] = Field(None, min_length=1, max_length=10)
 
-    @field_validator("student_id_prefix")
+    # Preschool Settings
+    preschool_settings: Optional[PreschoolSettingsUpdate] = None
+
+    @field_validator("student_id_prefix", "staff_id_prefix")
     @classmethod
     def validate_prefix(cls, v: Optional[str]) -> Optional[str]:
         if v is None:

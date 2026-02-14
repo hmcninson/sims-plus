@@ -227,11 +227,26 @@ class SubjectCreate(BaseSchema):
     code: str = Field(..., min_length=1, max_length=20, description="Subject code, e.g., MATH")
     description: Optional[str] = None
     category: str = Field(default="core", pattern="^(core|elective|vocational|extra)$")
+    applicable_levels: Optional[list[str]] = Field(
+        None,
+        description="List of class levels this subject applies to (null = all levels). Valid values: preschool, primary, jhs, shs",
+    )
 
     @field_validator("code")
     @classmethod
     def uppercase_code(cls, v: str) -> str:
         return v.upper()
+
+    @field_validator("applicable_levels")
+    @classmethod
+    def validate_levels(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return None
+        valid_levels = {"preschool", "primary", "jhs", "shs"}
+        for level in v:
+            if level not in valid_levels:
+                raise ValueError(f"Invalid level: {level}. Must be one of: {valid_levels}")
+        return v
 
 
 class SubjectUpdate(BaseSchema):
@@ -241,12 +256,27 @@ class SubjectUpdate(BaseSchema):
     code: Optional[str] = Field(None, min_length=1, max_length=20)
     description: Optional[str] = None
     category: Optional[str] = Field(None, pattern="^(core|elective|vocational|extra)$")
+    applicable_levels: Optional[list[str]] = Field(
+        None,
+        description="List of class levels this subject applies to (null = all levels)",
+    )
     is_active: Optional[bool] = None
 
     @field_validator("code")
     @classmethod
     def uppercase_code(cls, v: Optional[str]) -> Optional[str]:
         return v.upper() if v else None
+
+    @field_validator("applicable_levels")
+    @classmethod
+    def validate_levels(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return None
+        valid_levels = {"preschool", "primary", "jhs", "shs"}
+        for level in v:
+            if level not in valid_levels:
+                raise ValueError(f"Invalid level: {level}. Must be one of: {valid_levels}")
+        return v
 
 
 class SubjectResponse(BaseSchema):
@@ -257,6 +287,7 @@ class SubjectResponse(BaseSchema):
     code: str
     description: Optional[str] = None
     category: str
+    applicable_levels: Optional[list[str]] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -387,10 +418,14 @@ class AssessmentWeightCreate(BaseSchema):
     """Create assessment weight."""
 
     academic_year_id: Optional[UUID] = None
+    # Individual component weights (for detailed breakdown)
     class_work_weight: Decimal = Field(default=Decimal("20"), ge=0, le=100)
     homework_weight: Decimal = Field(default=Decimal("10"), ge=0, le=100)
     midterm_weight: Decimal = Field(default=Decimal("20"), ge=0, le=100)
     end_term_weight: Decimal = Field(default=Decimal("50"), ge=0, le=100)
+    # Report card weights (CA vs Exams split for Ghana's system)
+    ca_total_weight: Decimal = Field(default=Decimal("50"), ge=0, le=100, description="Total weight for all CA components on report card")
+    exam_total_weight: Decimal = Field(default=Decimal("50"), ge=0, le=100, description="Total weight for End of Term Exam on report card")
 
     @field_validator("end_term_weight")
     @classmethod
@@ -400,7 +435,16 @@ class AssessmentWeightCreate(BaseSchema):
             if field in info.data:
                 total += info.data[field]
         if total != Decimal("100"):
-            raise ValueError(f"Weights must sum to 100, got {total}")
+            raise ValueError(f"Individual weights must sum to 100, got {total}")
+        return v
+
+    @field_validator("exam_total_weight")
+    @classmethod
+    def report_card_weights_sum_to_100(cls, v: Decimal, info) -> Decimal:
+        ca_weight = info.data.get("ca_total_weight", Decimal("50"))
+        total = v + ca_weight
+        if total != Decimal("100"):
+            raise ValueError(f"Report card weights (CA + Exam) must sum to 100, got {total}")
         return v
 
 
@@ -411,6 +455,8 @@ class AssessmentWeightUpdate(BaseSchema):
     homework_weight: Optional[Decimal] = Field(None, ge=0, le=100)
     midterm_weight: Optional[Decimal] = Field(None, ge=0, le=100)
     end_term_weight: Optional[Decimal] = Field(None, ge=0, le=100)
+    ca_total_weight: Optional[Decimal] = Field(None, ge=0, le=100, description="Total weight for all CA components on report card")
+    exam_total_weight: Optional[Decimal] = Field(None, ge=0, le=100, description="Total weight for End of Term Exam on report card")
 
 
 class AssessmentWeightResponse(BaseSchema):
@@ -422,6 +468,8 @@ class AssessmentWeightResponse(BaseSchema):
     homework_weight: Decimal
     midterm_weight: Decimal
     end_term_weight: Decimal
+    ca_total_weight: Decimal = Decimal("50")
+    exam_total_weight: Decimal = Decimal("50")
     created_at: Optional[datetime] = None  # None when returning defaults
     updated_at: Optional[datetime] = None  # None when returning defaults
 
@@ -452,6 +500,278 @@ class AcademicSettingsResponse(BaseSchema):
     enable_continuous_assessment: bool = True
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+# =========================
+# Class Timetable Schemas
+# =========================
+
+
+class TimetableEntryCreate(BaseSchema):
+    """Create a timetable entry."""
+
+    class_id: UUID
+    section_id: Optional[UUID] = None
+    academic_year_id: UUID
+    term_id: Optional[UUID] = Field(None, description="Optional: if set, timetable applies only to this term")
+    subject_id: Optional[UUID] = None
+    teacher_id: Optional[UUID] = None
+    day_of_week: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
+    period_number: int = Field(..., ge=1, le=20, description="Period number within the day")
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", description="Start time in HH:MM format")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$", description="End time in HH:MM format")
+    room: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+
+    @field_validator("end_time")
+    @classmethod
+    def end_time_after_start(cls, v: str, info) -> str:
+        if "start_time" in info.data:
+            start = info.data["start_time"]
+            if v <= start:
+                raise ValueError("End time must be after start time")
+        return v
+
+
+class TimetableEntryUpdate(BaseSchema):
+    """Update a timetable entry."""
+
+    subject_id: Optional[UUID] = None
+    teacher_id: Optional[UUID] = None
+    start_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    end_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    room: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class TimetableTeacherResponse(BaseSchema):
+    """Simplified teacher info for timetable."""
+
+    id: UUID
+    first_name: str
+    last_name: str
+    staff_id: str
+
+
+class TimetableSubjectResponse(BaseSchema):
+    """Simplified subject info for timetable."""
+
+    id: UUID
+    name: str
+    code: str
+
+
+class TimetableTermResponse(BaseSchema):
+    """Simplified term info for timetable."""
+
+    id: UUID
+    name: str
+    short_name: Optional[str] = None
+
+
+class TimetableEntryResponse(BaseSchema):
+    """Timetable entry response."""
+
+    id: UUID
+    class_id: UUID
+    section_id: Optional[UUID] = None
+    academic_year_id: UUID
+    term_id: Optional[UUID] = None
+    subject_id: Optional[UUID] = None
+    teacher_id: Optional[UUID] = None
+    day_of_week: int
+    period_number: int
+    start_time: str
+    end_time: str
+    room: Optional[str] = None
+    is_active: bool
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    # Related data
+    subject: Optional[TimetableSubjectResponse] = None
+    teacher: Optional[TimetableTeacherResponse] = None
+    term: Optional[TimetableTermResponse] = None
+
+
+class TimetableBulkEntry(BaseSchema):
+    """Entry for bulk timetable creation/update."""
+
+    day_of_week: int = Field(..., ge=0, le=6)
+    period_number: int = Field(..., ge=1, le=20)
+    subject_id: Optional[UUID] = None
+    teacher_id: Optional[UUID] = None
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    room: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TimetableBulkCreate(BaseSchema):
+    """Bulk create/update timetable for a class/section."""
+
+    class_id: UUID
+    section_id: Optional[UUID] = None
+    academic_year_id: UUID
+    term_id: Optional[UUID] = Field(None, description="Optional: if set, timetable applies only to this term")
+    entries: list[TimetableBulkEntry]
+
+
+class TimetableDayResponse(BaseSchema):
+    """Timetable entries grouped by day."""
+
+    day_of_week: int
+    day_name: str
+    entries: list[TimetableEntryResponse]
+
+
+class TimetableWeekResponse(BaseSchema):
+    """Full week timetable for a class/section."""
+
+    class_id: UUID
+    class_name: str
+    section_id: Optional[UUID] = None
+    section_name: Optional[str] = None
+    academic_year_id: UUID
+    academic_year_name: str
+    term_id: Optional[UUID] = None
+    term_name: Optional[str] = None
+    days: list[TimetableDayResponse]
+    total_periods: int
+
+
+class PeriodTemplate(BaseSchema):
+    """Template for a period's timing."""
+
+    period_number: int
+    start_time: str
+    end_time: str
+    is_break: bool = False
+    label: Optional[str] = None
+
+
+class TimetableTemplate(BaseSchema):
+    """Template for timetable periods."""
+
+    periods: list[PeriodTemplate]
+
+
+# =========================
+# School Period Schemas
+# =========================
+
+
+class SchoolPeriodCreate(BaseSchema):
+    """Create a school period.
+
+    Period hierarchy:
+    - class_id=None, section_id=None: School-wide periods (default for all classes)
+    - class_id set, section_id=None: Class-specific periods
+    - class_id set, section_id set: Section-specific periods
+    """
+
+    class_id: Optional[UUID] = None  # None = school-wide
+    section_id: Optional[UUID] = None  # None = class-wide or school-wide
+    period_number: int = Field(..., ge=1, le=20)
+    name: Optional[str] = Field(None, max_length=50)
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    is_break: bool = False
+
+    @field_validator("end_time")
+    @classmethod
+    def end_time_after_start(cls, v: str, info) -> str:
+        if "start_time" in info.data:
+            start = info.data["start_time"]
+            if v <= start:
+                raise ValueError("End time must be after start time")
+        return v
+
+
+class SchoolPeriodUpdate(BaseSchema):
+    """Update a school period."""
+
+    name: Optional[str] = Field(None, max_length=50)
+    start_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    end_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    is_break: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class SchoolPeriodResponse(BaseSchema):
+    """School period response."""
+
+    id: UUID
+    class_id: Optional[UUID] = None
+    section_id: Optional[UUID] = None
+    period_number: int
+    name: Optional[str] = None
+    start_time: str
+    end_time: str
+    is_break: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class SchoolPeriodBulkEntry(BaseSchema):
+    """Single period entry for bulk create (without class/section)."""
+
+    period_number: int = Field(..., ge=1, le=20)
+    name: Optional[str] = Field(None, max_length=50)
+    start_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    end_time: str = Field(..., pattern=r"^\d{2}:\d{2}$")
+    is_break: bool = False
+
+
+class SchoolPeriodBulkCreate(BaseSchema):
+    """Bulk create school periods at a specific level."""
+
+    class_id: Optional[UUID] = None  # None = school-wide
+    section_id: Optional[UUID] = None  # None = class-wide or school-wide
+    periods: list[SchoolPeriodBulkEntry]
+
+
+# =========================
+# School Holiday Schemas
+# =========================
+
+
+class SchoolHolidayCreate(BaseSchema):
+    """Create a school holiday."""
+
+    date: date
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    holiday_type: str = Field(default="holiday", pattern="^(holiday|exam|event|vacation)$")
+    academic_year_id: Optional[UUID] = None
+    is_recurring: bool = False
+
+
+class SchoolHolidayUpdate(BaseSchema):
+    """Update a school holiday."""
+
+    date: Optional[date] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    holiday_type: Optional[str] = Field(None, pattern="^(holiday|exam|event|vacation)$")
+    academic_year_id: Optional[UUID] = None
+    is_recurring: Optional[bool] = None
+
+
+class SchoolHolidayResponse(BaseSchema):
+    """School holiday response."""
+
+    id: UUID
+    date: date
+    name: str
+    description: Optional[str] = None
+    holiday_type: str
+    academic_year_id: Optional[UUID] = None
+    is_recurring: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 # Update forward references

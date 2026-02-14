@@ -9,7 +9,7 @@ from enum import Enum
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from typing import TYPE_CHECKING
@@ -152,6 +152,20 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         default="STU",
         nullable=False,
         comment="Prefix for auto-generated student IDs (e.g., STU, ADM)",
+    )
+    staff_id_prefix: Mapped[str] = mapped_column(
+        String(10),
+        default="STF",
+        nullable=False,
+        comment="Prefix for auto-generated staff IDs (e.g., STF, EMP)",
+    )
+
+    # Preschool Settings
+    preschool_settings: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Preschool configuration settings (enabled, tracking options, etc.)",
     )
 
     # Active flags

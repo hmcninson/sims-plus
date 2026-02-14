@@ -1,8 +1,8 @@
 # SIMS Plus (School Information Management System Plus) - User Manual
 
-**Version:** 2.0  
-**Date:** January 2026  
-**Author:** Harry McNinson  
+**Version:** 2.2
+**Date:** January 2026
+**Author:** Harry McNinson
 **Audience:** School Administrators, Teachers, Finance Officers, Parents
 
 ---
@@ -15,17 +15,20 @@
 4. [Student Management](#4-student-management)
 5. [Staff Management](#5-staff-management)
 6. [Academic Management](#6-academic-management)
-7. [Attendance](#7-attendance)
-8. [Examinations & Grading](#8-examinations--grading)
-9. [Finance Management](#9-finance-management)
-10. [Report Cards](#10-report-cards)
-11. [Boarding House](#11-boarding-house)
-12. [Transport](#12-transport)
-13. [Communication](#13-communication)
-14. [Reports](#14-reports)
-15. [Parent Portal Guide](#15-parent-portal-guide)
-16. [Mobile App Guide](#16-mobile-app-guide)
-17. [Troubleshooting & FAQ](#17-troubleshooting--faq)
+7. [School Calendar](#7-school-calendar)
+8. [Class Timetables](#8-class-timetables)
+9. [Attendance](#9-attendance)
+10. [Examinations & Grading](#10-examinations--grading)
+11. [Report Cards](#11-report-cards)
+12. [Preschool Module](#12-preschool-module)
+13. [Finance Management](#13-finance-management)
+14. [Boarding House](#14-boarding-house)
+15. [Transport](#15-transport)
+16. [Communication](#16-communication)
+17. [Reports](#17-reports)
+18. [Parent Portal Guide](#18-parent-portal-guide)
+19. [Mobile App Guide](#19-mobile-app-guide)
+20. [Troubleshooting & FAQ](#20-troubleshooting--faq)
 
 ---
 
@@ -322,9 +325,112 @@ To assign a teacher to classes:
 
 ---
 
-## 7. Attendance
+## 7. School Calendar
 
-### 7.1 Marking Attendance
+### 7.1 Accessing the Calendar
+
+1. Click **Calendar** in the sidebar menu
+2. The calendar displays the current month by default
+
+### 7.2 Calendar Views
+
+The calendar supports three views:
+
+| View | Description | Best For |
+|------|-------------|----------|
+| **Month** | Traditional calendar grid | Overview of month's events |
+| **Week** | 7-day view with time slots | Detailed daily planning |
+| **Year** | 12-month overview | Academic year planning |
+
+To switch views, click the view buttons in the top toolbar.
+
+### 7.3 Understanding the Calendar
+
+- **Term Backgrounds**: Each term is shown with a distinct background color
+- **Holidays**: Marked in red/pink
+- **School Events**: Shown in blue
+- **Exam Periods**: Highlighted in purple
+- **School Days Counter**: Shows remaining school days per term
+
+### 7.4 Adding Events
+
+1. Click the **Add Event** button
+2. Fill in the event details:
+   - **Name**: Event title
+   - **Date**: Start date
+   - **End Date**: For multi-day events (optional)
+   - **Type**: Select event type (Holiday, School Event, etc.)
+   - **Description**: Additional details
+3. Click **Save**
+
+### 7.5 Editing Events
+
+1. Click on an event in the calendar
+2. Edit the details in the sidebar or form
+3. Click **Save**
+
+**Drag and Drop**: You can also drag events to reschedule them:
+1. Click and hold an event
+2. Drag it to the new date
+3. Release to confirm
+
+### 7.6 Exporting the Calendar
+
+Export your calendar for use in other applications:
+
+1. Click the **Export** button
+2. Choose export format:
+   - **Download iCal**: Downloads a .ics file for Outlook, Apple Calendar
+   - **Google Calendar**: Opens Google Calendar with pre-filled event details
+
+---
+
+## 8. Class Timetables
+
+### 8.1 Accessing Timetables
+
+1. Navigate to **Classes** → **Timetables** in the sidebar
+2. Select a class and section
+
+### 8.2 Creating a Timetable
+
+1. Click **Create Timetable** or **Edit** on an existing one
+2. For each day of the week:
+   - Add periods with start/end times
+   - Assign subjects
+   - Assign teachers
+   - Specify room/venue
+3. Click **Save**
+
+### 8.3 Period Types
+
+| Type | Description |
+|------|-------------|
+| **Class** | Regular teaching period |
+| **Break** | Short break between classes |
+| **Assembly** | School assembly time |
+| **Lunch** | Lunch break |
+| **Other** | Custom period type |
+
+### 8.4 Conflict Detection
+
+The system automatically checks for:
+- Teacher double-booking (same teacher in two classes)
+- Room conflicts (same room assigned twice)
+
+If conflicts are found, you'll see a warning before saving.
+
+### 8.5 Viewing Timetables
+
+Timetables can be viewed by:
+- **Class**: See all periods for a specific class
+- **Teacher**: See a teacher's weekly schedule
+
+---
+
+## 9. Attendance
+
+### 9.1 Marking Attendance
 
 1. Go to **Attendance** → **Mark Attendance**
 2. Select:
@@ -360,7 +466,7 @@ To assign a teacher to classes:
 
 ---
 
-## 8. Examinations & Grading
+## 10. Examinations & Grading
 
 ### 8.1 Setting Up Exams
 
@@ -401,93 +507,273 @@ Default GES grading scale:
 
 ---
 
-## 9. Finance Management
+## 11. Report Cards
 
-### 9.1 Fee Structure
+### 11.1 Generating Report Cards
 
-1. Go to **Finance** → **Fee Structure**
-2. Click **Add Fee Category**
+1. Go to **Exams** → **Report Cards**
+2. Select:
+   - Exam
+   - Class (or individual student)
+3. Click **Generate Report Cards**
+4. Preview report cards
+5. Click **Download PDF** or **Print**
+
+### 11.2 Report Card Contents
+
+Each report card shows:
+- Student information and photo
+- School logo and branding
+- Subjects with CA scores, exam scores, and final grades
+- Class position and average
+- Attendance summary
+- Teacher remarks
+- Head teacher remarks
+- Promotion status
+
+### 11.3 Adding Remarks
+
+1. Go to **Report Cards** for a specific exam
+2. Select a student's report card
 3. Enter:
-   - Name (e.g., "Tuition Fee")
-   - Amount
-   - Applicable classes
+   - Class teacher comment
+   - Head teacher comment
+   - Conduct grade
 4. Click **Save**
 
-### 9.2 Generating Invoices
+---
+
+## 12. Preschool Module
+
+The Preschool module provides specialized tools for early childhood education, focusing on developmental progress rather than academic scores.
+
+### 12.1 Developmental Domains
+
+SIMS Plus tracks development across five key areas:
+
+| Domain | Description |
+|--------|-------------|
+| **Cognitive** | Problem-solving, memory, attention |
+| **Physical** | Motor skills, coordination |
+| **Social-Emotional** | Relationships, emotional regulation |
+| **Language** | Communication, vocabulary |
+| **Creative** | Art, music, imagination |
+
+### 12.2 Recording Observations
+
+1. Go to **Preschool** → **Observations**
+2. Click **Add Observation**
+3. Select:
+   - Student
+   - Domain (e.g., Cognitive)
+   - Category (e.g., Problem Solving)
+4. Enter observation details
+5. Optionally attach a photo
+6. Click **Save**
+
+### 12.3 Daily Activity Logs
+
+Track daily activities for each child:
+
+1. Go to **Preschool** → **Daily Logs**
+2. Select student and date
+3. Record:
+   - **Meals**: Breakfast, lunch, snacks with portions eaten
+   - **Naps**: Sleep times and duration
+   - **Toileting**: Bathroom visits and accidents
+   - **Activities**: What the child participated in
+4. Add notes for parents
+5. Click **Save**
+
+### 12.4 Milestone Assessments
+
+Track developmental milestones:
+
+1. Go to **Preschool** → **Assessments**
+2. Select student
+3. For each milestone, mark status:
+   - **Not Yet**: Skill not observed
+   - **Emerging**: Beginning to show skill
+   - **Developing**: Skill developing well
+   - **Achieved**: Skill mastered
+4. Add assessment notes
+5. Click **Save**
+
+### 12.5 Progress Reports
+
+Generate narrative-based progress reports:
+
+1. Go to **Preschool** → **Reports**
+2. Select student and term
+3. Review/edit the generated narrative
+4. Click **Download PDF**
+
+---
+
+## 13. Finance Management
+
+### 13.1 Fee Structures
+
+1. Go to **Finance** → **Fee Structures**
+2. Create fee items:
+   - Tuition
+   - Boarding
+   - Transport
+   - PTA Dues
+3. Set amounts per class level
+
+### 13.2 Generating Invoices
+
+Invoices are auto-generated at term start. To manually create:
 
 1. Go to **Finance** → **Invoices**
-2. Click **Generate Invoices**
-3. Select:
-   - Term
-   - Classes (or all)
-4. Click **Generate**
+2. Click **Create Invoice**
+3. Select student
+4. Add fee items
+5. Apply discounts if applicable
+6. Click **Generate**
 
-### 9.3 Recording Payments
+### 13.3 Recording Payments
 
 1. Go to **Finance** → **Payments**
 2. Click **Record Payment**
-3. Search and select student
-4. Enter:
-   - Amount
-   - Payment method:
-     - Cash
-     - MTN Mobile Money
-     - Vodafone Cash
-     - AirtelTigo Money
-     - Bank Transfer
-5. Click **Save**
-6. Print or send receipt
+3. Select:
+   - Student
+   - Invoice (optional)
+   - Payment method (Cash, MoMo, Bank Transfer)
+4. Enter amount
+5. For MoMo, enter phone number and transaction ID
+6. Click **Save**
 
-### 9.4 Mobile Money Payment Steps
+Receipt is auto-generated and can be printed or sent via SMS.
+
+### 13.4 Mobile Money Payments
 
 For MTN MoMo payments:
 
-1. Select "MTN Mobile Money" as payment method
-2. Enter payer's phone number
+1. Select **MTN Mobile Money** as payment method
+2. Enter customer's phone number
 3. Enter amount
-4. Click "Initiate Payment"
+4. Click **Send Request**
 5. Customer receives prompt on their phone
 6. Customer enters PIN to approve
 7. Payment auto-confirms in system
 
+### 13.5 Scholarship Management
+
+Manage scholarships to automatically discount student fees:
+
+**Creating a Scholarship:**
+
+1. Go to **Finance** → **Scholarships**
+2. Click **New Scholarship**
+3. Enter details:
+   - **Name**: e.g., "Academic Excellence Award"
+   - **Code**: Short unique code (e.g., "AEA-2026")
+   - **Type**: Full, Partial, Merit, Need-Based, Athletic, or Special
+   - **Coverage**: Percentage (e.g., 50%) or Fixed Amount (e.g., GHS 500)
+   - **Max Recipients**: Optional limit on awards
+4. Click **Create**
+
+**Awarding a Scholarship to Students:**
+
+1. Go to the scholarship detail page
+2. Click **Award Scholarship**
+3. Search and select students
+4. Set effective dates
+5. Click **Award**
+
+> **Important:** Scholarship discounts are applied at invoice generation time. If a scholarship is awarded after invoices were already generated, you need to cancel the existing invoice and regenerate it to apply the discount.
+
+**Revoking a Scholarship:**
+
+1. Go to the scholarship detail page
+2. Find the student in the Recipients list
+3. Click **Revoke**
+4. Enter a reason for revocation
+5. Click **Confirm**
+
+### 13.6 Credit Notes
+
+Credit notes handle overpayments, fee reductions, and error corrections.
+
+**Creating a Credit Note:**
+
+1. Go to **Finance** → **Credit Notes**
+2. Click **New Credit Note**
+3. Select:
+   - **Student**: Search by name or ID
+   - **Type**: Overpayment, Fee Reduction, or Error Correction
+   - **Related Invoice**: Optional — link to original invoice
+   - **Amount**: Credit amount
+   - **Reason**: Explanation for the credit
+4. Click **Create** (creates as draft)
+
+**Issuing a Credit Note:**
+
+1. Go to the credit note detail page
+2. Review the details
+3. Click **Issue Credit Note**
+4. The credit note becomes active and can be applied
+
+> **Auto-Apply:** When a credit note is issued, the system can automatically apply it to the student's oldest unpaid invoice.
+
+**Applying a Credit Note to an Invoice:**
+
+1. Go to the invoice detail page
+2. Click **Apply Credit**
+3. Select an available credit note
+4. Enter the amount to apply
+5. Click **Apply**
+
+**Refunding a Credit Note:**
+
+1. Go to the credit note detail page
+2. Click **Refund**
+3. Enter refund details:
+   - Refund method (Cash, MoMo, Bank Transfer)
+   - Reference number
+   - Refunded to (name)
+4. Click **Process Refund**
+
+**Credit Note Workflow:**
+- **Draft** → Can be edited or deleted
+- **Issued** → Can be applied to invoices or refunded
+- **Applied** → Credit has been used against an invoice
+- **Refunded** → Credit has been refunded to the payer
+- **Cancelled** → Credit note voided with reason
+
+### 13.7 Finance Dashboard
+
+The Finance Dashboard provides an overview of your school's financial status:
+
+1. Go to **Finance** (main page)
+2. View key statistics:
+   - Expected revenue for the term
+   - Collected revenue
+   - Outstanding balance
+   - Total invoices and their statuses
+3. Quick actions:
+   - Generate Invoices
+   - Record Payment
+   - View Fee Structures
+
+### 13.8 Finance Audit Trail
+
+All finance transactions are automatically logged for accountability:
+
+- Invoice creation, issuance, and cancellation
+- Payment recording and voiding
+- Credit note lifecycle events
+- Scholarship awards and revocations
+
+The audit log is immutable and cannot be modified or deleted.
+
 ---
 
-## 10. Report Cards
+## 14. Boarding House
 
-### 10.1 Generating Report Cards
-
-1. Go to **Reports** → **Report Cards**
-2. Select:
-   - Term
-   - Class (or individual student)
-3. Click **Generate**
-4. Preview report cards
-5. Click **Download** or **Print**
-
-### 10.2 Report Card Contents
-
-Each report card shows:
-- Student information
-- School logo and branding
-- Subjects with scores and grades
-- Class position
-- Attendance summary
-- Teacher remarks
-- Head teacher remarks
-- QR code for verification
-
-### 10.3 Adding Remarks
-
-1. Go to **Report Cards** → **Remarks**
-2. Select class
-3. Enter remarks for each student
-4. Click **Save**
-
----
-
-## 11. Boarding House
-
-### 11.1 Managing Dormitories
+### 14.1 Managing Dormitories
 
 1. Go to **Boarding** → **Dormitories**
 2. Click **Add Dormitory**
@@ -528,7 +814,7 @@ Each report card shows:
 
 ---
 
-## 12. Transport
+## 15. Transport
 
 ### 12.1 Setting Up Routes
 
@@ -549,7 +835,7 @@ Each report card shows:
 
 ---
 
-## 13. Communication
+## 16. Communication
 
 ### 13.1 Sending SMS
 
@@ -573,7 +859,7 @@ Each report card shows:
 
 ---
 
-## 14. Reports
+## 17. Reports
 
 ### 14.1 Available Reports
 
@@ -595,7 +881,7 @@ Each report card shows:
 
 ---
 
-## 15. Parent Portal Guide
+## 18. Parent Portal Guide
 
 ### 15.1 Accessing the Parent Portal
 
@@ -663,7 +949,7 @@ If you have children in multiple schools:
 
 ---
 
-## 16. Mobile App Guide
+## 19. Mobile App Guide
 
 ### 16.1 Downloading the App
 
@@ -712,7 +998,7 @@ Data syncs automatically when you're back online.
 
 ---
 
-## 17. Troubleshooting & FAQ
+## 20. Troubleshooting & FAQ
 
 ### 17.1 Login Issues
 
@@ -814,3 +1100,5 @@ A: Report it to your school administrator or use the feedback button in the app.
 |---------|------|--------|---------|
 | 1.0 | January 2026 | Harry McNinson | Initial version |
 | 2.0 | January 2026 | Harry McNinson | Added subdomain access instructions, updated login flows |
+| 2.1 | January 2026 | Harry McNinson | Added calendar, timetable, preschool, and exam sections |
+| 2.2 | January 2026 | Harry McNinson | Added finance management: scholarships, credit notes, dashboard, audit trail |

@@ -150,7 +150,7 @@ function isPublicRoute(pathname: string): boolean {
  *
  * Handles subdomain detection and sets tenant context headers.
  */
-export function proxy(request: NextRequest): NextResponse {
+export default function proxy(request: NextRequest): NextResponse {
   const hostname = request.headers.get("host") || "";
   const pathname = request.nextUrl.pathname;
   const searchParams = request.nextUrl.searchParams;

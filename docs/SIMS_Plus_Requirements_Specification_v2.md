@@ -1,9 +1,9 @@
 # SIMS Plus (School Information Management System Plus) - Software Requirements Specification
 
-**Version:** 2.0  
-**Date:** January 2026  
-**Author:** Harry McNinson  
-**Status:** Complete with Subdomain Multi-Tenancy
+**Version:** 2.2
+**Date:** January 2026
+**Author:** Harry McNinson
+**Status:** Updated with Finance, Credit Notes, Calendar, Timetable, and Preschool Requirements
 
 ---
 
@@ -360,12 +360,29 @@ SIMS Plus uses a **shared infrastructure, multi-tenant architecture**:
 
 ### 9.3 Timetable
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| ACD-020 | System SHALL support timetable creation | MUST |
-| ACD-021 | System SHALL detect scheduling conflicts | MUST |
-| ACD-022 | System SHALL support recurring and one-time schedules | MUST |
-| ACD-023 | Timetables SHALL be viewable by class, teacher, room | MUST |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| ACD-020 | System SHALL support timetable creation | MUST | ✅ Implemented |
+| ACD-021 | System SHALL detect scheduling conflicts | MUST | ✅ Implemented |
+| ACD-022 | System SHALL support recurring and one-time schedules | MUST | ✅ Implemented |
+| ACD-023 | Timetables SHALL be viewable by class, teacher, room | MUST | ✅ Implemented |
+| ACD-024 | System SHALL support period types: class, break, assembly, lunch | SHOULD | ✅ Implemented |
+| ACD-025 | System SHALL support teacher assignment to periods | MUST | ✅ Implemented |
+
+### 9.4 School Calendar
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| CAL-001 | System SHALL support school calendar with events and holidays | MUST | ✅ Implemented |
+| CAL-002 | Calendar SHALL display month, week, and year views | MUST | ✅ Implemented |
+| CAL-003 | Calendar SHALL show term periods with visual distinction | MUST | ✅ Implemented |
+| CAL-004 | System SHALL support multiple event types: public_holiday, school_break, school_event, exam_period | MUST | ✅ Implemented |
+| CAL-005 | System SHALL calculate school days per term (excluding weekends and holidays) | MUST | ✅ Implemented |
+| CAL-006 | Events SHALL support multi-day spans | MUST | ✅ Implemented |
+| CAL-007 | System SHALL support drag-and-drop event rescheduling | SHOULD | ✅ Implemented |
+| CAL-008 | System SHALL support iCal export for integration with external calendars | SHOULD | ✅ Implemented |
+| CAL-009 | System SHALL support Google Calendar integration links | SHOULD | ✅ Implemented |
+| CAL-010 | Calendar SHALL display upcoming events list | SHOULD | ✅ Implemented |
 
 ---
 
@@ -396,32 +413,50 @@ SIMS Plus uses a **shared infrastructure, multi-tenant architecture**:
 
 ### 11.1 Exam Management
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| EXM-001 | System SHALL support exam types: class test, mid-term, end-of-term, mock | MUST |
-| EXM-002 | System SHALL support exam scheduling | MUST |
-| EXM-003 | System SHALL support exam weight configuration | MUST |
-| EXM-004 | System SHALL support continuous assessment (CA) | MUST |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| EXM-001 | System SHALL support exam types: class test, mid-term, end-of-term, mock | MUST | ✅ Implemented |
+| EXM-002 | System SHALL support exam scheduling | MUST | ✅ Implemented |
+| EXM-003 | System SHALL support exam weight configuration | MUST | ✅ Implemented |
+| EXM-004 | System SHALL support continuous assessment (CA) | MUST | ✅ Implemented |
+| EXM-005 | System SHALL support multiple CA types: class_test, homework, assignment, quiz, project | MUST | ✅ Implemented |
+| EXM-006 | System SHALL support configurable CA and exam weights | MUST | ✅ Implemented |
+| EXM-007 | System SHALL log all score changes for audit purposes | MUST | ✅ Implemented |
 
 ### 11.2 Score Entry
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| EXM-010 | Teachers SHALL enter scores by class/subject | MUST |
-| EXM-011 | System SHALL validate scores against maximum marks | MUST |
-| EXM-012 | System SHALL auto-calculate grades based on grading scale | MUST |
-| EXM-013 | System SHALL support bulk score import | SHOULD |
-| EXM-014 | System SHALL support score entry deadline | SHOULD |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| EXM-010 | Teachers SHALL enter scores by class/subject | MUST | ✅ Implemented |
+| EXM-011 | System SHALL validate scores against maximum marks | MUST | ✅ Implemented |
+| EXM-012 | System SHALL auto-calculate grades based on grading scale | MUST | ✅ Implemented |
+| EXM-013 | System SHALL support bulk score import | SHOULD | ✅ Implemented |
+| EXM-014 | System SHALL support score entry deadline | SHOULD | Planned |
+| EXM-015 | System SHALL provide exam analytics: averages, pass rates, grade distribution | MUST | ✅ Implemented |
 
 ### 11.3 Report Cards
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| EXM-020 | System SHALL generate report cards with school branding | MUST |
-| EXM-021 | Report cards SHALL show: subjects, scores, grades, position, remarks | MUST |
-| EXM-022 | Report cards SHALL be downloadable as PDF | MUST |
-| EXM-023 | Report cards SHALL support QR code verification | SHOULD |
-| EXM-024 | System SHALL support multiple report card templates | SHOULD |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| EXM-020 | System SHALL generate report cards with school branding | MUST | ✅ Implemented |
+| EXM-021 | Report cards SHALL show: subjects, scores, grades, position, remarks | MUST | ✅ Implemented |
+| EXM-022 | Report cards SHALL be downloadable as PDF | MUST | ✅ Implemented |
+| EXM-023 | Report cards SHALL support QR code verification | SHOULD | Planned |
+| EXM-024 | System SHALL support multiple report card templates | SHOULD | Planned |
+| EXM-025 | Report cards SHALL include teacher and head teacher comments | MUST | ✅ Implemented |
+| EXM-026 | Report cards SHALL include attendance summary | SHOULD | ✅ Implemented |
+
+### 11.4 Preschool Assessment
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| PRE-001 | System SHALL support developmental domains: cognitive, physical, social-emotional, language, creative | MUST | ✅ Implemented |
+| PRE-002 | System SHALL support age-appropriate milestones per domain | MUST | ✅ Implemented |
+| PRE-003 | System SHALL support student observations with categories and photos | MUST | ✅ Implemented |
+| PRE-004 | System SHALL support daily activity logs: meals, naps, toileting, activities | MUST | ✅ Implemented |
+| PRE-005 | System SHALL support milestone-based assessments | MUST | ✅ Implemented |
+| PRE-006 | System SHALL generate developmental progress reports | MUST | ✅ Implemented |
+| PRE-007 | Preschool reports SHALL use narrative format instead of numeric grades | SHOULD | ✅ Implemented |
 
 ---
 
@@ -429,35 +464,69 @@ SIMS Plus uses a **shared infrastructure, multi-tenant architecture**:
 
 ### 12.1 Fee Management
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| FIN-001 | System SHALL support fee structure creation | MUST |
-| FIN-002 | System SHALL support fee categories: tuition, boarding, transport, PTA | MUST |
-| FIN-003 | System SHALL support fee variations by class level | MUST |
-| FIN-004 | System SHALL auto-generate invoices per term | MUST |
-| FIN-005 | System SHALL support discounts (sibling, scholarship, staff) | MUST |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-001 | System SHALL support fee structure creation | MUST | ✅ Implemented |
+| FIN-002 | System SHALL support fee categories: tuition, boarding, transport, PTA | MUST | ✅ Implemented |
+| FIN-003 | System SHALL support fee variations by class level | MUST | ✅ Implemented |
+| FIN-004 | System SHALL auto-generate invoices per term | MUST | ✅ Implemented |
+| FIN-005 | System SHALL support discounts (sibling, scholarship, staff) | MUST | ✅ Implemented |
 
 ### 12.2 Payment Processing
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| FIN-010 | System SHALL support cash payments | MUST |
-| FIN-011 | System SHALL support MTN Mobile Money | MUST |
-| FIN-012 | System SHALL support Vodafone Cash | MUST |
-| FIN-013 | System SHALL support AirtelTigo Money | SHOULD |
-| FIN-014 | System SHALL support bank transfer recording | MUST |
-| FIN-015 | System SHALL auto-reconcile MoMo payments via webhook | MUST |
-| FIN-016 | System SHALL generate payment receipts | MUST |
-| FIN-017 | Receipts SHALL be sendable via SMS | SHOULD |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-010 | System SHALL support cash payments | MUST | ✅ Implemented |
+| FIN-011 | System SHALL support MTN Mobile Money | MUST | ✅ Implemented |
+| FIN-012 | System SHALL support Vodafone Cash | MUST | ✅ Implemented |
+| FIN-013 | System SHALL support AirtelTigo Money | SHOULD | ✅ Implemented |
+| FIN-014 | System SHALL support bank transfer recording | MUST | ✅ Implemented |
+| FIN-015 | System SHALL auto-reconcile MoMo payments via webhook | MUST | Planned |
+| FIN-016 | System SHALL generate payment receipts | MUST | ✅ Implemented |
+| FIN-017 | Receipts SHALL be sendable via SMS | SHOULD | Planned |
 
 ### 12.3 Financial Reports
 
-| ID | Requirement | Priority |
-|----|-------------|----------|
-| FIN-020 | System SHALL generate fee collection reports | MUST |
-| FIN-021 | System SHALL generate outstanding fees report | MUST |
-| FIN-022 | System SHALL generate daily/weekly/monthly collection summaries | MUST |
-| FIN-023 | System SHALL support export to Excel | MUST |
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-020 | System SHALL generate fee collection reports | MUST | ✅ Implemented |
+| FIN-021 | System SHALL generate outstanding fees report | MUST | ✅ Implemented |
+| FIN-022 | System SHALL generate daily/weekly/monthly collection summaries | MUST | ✅ Implemented |
+| FIN-023 | System SHALL support export to Excel | MUST | Planned |
+
+### 12.4 Scholarship Management
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-030 | System SHALL support scholarship creation with types: full, partial, merit, need-based, athletic, special | MUST | ✅ Implemented |
+| FIN-031 | System SHALL support scholarship coverage by percentage or fixed amount | MUST | ✅ Implemented |
+| FIN-032 | System SHALL support awarding scholarships to individual and multiple students | MUST | ✅ Implemented |
+| FIN-033 | System SHALL auto-apply scholarship discounts at invoice generation time | MUST | ✅ Implemented |
+| FIN-034 | System SHALL support scholarship revocation with reason | MUST | ✅ Implemented |
+| FIN-035 | System SHALL enforce max recipients limit per scholarship | SHOULD | ✅ Implemented |
+| FIN-036 | Scholarships awarded after invoice generation SHALL require cancel and regenerate of invoice to take effect | MUST | ✅ Implemented |
+
+### 12.5 Credit Notes
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-040 | System SHALL support credit notes for overpayments, fee reductions, and error corrections | MUST | ✅ Implemented |
+| FIN-041 | Credit notes SHALL follow a workflow: draft → issued → applied/refunded/cancelled | MUST | ✅ Implemented |
+| FIN-042 | System SHALL support applying credit notes to unpaid invoices | MUST | ✅ Implemented |
+| FIN-043 | System SHALL auto-apply issued credit notes to the student's oldest unpaid invoice | SHOULD | ✅ Implemented |
+| FIN-044 | System SHALL track student credit balance (total issued minus applied and refunded) | MUST | ✅ Implemented |
+| FIN-045 | System SHALL support credit note refunds with method and reference tracking | MUST | ✅ Implemented |
+| FIN-046 | System SHALL support credit note cancellation with reason | MUST | ✅ Implemented |
+| FIN-047 | Only draft credit notes SHALL be editable; issued and beyond SHALL be immutable | MUST | ✅ Implemented |
+
+### 12.6 Finance Audit Trail
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| FIN-050 | System SHALL maintain an immutable audit log for all finance transactions | MUST | ✅ Implemented |
+| FIN-051 | Audit log SHALL record entity type, action, old/new values, user, and timestamp | MUST | ✅ Implemented |
+| FIN-052 | Audit log SHALL cover invoices, payments, credit notes, and scholarships | MUST | ✅ Implemented |
+| FIN-053 | Audit entries SHALL NOT be deletable or modifiable | MUST | ✅ Implemented |
 
 ---
 
@@ -738,3 +807,5 @@ SIMS Plus uses a **shared infrastructure, multi-tenant architecture**:
 |---------|------|--------|---------|
 | 1.0 | January 2026 | Harry McNinson | Initial version |
 | 2.0 | January 2026 | Harry McNinson | Added subdomain multi-tenancy requirements, onboarding, API access |
+| 2.1 | January 2026 | Harry McNinson | Added calendar, timetable, and preschool requirements |
+| 2.2 | January 2026 | Harry McNinson | Added finance requirements: scholarships, credit notes, audit trail; marked implemented statuses |

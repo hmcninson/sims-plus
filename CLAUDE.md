@@ -5,7 +5,7 @@
 **SIMS Plus** (School Information Management System Plus) is a comprehensive multi-tenant SaaS platform designed for schools. It supports educational institutions from preschools to Senior High Schools (SHS), covering both public and private sectors.
 
 **Author:** Harry McNinson
-**Version:** 2.0
+**Version:** 2.2
 **Date:** January 2026
 
 ## Quick Reference
@@ -13,7 +13,7 @@
 | Aspect | Details |
 |--------|---------|
 | **Project Type** | Multi-tenant SaaS School Management System |
-| **Target Market** | Schools (Primary, JHS, SHS, Preschools) |
+| **Target Market** | Schools (Preschool, Primary, JHS, SHS) |
 | **Multi-Tenancy** | Subdomain-based (`{school}.simsplus.io`) |
 | **Primary Language** | Python (Backend), TypeScript (Frontend) |
 | **Backend Framework** | FastAPI |
@@ -165,13 +165,15 @@ https://{school-code}.simsplus.io
 | Schools | `/schools` | School profiles, settings, branding | ✓ |
 | Students | `/students` | Student CRUD, guardians, import/export | ✓ |
 | Guardians | `/guardians` | Guardian management, student links | ✓ |
-| Academic | `/academic` | Years, terms, classes, sections, subjects | ✓ |
+| Academic | `/academic` | Years, terms, classes, sections, subjects, holidays | ✓ |
 | Users | `/users` | User management | ✓ |
 | Media | `/media` | File uploads (S3) | ✓ |
 | Staff | `/staff` | Staff CRUD, employment details, departments | ✓ |
 | Attendance | `/attendance` | Student/staff attendance, reports, bulk marking | ✓ |
-| Exams | `/exams` | Exam management, score entry | Planned |
-| Finance | `/finance` | Fees, invoices, payments | Planned |
+| Exams | `/exams` | Exam management, CA, score entry, report cards | ✓ |
+| Timetable | `/timetable` | Class timetables, periods, schedules | ✓ |
+| Preschool | `/preschool` | Observations, daily logs, assessments, reports | ✓ |
+| Finance | `/finance` | Fee structures, invoices, payments, scholarships | ✓ |
 | Boarding | `/boarding` | Dormitories, exeats, roll calls | Planned |
 | Reports | `/reports` | Dashboard, report generation | Planned |
 
@@ -210,6 +212,42 @@ https://{school-code}.simsplus.io
 | `grades` | Grade definitions within scales |
 | `assessment_weights` | Continuous assessment weight configuration |
 | `academic_settings` | School-wide academic preferences |
+| `school_holidays` | School calendar events and holidays |
+| `departments` | Staff departments |
+| `exams` | Exam definitions with term/year association |
+| `exam_subjects` | Subjects included in each exam |
+| `exam_scores` | Student scores for exams |
+| `continuous_assessments` | CA scores for ongoing assessment |
+| `term_reports` | Generated term report cards |
+| `class_timetables` | Weekly class schedules |
+| `timetable_periods` | Individual period definitions |
+
+### Finance Tables
+
+| Table | Purpose |
+|-------|---------|
+| `fee_types` | Fee categories (tuition, examination, facilities, etc.) |
+| `fee_structures` | Fee templates per class/level/term |
+| `fee_items` | Individual fee line items within structures |
+| `invoices` | Student invoices with status tracking |
+| `invoice_items` | Invoice line items |
+| `payments` | Payment records (cash, Mobile Money, bank) |
+| `scholarships` | Scholarship definitions (full, partial, merit, etc.) |
+| `student_scholarships` | Scholarship awards to students |
+| `scholarship_applications` | Student scholarship applications |
+| `credit_notes` | Credit notes for overpayments, fee reductions, corrections |
+| `finance_audit_log` | Immutable audit trail for all finance operations |
+
+### Preschool Tables
+
+| Table | Purpose |
+|-------|---------|
+| `developmental_domains` | Areas of development (cognitive, physical, etc.) |
+| `developmental_milestones` | Age-appropriate milestones |
+| `student_observations` | Teacher observations of students |
+| `daily_activity_logs` | Daily activities (meals, naps, etc.) |
+| `preschool_assessments` | Milestone-based assessments |
+| `preschool_reports` | Developmental progress reports |
 
 ### Tenants Table (Key Fields)
 
@@ -261,43 +299,84 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 ### 2. Academic Management
 - Curriculum and subjects (GES, Cambridge, IB)
 - Timetable management
+- School calendar with holidays
 - Examination management
 - Grade entry and calculation
 - Report card generation (PDF)
 
-### 3. Financial Management
-- Fee structure configuration
-- Invoice generation (auto/manual)
-- Payment collection (Cash, Mobile Money)
-- Mobile Money: MTN MoMo, Vodafone Cash, AirtelTigo
-- Financial reporting
+### 3. Examination & Assessment
+- Exam creation and scheduling
+- Continuous Assessment (CA) management
+- Score entry with validation
+- Grade calculations (configurable weights)
+- Report card generation
+- Class and student analytics
 
-### 4. Enrollment Management
+### 4. Preschool Module
+- Developmental domains and milestones
+- Student observations tracking
+- Daily activity logs (meals, naps, activities)
+- Milestone-based assessments
+- Developmental progress reports
+
+### 5. School Calendar
+- Academic year and term visualization
+- School holidays and events
+- Multi-view calendar (Month, Week, Year)
+- Drag-and-drop event rescheduling
+- School days counter per term
+- iCal and Google Calendar export
+
+### 6. Timetable Management
+- Class schedule creation
+- Period configuration
+- Teacher assignments
+- Room/venue management
+
+### 7. Financial Management ✓
+- Fee type management (tuition, examination, facilities, etc.)
+- Fee structure configuration per class/level/term
+- Invoice generation (single student, bulk by class)
+- Invoice sync with fee structure updates
+- Payment recording (Cash, Mobile Money, Bank Transfer)
+- Mobile Money support: MTN MoMo, Vodafone Cash, AirtelTigo
+- Scholarship management (full, partial, merit, need-based)
+- Auto-application of scholarship discounts to invoices at generation time
+- Credit notes (overpayment, fee reduction, error correction, other)
+- Credit note workflow: draft → issued → applied/refunded/cancelled
+- Auto-apply credit notes to oldest unpaid invoice
+- Student credit balance tracking
+- Finance dashboard with revenue statistics
+- Invoice email with CC recipients
+- Finance audit logging for all transactions
+
+### 8. Enrollment Management
 - Inquiry and lead management
 - Online application processing
 - Entrance exam scheduling
 - Admission decisions
 - Re-enrollment campaigns
 
-### 5. Boarding/Hostel Management
+### 9. Boarding/Hostel Management
 - Dormitory and room setup
 - Bed assignments
 - Exeat management
 - Roll calls
 - Visitor management
 
-### 6. Transport Management
+### 10. Transport Management
 - Vehicle fleet management
 - Route and stop configuration
 - Student transport assignments
 - Transport fee integration
 
-### 7. HR Management
-- Staff records
+### 11. HR Management
+- Staff records with departments
+- Employment tracking
 - Leave management
 - Payroll (optional module)
 
-### 8. Communication
+### 12. Communication
 - SMS notifications (Hubtel/Arkesel)
 - Email notifications (SMTP)
 - Announcements
@@ -321,6 +400,7 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 | Student Management | ✓ | ✓ | ✓ |
 | Academic Module | ✓ | ✓ | ✓ |
 | Finance & Payments | ✓ | ✓ | ✓ |
+| Preschool Module | ✓ | ✓ | ✓ |
 | Boarding | - | ✓ | ✓ |
 | Transport | - | ✓ | ✓ |
 | API Access | - | ✓ | ✓ |
@@ -332,7 +412,7 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 
 ## Development Roadmap
 
-### Phase 1: Foundation (Sprints 1-6, Jan - Mar 2026)
+### Phase 1: Foundation (Sprints 1-12, Jan - Mar 2026)
 
 **Sprint 1-2: Core Infrastructure** ✓
 - Project setup and Docker environment ✓
@@ -372,6 +452,7 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 - Staff types (teaching, non-teaching, administrative) ✓
 - Employment status tracking (active, on leave, terminated) ✓
 - Staff qualification and emergency contact info ✓
+- Department management ✓
 
 **Sprint 7-8: Attendance Module** ✓
 - Daily student attendance marking with bulk operations ✓
@@ -381,38 +462,68 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 - Attendance reports with weekly overview ✓
 - School-wide and class-by-class report views ✓
 - CSV export for attendance data ✓
-- Search/filter students in attendance marking ✓
+- Calendar-based school days calculation ✓
 
-### Phase 2: MVP Launch (Sprints 9-14, Apr - Jun 2026)
+**Sprint 9-10: Examinations & Assessment** ✓
+- Exam creation and scheduling ✓
+- Continuous Assessment (CA) management ✓
+- Score entry interface with validation ✓
+- Grade calculations with configurable weights ✓
+- Report card generation ✓
+- Exam analytics and insights ✓
+- Score change audit logging ✓
 
-**Sprint 9-10: Examinations**
-- Exam creation and scheduling
-- Score entry interface
-- Grade calculations
+**Sprint 11-12: Preschool & Calendar** ✓
+- Preschool developmental domains and milestones ✓
+- Student observations tracking ✓
+- Daily activity logs ✓
+- Preschool assessments and reports ✓
+- School calendar with holidays ✓
+- Multi-view calendar (Month, Week, Year) ✓
+- Drag-and-drop event management ✓
+- iCal and Google Calendar export ✓
+- Class timetable management ✓
 
-**Sprint 11-12: Finance Core**
-- Fee structures
-- Invoice generation
-- Mobile Money integration (MTN MoMo)
+### Phase 2: MVP Launch (Sprints 13-18, Apr - Jun 2026)
 
-**Sprint 13-14: Report Cards & Beta**
-- Report card generation (PDF)
-- Parent portal
+**Sprint 13-14: Finance Core** ✓
+- Fee types and fee structure management ✓
+- Invoice generation (single and bulk) ✓
+- Payment recording (cash, Mobile Money, bank transfer) ✓
+- Scholarship management with auto-discount application ✓
+- Invoice sync with fee structure updates ✓
+- Credit notes system (create, issue, apply, refund, cancel) ✓
+- Credit note types: overpayment, fee reduction, error correction, other ✓
+- Auto-apply credit notes to oldest unpaid invoice ✓
+- Student credit balance tracking ✓
+- Finance dashboard with statistics ✓
+- Invoice email with CC recipients ✓
+- Finance audit logging ✓
+
+**Sprint 15-16: Parent Portal**
+- Parent account access
+- View children's records
+- Online fee payment
+- Communication with teachers
+
+**Sprint 17-18: Beta Launch**
+- Performance optimization
 - Beta launch to pilot schools
+- Feedback collection and iteration
 
-### Phase 3: Enhancement (Sprints 15-20, Jul - Sep 2026)
+### Phase 3: Enhancement (Sprints 19-24, Jul - Sep 2026)
 
 - Boarding management
 - Transport management
 - Enrollment/admissions module
 - Additional payment providers
 
-### Phase 4: Scale & Mobile (Sprints 21-26, Oct - Dec 2026)
+### Phase 4: Scale & Mobile (Sprints 25-30, Oct - Dec 2026)
 
 - Mobile apps (iOS/Android)
 - Multi-curriculum support
-- Preschool module
 - Advanced analytics
+- White-label options
 
 ---
 
@@ -447,6 +558,7 @@ SELECT set_config('app.current_tenant_id', 'tenant-uuid', false);
 | **CORS** | Restricted methods (GET, POST, PUT, DELETE, PATCH, OPTIONS) |
 | **SQL Injection** | Parameterized queries in all database operations |
 | **Security Headers** | CSP, HSTS, X-Frame-Options, X-Content-Type-Options |
+| **Score Change Logging** | Audit trail for exam score modifications |
 
 ### Middleware Stack (Order Matters)
 
@@ -481,8 +593,14 @@ sims-plus/
 │   ├── app/
 │   │   ├── api/v1/endpoints/  # Route handlers
 │   │   │   ├── auth.py        # Authentication
-│   │   │   ├── academic.py    # Classes, subjects, grading
+│   │   │   ├── academic.py    # Classes, subjects, grading, holidays
 │   │   │   ├── students.py    # Student management
+│   │   │   ├── staff.py       # Staff & departments
+│   │   │   ├── attendance.py  # Attendance tracking
+│   │   │   ├── exams.py       # Exams, CA, report cards
+│   │   │   ├── timetable.py   # Class timetables
+│   │   │   ├── preschool.py   # Preschool module
+│   │   │   ├── finance.py     # Fee structures, invoices, payments, scholarships
 │   │   │   ├── schools.py     # School settings
 │   │   │   ├── users.py       # User management
 │   │   │   └── media.py       # File uploads
@@ -492,35 +610,63 @@ sims-plus/
 │   │   │   ├── tenant.py      # Tenant, User
 │   │   │   ├── school.py      # School profiles
 │   │   │   ├── student.py     # Student, Guardian
-│   │   │   └── academic.py    # Classes, Subjects, Grading
+│   │   │   ├── staff.py       # Staff, Departments
+│   │   │   ├── academic.py    # Classes, Subjects, Grading
+│   │   │   ├── exam.py        # Exams, Scores, Reports
+│   │   │   ├── preschool.py   # Preschool models
+│   │   │   └── finance.py     # Fee structures, invoices, payments, scholarships
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic
 │   │   │   ├── auth.py        # Authentication service
 │   │   │   ├── student.py     # Student service with import
+│   │   │   ├── staff.py       # Staff service
 │   │   │   ├── academic.py    # Academic service
+│   │   │   ├── exam.py        # Exam service
+│   │   │   ├── timetable.py   # Timetable service
+│   │   │   ├── preschool.py   # Preschool service
+│   │   │   ├── finance.py     # Finance service (fees, invoices, payments, scholarships)
+│   │   │   ├── pdf.py         # PDF generation
 │   │   │   └── s3.py          # S3 upload service
-│   │   └── middleware/        # Tenant, rate limiting
+│   │   ├── middleware/        # Tenant, rate limiting
+│   │   └── templates/         # PDF templates
 │   ├── alembic/               # Database migrations
 │   └── requirements.txt
 ├── frontend/                   # Next.js 16 frontend
 │   ├── app/
 │   │   ├── (auth)/            # Login, register, password reset
 │   │   └── (dashboard)/       # Protected dashboard pages
-│   │       ├── students/      # Student list, detail, edit, import
-│   │       ├── classes/       # Class/section management
-│   │       ├── settings/      # School, academic, user settings
-│   │       └── ...            # Other modules (placeholder)
+│   │       ├── dashboard/     # Main dashboard
+│   │       ├── calendar/      # School calendar
+│   │       ├── students/      # Student management
+│   │       ├── staff/         # Staff & departments
+│   │       ├── classes/       # Classes, timetables
+│   │       ├── attendance/    # Attendance marking & reports
+│   │       ├── exams/         # Exams, CA, report cards
+│   │       ├── preschool/     # Preschool module
+│   │       ├── finance/       # Fee structures, invoices, payments, scholarships, credit notes
+│   │       ├── boarding/      # Boarding (placeholder)
+│   │       ├── transport/     # Transport (placeholder)
+│   │       ├── messages/      # Communication (placeholder)
+│   │       ├── reports/       # Reports (placeholder)
+│   │       └── settings/      # School & academic settings
 │   ├── components/
 │   │   ├── ui/                # Shadcn components
 │   │   ├── dashboard/         # Sidebar, header
 │   │   ├── academic/          # Academic settings components
+│   │   ├── preschool/         # Preschool components
 │   │   └── setup-wizard/      # School setup wizard
 │   ├── actions/               # Server Actions (*.action.ts)
 │   │   ├── auth.action.ts
 │   │   ├── students.action.ts
+│   │   ├── staff.action.ts
 │   │   ├── academic.action.ts
-│   │   └── school.action.ts
+│   │   ├── school.action.ts
+│   │   ├── exams.action.ts
+│   │   ├── timetable.action.ts
+│   │   ├── preschool.action.ts
+│   │   └── finance.action.ts
 │   ├── hooks/                 # Custom hooks
+│   ├── lib/                   # Utilities
 │   └── types/                 # TypeScript types
 ├── infrastructure/             # Terraform IaC
 ├── docs/                       # Documentation
@@ -543,6 +689,10 @@ sims-plus/
 - Hubtel (Primary)
 - Arkesel (Backup)
 - Twilio (International)
+
+### Calendar Integrations
+- iCal (.ics) export
+- Google Calendar URL generation
 
 ### Education System Integrations
 - GES EMIS (Annual census export)

@@ -186,6 +186,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
         # Clear any previous context
         clear_tenant_context()
 
+        # Skip OPTIONS requests (CORS preflight) - they don't carry auth headers
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         path = request.url.path
 
         # Skip tenant context for public paths

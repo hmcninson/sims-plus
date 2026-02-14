@@ -37,7 +37,7 @@ export default async function DashboardLayout({
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar user={user} />
-      <SidebarInset>
+      <SidebarInset className="flex flex-col min-h-svh">
         <DashboardHeader user={user} />
         <div className="flex-1 p-4 md:p-6">
           {schoolProfile ? (

@@ -48,13 +48,13 @@ async function getAuthContext() {
 // Academic Year Actions
 // =========================
 
-export async function getAcademicYears(): Promise<ActionResult<AcademicYear[]>> {
+export async function getAcademicYears(includeTerms: boolean = true): Promise<ActionResult<AcademicYear[]>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    const response = await apiGet<AcademicYear[]>("/academic/academic-years", {
-      token,
-      subdomain,
-    });
+    const response = await apiGet<AcademicYear[]>(
+      `/academic/academic-years?include_terms=${includeTerms}`,
+      { token, subdomain }
+    );
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -76,6 +76,30 @@ export async function getAcademicYear(id: string): Promise<ActionResult<Academic
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch academic year",
+    };
+  }
+}
+
+export async function getCurrentAcademicYear(): Promise<ActionResult<AcademicYear>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<AcademicYear[]>(
+      `/academic/academic-years?include_terms=true`,
+      { token, subdomain }
+    );
+    // Find the current academic year (is_current === true or status === "active")
+    const currentYear = response.find((year) => year.is_current || year.status === "active");
+    if (!currentYear) {
+      return {
+        success: false,
+        error: "No current academic year found",
+      };
+    }
+    return { success: true, data: currentYear };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch current academic year",
     };
   }
 }
@@ -198,6 +222,27 @@ export async function deleteTerm(id: string): Promise<ActionResult<void>> {
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to delete term",
+    };
+  }
+}
+
+export async function getCurrentTerm(): Promise<ActionResult<Term>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<Term[]>("/academic/terms", { token, subdomain });
+    // Find the current term (status === "active")
+    const currentTerm = response.find((term) => term.status === "active");
+    if (!currentTerm) {
+      return {
+        success: false,
+        error: "No current term found",
+      };
+    }
+    return { success: true, data: currentTerm };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch current term",
     };
   }
 }
@@ -352,10 +397,15 @@ export async function deleteSection(id: string): Promise<ActionResult<void>> {
 // Subject Actions
 // =========================
 
-export async function getSubjects(): Promise<ActionResult<Subject[]>> {
+export async function getSubjects(classLevel?: string): Promise<ActionResult<Subject[]>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    const response = await apiGet<Subject[]>("/academic/subjects", { token, subdomain });
+    const params = new URLSearchParams();
+    if (classLevel) {
+      params.append("class_level", classLevel);
+    }
+    const url = `/academic/subjects${params.toString() ? `?${params.toString()}` : ""}`;
+    const response = await apiGet<Subject[]>(url, { token, subdomain });
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -436,6 +486,22 @@ export async function getClassSubjects(classId: string): Promise<ActionResult<Cl
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch class subjects",
+    };
+  }
+}
+
+export async function getSubjectsForClasses(classIds: string[]): Promise<ActionResult<ClassSubject[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<ClassSubject[]>(`/academic/classes/subjects/bulk`, classIds, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subjects for classes",
     };
   }
 }

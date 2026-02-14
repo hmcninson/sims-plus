@@ -680,6 +680,9 @@ export interface AssessmentWeight {
   homework_weight: number;
   midterm_weight: number;
   end_term_weight: number;
+  // Report card weights (CA vs Exam split)
+  ca_total_weight: number;
+  exam_total_weight: number;
   created_at: string;
   updated_at: string;
 }
@@ -690,6 +693,9 @@ export interface AssessmentWeightCreate {
   homework_weight?: number;
   midterm_weight?: number;
   end_term_weight?: number;
+  // Report card weights (CA vs Exam split)
+  ca_total_weight?: number;
+  exam_total_weight?: number;
 }
 
 export interface AcademicSettings {
@@ -1083,9 +1089,9 @@ export interface ExamUpdate {
 }
 
 export interface ExamWithContext extends Exam {
-  academic_year: AcademicYear;
-  term: Term;
-  exam_subjects: ExamSubjectWithDetails[];
+  academic_year_name?: string;
+  term_name?: string;
+  subjects_count: number;
 }
 
 export interface ExamSubject {
@@ -1093,6 +1099,8 @@ export interface ExamSubject {
   exam_id: string;
   subject_id: string;
   class_id: string;
+  section_id?: string;
+  grading_scale_id?: string;
   max_score: number;
   pass_mark: number;
   exam_date?: string;
@@ -1108,13 +1116,18 @@ export interface ExamSubjectWithDetails extends ExamSubject {
   subject_name: string;
   subject_code: string;
   class_name: string;
-  scores_entered: number;
-  total_students: number;
+  class_sequence: number;
+  section_name?: string;
+  grading_scale_name?: string;
+  scores_count: number;
+  students_count: number;
 }
 
 export interface ExamSubjectCreate {
   subject_id: string;
   class_id: string;
+  section_id?: string;
+  grading_scale_id?: string;
   max_score?: number;
   pass_mark?: number;
   exam_date?: string;
@@ -1124,7 +1137,20 @@ export interface ExamSubjectCreate {
 }
 
 export interface ExamSubjectBulkCreate {
-  subjects: ExamSubjectCreate[];
+  class_ids: string[];
+  section_ids?: string[];
+  subject_ids: string[];
+  grading_scale_id?: string;
+  max_score?: number;
+  pass_mark?: number;
+}
+
+export interface ExamSubjectAutoPopulate {
+  class_ids: string[];
+  section_ids?: string[];
+  grading_scale_id?: string;
+  max_score?: number;
+  pass_mark?: number;
 }
 
 export interface ExamSubjectUpdate {
@@ -1179,7 +1205,8 @@ export interface ExamScoreUpdate {
 export interface ScoreEntryForm {
   exam_subject_id: string;
   subject_name: string;
-  subject_code: string;
+  subject_code?: string;
+  class_id: string;
   class_name: string;
   section_id?: string;
   section_name?: string;
@@ -1194,6 +1221,8 @@ export interface ScoreEntryStudent {
   student_number: string;
   first_name: string;
   last_name: string;
+  section_id?: string;
+  section_name?: string;
   current_score?: number;
   current_grade?: string;
   is_absent: boolean;
@@ -1318,12 +1347,14 @@ export interface TermReport {
 
 export interface TermReportWithDetails extends TermReport {
   student_name: string;
-  student_number: string;
+  student_id_number: string;
   class_name: string;
-  section_name: string;
+  section_name?: string;
   academic_year_name: string;
   term_name: string;
   subject_results: SubjectResult[];
+  class_size?: number;
+  subjects_count?: number;
 }
 
 export interface TermReportGenerate {
@@ -1340,17 +1371,23 @@ export interface TermReportRemarksUpdate {
   interest?: string;
 }
 
+/**
+ * Subject result for Ghana's assessment structure.
+ * Class Score (50%) + Exams Score (50%) = Total (100%)
+ */
 export interface SubjectResult {
   subject_id: string;
   subject_name: string;
   subject_code?: string;
-  ca_score?: number;
-  ca_max?: number;
-  midterm_score?: number;
-  midterm_max?: number;
-  end_term_score?: number;
-  end_term_max?: number;
-  total_score?: number;
+  // Raw scores for reference
+  ca_score?: number;       // Combined CA raw score
+  ca_max?: number;         // Combined CA max score
+  end_term_score?: number; // End term raw score
+  end_term_max?: number;   // End term max score
+  // Normalized scores for report card (Ghana 50/50 system)
+  class_score?: number;    // CA normalized to 50
+  exams_score?: number;    // End term normalized to 50
+  total_score?: number;    // Total out of 100
   grade?: string;
   grade_point?: number;
   grade_remark?: string;
@@ -1736,5 +1773,222 @@ export interface PreschoolReportUpdate {
   head_teacher_remark?: string;
 }
 
+// =========================
+// Timetable Types
+// =========================
+
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export const DAY_NAMES: Record<DayOfWeek, string> = {
+  0: "Monday",
+  1: "Tuesday",
+  2: "Wednesday",
+  3: "Thursday",
+  4: "Friday",
+  5: "Saturday",
+  6: "Sunday",
+};
+
+export interface TimetableTeacher {
+  id: string;
+  first_name: string;
+  last_name: string;
+  staff_id: string;
+}
+
+export interface TimetableSubject {
+  id: string;
+  name: string;
+  code: string;
+}
+
+export interface TimetableTerm {
+  id: string;
+  name: string;
+  short_name?: string;
+}
+
+export interface TimetableEntry {
+  id: string;
+  class_id: string;
+  section_id?: string;
+  academic_year_id: string;
+  term_id?: string;
+  subject_id?: string;
+  teacher_id?: string;
+  day_of_week: DayOfWeek;
+  period_number: number;
+  start_time: string;
+  end_time: string;
+  room?: string;
+  is_active: boolean;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  subject?: TimetableSubject;
+  teacher?: TimetableTeacher;
+  term?: TimetableTerm;
+}
+
+export interface TimetableEntryCreate {
+  class_id: string;
+  section_id?: string;
+  academic_year_id: string;
+  term_id?: string; // Optional: if set, timetable applies only to this term
+  subject_id?: string;
+  teacher_id?: string;
+  day_of_week: DayOfWeek;
+  period_number: number;
+  start_time: string;
+  end_time: string;
+  room?: string;
+  notes?: string;
+}
+
+export interface TimetableEntryUpdate {
+  subject_id?: string;
+  teacher_id?: string;
+  start_time?: string;
+  end_time?: string;
+  room?: string;
+  notes?: string;
+  is_active?: boolean;
+}
+
+export interface TimetableBulkEntry {
+  day_of_week: DayOfWeek;
+  period_number: number;
+  subject_id?: string;
+  teacher_id?: string;
+  start_time: string;
+  end_time: string;
+  room?: string;
+  notes?: string;
+}
+
+export interface TimetableBulkCreate {
+  class_id: string;
+  section_id?: string;
+  academic_year_id: string;
+  term_id?: string; // Optional: if set, timetable applies only to this term
+  entries: TimetableBulkEntry[];
+}
+
+export interface TimetableDay {
+  day_of_week: DayOfWeek;
+  day_name: string;
+  entries: TimetableEntry[];
+}
+
+export interface TimetableWeek {
+  class_id: string;
+  class_name: string;
+  section_id?: string;
+  section_name?: string;
+  academic_year_id: string;
+  academic_year_name: string;
+  term_id?: string;
+  term_name?: string;
+  days: TimetableDay[];
+  total_periods: number;
+}
+
+export interface PeriodTemplate {
+  period_number: number;
+  start_time: string;
+  end_time: string;
+  is_break?: boolean;
+  label?: string;
+}
+
+// =========================
+// School Period Types
+// =========================
+
+export interface SchoolPeriod {
+  id: string;
+  class_id?: string;
+  section_id?: string;
+  period_number: number;
+  name?: string;
+  start_time: string;
+  end_time: string;
+  is_break: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchoolPeriodCreate {
+  class_id?: string;  // null = school-wide
+  section_id?: string;  // null = class-wide or school-wide
+  period_number: number;
+  name?: string;
+  start_time: string;
+  end_time: string;
+  is_break?: boolean;
+}
+
+export interface SchoolPeriodUpdate {
+  name?: string;
+  start_time?: string;
+  end_time?: string;
+  is_break?: boolean;
+  is_active?: boolean;
+}
+
+export interface SchoolPeriodBulkEntry {
+  period_number: number;
+  name?: string;
+  start_time: string;
+  end_time: string;
+  is_break?: boolean;
+}
+
+export interface SchoolPeriodBulkCreate {
+  class_id?: string;
+  section_id?: string;
+  periods: SchoolPeriodBulkEntry[];
+}
+
+// =========================
+// School Holiday Types
+// =========================
+
+export type HolidayType = "holiday" | "exam" | "event" | "vacation";
+
+export interface SchoolHoliday {
+  id: string;
+  date: string;
+  name: string;
+  description?: string;
+  holiday_type: HolidayType;
+  academic_year_id?: string;
+  is_recurring: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchoolHolidayCreate {
+  date: string;
+  name: string;
+  description?: string;
+  holiday_type?: HolidayType;
+  academic_year_id?: string;
+  is_recurring?: boolean;
+}
+
+export interface SchoolHolidayUpdate {
+  date?: string;
+  name?: string;
+  description?: string;
+  holiday_type?: HolidayType;
+  academic_year_id?: string;
+  is_recurring?: boolean;
+}
+
 // Re-export School types
 export type { SchoolProfile, SchoolProfileUpdate, SchoolBrandingUpdate } from "./school.type";
+
+// Re-export Finance types
+export * from "./finance.type";

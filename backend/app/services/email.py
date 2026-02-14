@@ -6,6 +6,7 @@ Handles sending emails via SMTP with template support.
 
 import logging
 from datetime import datetime
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -63,21 +64,55 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
+        attachments: Optional[list[tuple[bytes, str, str]]] = None,
+        cc_emails: Optional[list[str]] = None,
     ) -> MIMEMultipart:
-        """Create a MIME message for sending."""
-        message = MIMEMultipart("alternative")
+        """
+        Create a MIME message for sending.
+
+        Args:
+            to_email: Recipient email
+            subject: Email subject
+            html_content: HTML body
+            text_content: Plain text body (fallback)
+            attachments: List of (data, filename, mime_type) tuples
+            cc_emails: List of CC email addresses
+        """
+        # Use mixed for attachments, alternative for content only
+        if attachments:
+            message = MIMEMultipart("mixed")
+            # Create alternative part for text/html
+            alt_part = MIMEMultipart("alternative")
+            if text_content:
+                text_part = MIMEText(text_content, "plain", "utf-8")
+                alt_part.attach(text_part)
+            html_part = MIMEText(html_content, "html", "utf-8")
+            alt_part.attach(html_part)
+            message.attach(alt_part)
+
+            # Add attachments
+            for data, filename, mime_type in attachments:
+                main_type, sub_type = mime_type.split("/", 1)
+                attachment = MIMEApplication(data, _subtype=sub_type)
+                attachment.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=filename,
+                )
+                message.attach(attachment)
+        else:
+            message = MIMEMultipart("alternative")
+            if text_content:
+                text_part = MIMEText(text_content, "plain", "utf-8")
+                message.attach(text_part)
+            html_part = MIMEText(html_content, "html", "utf-8")
+            message.attach(html_part)
+
         message["Subject"] = subject
         message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
         message["To"] = to_email
-
-        # Add plain text part (fallback)
-        if text_content:
-            text_part = MIMEText(text_content, "plain", "utf-8")
-            message.attach(text_part)
-
-        # Add HTML part
-        html_part = MIMEText(html_content, "html", "utf-8")
-        message.attach(html_part)
+        if cc_emails:
+            message["Cc"] = ", ".join(cc_emails)
 
         return message
 
@@ -87,6 +122,8 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
+        attachments: Optional[list[tuple[bytes, str, str]]] = None,
+        cc_emails: Optional[list[str]] = None,
     ) -> bool:
         """
         Send an email via SMTP.
@@ -96,17 +133,27 @@ class EmailService:
             subject: Email subject
             html_content: HTML body content
             text_content: Optional plain text body
+            attachments: Optional list of (data, filename, mime_type) tuples
+            cc_emails: Optional list of CC email addresses
 
         Returns:
             True if sent successfully
         """
         # In development, log the email instead of sending
         if settings.is_development and not settings.SMTP_HOST:
+            attachment_info = ""
+            cc_info = ""
+            if attachments:
+                attachment_info = f"Attachments: {[a[1] for a in attachments]}\n"
+            if cc_emails:
+                cc_info = f"CC: {', '.join(cc_emails)}\n"
             logger.info(
                 f"\n{'='*60}\n"
                 f"[DEV EMAIL] Would send email:\n"
                 f"To: {to_email}\n"
+                f"{cc_info}"
                 f"Subject: {subject}\n"
+                f"{attachment_info}"
                 f"{'='*60}\n"
                 f"{html_content[:1000]}...\n"
                 f"{'='*60}\n"
@@ -124,7 +171,14 @@ class EmailService:
                 subject=subject,
                 html_content=html_content,
                 text_content=text_content,
+                attachments=attachments,
+                cc_emails=cc_emails,
             )
+
+            # Build list of all recipients (To + CC)
+            all_recipients = [to_email]
+            if cc_emails:
+                all_recipients.extend(cc_emails)
 
             # Send via SMTP
             await aiosmtplib.send(
@@ -135,9 +189,11 @@ class EmailService:
                 password=settings.SMTP_PASSWORD,
                 use_tls=settings.SMTP_USE_TLS,
                 start_tls=settings.SMTP_START_TLS,
+                recipients=all_recipients,
             )
 
-            logger.info(f"Email sent successfully to {to_email}")
+            cc_log = f" (CC: {', '.join(cc_emails)})" if cc_emails else ""
+            logger.info(f"Email sent successfully to {to_email}{cc_log}")
             return True
 
         except aiosmtplib.SMTPException as e:
@@ -416,6 +472,159 @@ class EmailService:
             to_email=to_email,
             subject="Reset Your SIMS Plus Password",
             html_content=html_content,
+        )
+
+    async def send_invoice_email(
+        self,
+        to_email: str,
+        recipient_name: str,
+        student_name: str,
+        invoice_number: str,
+        total_amount: float,
+        balance_due: float,
+        currency: str,
+        due_date: Optional[str],
+        school_name: str,
+        pdf_data: bytes,
+        pdf_filename: str,
+        cc_emails: Optional[list[str]] = None,
+    ) -> bool:
+        """
+        Send invoice email with PDF attachment.
+
+        Args:
+            to_email: Recipient email address
+            recipient_name: Recipient's name (guardian/parent)
+            student_name: Student's full name
+            invoice_number: Invoice number
+            total_amount: Total invoice amount
+            balance_due: Outstanding balance
+            currency: Currency code (e.g., GHS)
+            due_date: Due date string (formatted)
+            school_name: Name of the school
+            pdf_data: PDF file bytes
+            pdf_filename: PDF filename
+            cc_emails: Optional list of CC email addresses
+
+        Returns:
+            True if sent successfully
+        """
+        due_date_section = ""
+        if due_date:
+            due_date_section = f"""
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Due Date:</strong></td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">{due_date}</td>
+            </tr>
+            """
+
+        status_color = "#22c55e" if balance_due <= 0 else "#f59e0b"
+        status_text = "PAID" if balance_due <= 0 else f"{currency} {balance_due:,.2f}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Invoice from {school_name}</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <!-- Header -->
+                <div style="background-color: #1B4F72; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; font-size: 24px;">{school_name}</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">Invoice Notification</p>
+                </div>
+
+                <!-- Content -->
+                <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p>Dear {recipient_name},</p>
+
+                    <p>Please find attached the invoice for <strong>{student_name}</strong>.</p>
+
+                    <!-- Invoice Summary Box -->
+                    <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <h2 style="color: #1B4F72; margin-top: 0; font-size: 18px; border-bottom: 2px solid #1B4F72; padding-bottom: 10px;">
+                            Invoice Summary
+                        </h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Invoice Number:</strong></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">{invoice_number}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Student:</strong></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">{student_name}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Total Amount:</strong></td>
+                                <td style="padding: 8px; border-bottom: 1px solid #eee;">{currency} {total_amount:,.2f}</td>
+                            </tr>
+                            {due_date_section}
+                            <tr>
+                                <td style="padding: 8px;"><strong>Balance Due:</strong></td>
+                                <td style="padding: 8px; color: {status_color}; font-weight: bold; font-size: 16px;">{status_text}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <p>The detailed invoice is attached to this email as a PDF document.</p>
+
+                    <p style="color: #666;">
+                        If you have any questions about this invoice, please contact the school administration.
+                    </p>
+
+                    <p>Thank you for your continued support.</p>
+
+                    <p>
+                        Best regards,<br>
+                        <strong>{school_name}</strong>
+                    </p>
+                </div>
+
+                <!-- Footer -->
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p style="margin: 0;">This email was sent by SIMS Plus on behalf of {school_name}</p>
+                    <p style="margin: 5px 0 0 0;">&copy; {datetime.now().year} SIMS Plus. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Plain text version
+        text_content = f"""
+Dear {recipient_name},
+
+Please find attached the invoice for {student_name}.
+
+Invoice Summary:
+- Invoice Number: {invoice_number}
+- Student: {student_name}
+- Total Amount: {currency} {total_amount:,.2f}
+- Balance Due: {status_text}
+{f"- Due Date: {due_date}" if due_date else ""}
+
+The detailed invoice is attached to this email as a PDF document.
+
+If you have any questions about this invoice, please contact the school administration.
+
+Thank you for your continued support.
+
+Best regards,
+{school_name}
+        """
+
+        # Prepare attachment
+        attachments = [(pdf_data, pdf_filename, "application/pdf")]
+
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"Invoice {invoice_number} from {school_name}",
+            html_content=html_content,
+            text_content=text_content,
+            attachments=attachments,
+            cc_emails=cc_emails,
         )
 
 

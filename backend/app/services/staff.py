@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.staff import (
+    Department,
     Staff,
     StaffType,
     StaffStatus,
@@ -55,6 +56,7 @@ class StaffService:
         employment_date: date,
         middle_name: Optional[str] = None,
         date_of_birth: Optional[date] = None,
+        previous_staff_id: Optional[str] = None,
         phone_secondary: Optional[str] = None,
         address: Optional[str] = None,
         city: Optional[str] = None,
@@ -114,6 +116,7 @@ class StaffService:
         staff = Staff(
             tenant_id=tenant_id,
             staff_id=staff_id,
+            previous_staff_id=previous_staff_id,
             first_name=first_name,
             middle_name=middle_name,
             last_name=last_name,
@@ -448,6 +451,354 @@ class StaffService:
         }
 
     # =========================
+    # Import Methods
+    # =========================
+
+    def parse_csv_file(self, content: bytes) -> tuple[list[str], list[dict]]:
+        """Parse CSV file content into headers and rows."""
+        import csv
+        import io
+
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+
+        reader = csv.DictReader(io.StringIO(text))
+        headers = reader.fieldnames or []
+        rows = list(reader)
+        return headers, rows
+
+    def _parse_date(self, value) -> Optional[date]:
+        """Parse various date formats."""
+        if not value or str(value).strip() == "":
+            return None
+
+        value_str = str(value).strip()
+
+        # Try common formats
+        formats = [
+            "%Y-%m-%d",      # 2026-01-15
+            "%d/%m/%Y",      # 15/01/2026
+            "%m/%d/%Y",      # 01/15/2026
+            "%d-%m-%Y",      # 15-01-2026
+            "%Y/%m/%d",      # 2026/01/15
+        ]
+
+        for fmt in formats:
+            try:
+                return datetime.strptime(value_str, fmt).date()
+            except ValueError:
+                continue
+
+        return None
+
+    def _parse_gender(self, value) -> str:
+        """Parse gender value to standard format."""
+        if not value:
+            return "male"  # Default
+
+        value_str = str(value).lower().strip()
+
+        male_values = ["m", "male", "boy", "man"]
+        female_values = ["f", "female", "girl", "woman"]
+
+        if value_str in male_values:
+            return "male"
+        elif value_str in female_values:
+            return "female"
+        else:
+            return "male"  # Default
+
+    def _parse_staff_type(self, value) -> str:
+        """Parse staff type value."""
+        if not value:
+            return "teaching"
+
+        value_str = str(value).lower().strip().replace(" ", "_")
+
+        if value_str in ["teaching", "teacher"]:
+            return "teaching"
+        elif value_str in ["non_teaching", "non-teaching", "nonteaching", "support"]:
+            return "non_teaching"
+        elif value_str in ["administrative", "admin", "administration"]:
+            return "administrative"
+
+        return "teaching"
+
+    def _parse_status(self, value) -> str:
+        """Parse staff status value."""
+        if not value:
+            return "active"
+
+        value_str = str(value).lower().strip().replace(" ", "_")
+
+        valid_statuses = ["active", "on_leave", "suspended", "terminated", "retired"]
+        if value_str in valid_statuses:
+            return value_str
+
+        return "active"
+
+    def _auto_map_columns(self, headers: list[str]) -> dict[str, str]:
+        """Auto-map CSV headers to staff fields."""
+        mapping = {}
+
+        # Define possible column names for each field
+        field_mappings = {
+            "previous_staff_id": ["previous_staff_id", "old_staff_id", "external_id", "legacy_id", "old_id"],
+            "first_name": ["first_name", "firstname", "first", "given_name", "fname"],
+            "middle_name": ["middle_name", "middlename", "middle", "mname"],
+            "last_name": ["last_name", "lastname", "surname", "family_name", "lname"],
+            "email": ["email", "email_address", "e-mail"],
+            "phone": ["phone", "mobile", "telephone", "phone_number", "tel"],
+            "phone_secondary": ["phone_secondary", "secondary_phone", "alt_phone", "phone2"],
+            "gender": ["gender", "sex"],
+            "date_of_birth": ["date_of_birth", "dob", "birth_date", "birthdate"],
+            "job_title": ["job_title", "jobtitle", "title", "position", "role"],
+            "employment_date": ["employment_date", "hire_date", "start_date", "joined_date"],
+            "staff_type": ["staff_type", "type", "employee_type", "category"],
+            "status": ["status", "employment_status"],
+            "department": ["department", "dept"],
+            "address": ["address", "street_address", "street"],
+            "city": ["city", "town"],
+            "region": ["region", "state", "province"],
+            "emergency_contact_name": ["emergency_contact_name", "emergency_name", "emergency_contact"],
+            "emergency_contact_phone": ["emergency_contact_phone", "emergency_phone"],
+            "emergency_contact_relationship": ["emergency_contact_relationship", "emergency_relationship"],
+            "ghana_card_number": ["ghana_card_number", "ghana_card", "national_id"],
+            "ssnit_number": ["ssnit_number", "ssnit", "social_security"],
+            "teacher_license_number": ["teacher_license_number", "license_number", "teaching_license", "ges_license"],
+            "bank_name": ["bank_name", "bank"],
+            "bank_branch": ["bank_branch", "branch"],
+            "account_number": ["account_number", "account_no", "bank_account"],
+            "notes": ["notes", "comments", "remarks"],
+        }
+
+        # Normalize headers for matching
+        normalized_headers = {h.lower().strip().replace(" ", "_"): h for h in headers}
+
+        for field, possible_names in field_mappings.items():
+            for name in possible_names:
+                if name in normalized_headers:
+                    mapping[field] = normalized_headers[name]
+                    break
+
+        return mapping
+
+    def _parse_row(
+        self,
+        row: dict,
+        column_mapping: dict[str, str],
+        row_number: int,
+    ) -> dict:
+        """Parse a single row using the column mapping."""
+        data = {}
+        errors = []
+
+        # Required fields for staff
+        required_fields = ["first_name", "last_name", "email", "phone", "gender", "job_title", "employment_date"]
+
+        for field, column in column_mapping.items():
+            if column not in row:
+                continue
+
+            value = row[column]
+
+            try:
+                if field == "date_of_birth":
+                    parsed_value = self._parse_date(value)
+                    if parsed_value:
+                        data[field] = parsed_value
+                elif field == "employment_date":
+                    parsed_value = self._parse_date(value)
+                    if parsed_value:
+                        data[field] = parsed_value
+                elif field == "gender":
+                    data[field] = self._parse_gender(value)
+                elif field == "staff_type":
+                    data[field] = self._parse_staff_type(value)
+                elif field == "status":
+                    data[field] = self._parse_status(value)
+                elif value is not None and str(value).strip():
+                    data[field] = str(value).strip()
+            except Exception as e:
+                errors.append({
+                    "row": row_number,
+                    "field": field,
+                    "value": str(value),
+                    "error": str(e),
+                })
+
+        # Check required fields
+        for field in required_fields:
+            if field not in data:
+                mapped_column = column_mapping.get(field, field)
+                errors.append({
+                    "row": row_number,
+                    "field": field,
+                    "message": f"Missing required field: {field} (column: {mapped_column})",
+                })
+
+        return {"data": data, "errors": errors}
+
+    async def import_staff_from_file(
+        self,
+        tenant_id: UUID,
+        file_content: bytes,
+        file_type: str,
+        column_mapping: Optional[dict[str, str]] = None,
+        preview_only: bool = False,
+    ) -> dict:
+        """
+        Import staff from a CSV file.
+
+        Args:
+            tenant_id: Tenant UUID
+            file_content: Raw file bytes
+            file_type: 'csv'
+            column_mapping: Optional manual column mapping
+            preview_only: If True, only return preview without creating
+
+        Returns:
+            Dict with import results
+        """
+        # Parse file
+        if file_type == "csv":
+            headers, rows = self.parse_csv_file(file_content)
+        else:
+            raise StaffServiceError(f"Unsupported file type: {file_type}")
+
+        if not rows:
+            return {
+                "total_rows": 0,
+                "created": 0,
+                "failed": 0,
+                "errors": [{"row": 0, "error": "File is empty or has no data rows"}],
+                "preview": [],
+            }
+
+        # Auto-map columns if not provided
+        if not column_mapping:
+            column_mapping = self._auto_map_columns(headers)
+
+        # Preview mode - return first 100 rows with parsed values
+        if preview_only:
+            preview = []
+            valid_rows = 0
+            invalid_rows = 0
+            all_errors = []
+
+            for i, row in enumerate(rows[:100]):
+                parsed = self._parse_row(row, column_mapping, i + 2)
+                row_errors = parsed.get("errors", [])
+
+                if row_errors:
+                    invalid_rows += 1
+                    all_errors.extend(row_errors)
+                else:
+                    valid_rows += 1
+
+                preview.append({
+                    "row": i + 2,
+                    "raw": row,
+                    "parsed": parsed.get("data", {}),
+                    "valid": len(row_errors) == 0,
+                    "errors": [e.get("message", str(e)) for e in row_errors],
+                })
+
+            return {
+                "total_rows": len(rows),
+                "valid_rows": valid_rows + (len(rows) - len(rows[:100])),  # Assume remaining are valid
+                "invalid_rows": invalid_rows,
+                "preview": preview,
+                "errors": [{"row": e.get("row"), "error": e.get("message", str(e))} for e in all_errors],
+                "headers": headers,
+                "auto_mapping": column_mapping,
+            }
+
+        # Import mode - create staff
+        created = 0
+        failed = 0
+        errors = []
+        max_id_retries = 5
+
+        # Get the school's staff_id_prefix for consistent ID generation
+        from app.models.school import School
+        school_result = await self.db.execute(
+            select(School.staff_id_prefix).where(School.tenant_id == tenant_id).limit(1)
+        )
+        school_prefix = school_result.scalar_one_or_none() or "STF"
+
+        for i, row in enumerate(rows):
+            row_number = i + 2  # Account for header row
+            parsed = self._parse_row(row, column_mapping, row_number)
+
+            if parsed.get("errors"):
+                failed += 1
+                for err in parsed["errors"]:
+                    errors.append({
+                        "row": row_number,
+                        "error": err.get("message", str(err)),
+                    })
+                continue
+
+            staff_data = parsed["data"]
+
+            # Create the staff with retry logic for auto-generated IDs
+            staff_created = False
+            for attempt in range(max_id_retries):
+                try:
+                    # Always auto-generate staff ID using school's prefix
+                    staff_data["staff_id"] = await self.generate_staff_id(
+                        tenant_id, prefix=school_prefix
+                    )
+
+                    await self.create_staff(
+                        tenant_id=tenant_id,
+                        **staff_data,
+                    )
+                    created += 1
+                    staff_created = True
+                    break
+                except StaffServiceError as e:
+                    # Retry on duplicate ID (race condition on auto-generation)
+                    if e.code == "duplicate_staff_id" and attempt < max_id_retries - 1:
+                        import asyncio
+                        await asyncio.sleep(0.01 * (attempt + 1))
+                        continue
+                    failed += 1
+                    errors.append({
+                        "row": row_number,
+                        "previous_staff_id": staff_data.get("previous_staff_id"),
+                        "error": e.message,
+                    })
+                    break
+                except Exception as e:
+                    failed += 1
+                    errors.append({
+                        "row": row_number,
+                        "previous_staff_id": staff_data.get("previous_staff_id"),
+                        "error": str(e),
+                    })
+                    break
+
+            if not staff_created and not any(
+                err.get("row") == row_number for err in errors
+            ):
+                failed += 1
+                errors.append({
+                    "row": row_number,
+                    "error": f"Failed to generate unique staff ID after {max_id_retries} attempts",
+                })
+
+        return {
+            "total": len(rows),
+            "success": created,
+            "failed": failed,
+            "errors": errors,
+        }
+
+    # =========================
     # Staff Class Assignment Methods
     # =========================
 
@@ -595,6 +946,7 @@ class StaffService:
             )
             .options(
                 selectinload(StaffClassAssignment.staff),
+                selectinload(StaffClassAssignment.section).selectinload(ClassSection.class_),
             )
         )
         return result.scalars().all()
@@ -656,3 +1008,160 @@ class StaffService:
             .order_by(Staff.last_name, Staff.first_name)
         )
         return result.scalars().all()
+
+
+class DepartmentService:
+    """Service for managing departments."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create_department(
+        self,
+        tenant_id: UUID,
+        name: str,
+        code: Optional[str] = None,
+        description: Optional[str] = None,
+        head_id: Optional[UUID] = None,
+    ) -> Department:
+        """Create a new department."""
+        # Check for duplicate name
+        existing = await self.db.execute(
+            select(Department).where(
+                and_(
+                    Department.tenant_id == tenant_id,
+                    Department.name == name,
+                    Department.deleted_at.is_(None),
+                )
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise StaffServiceError(
+                f"Department '{name}' already exists",
+                code="duplicate_department",
+            )
+
+        department = Department(
+            tenant_id=tenant_id,
+            name=name,
+            code=code,
+            description=description,
+            head_id=head_id,
+        )
+        self.db.add(department)
+        await self.db.commit()
+        await self.db.refresh(department)
+        return department
+
+    async def get_department(
+        self, tenant_id: UUID, department_id: UUID
+    ) -> Optional[Department]:
+        """Get a department by ID."""
+        result = await self.db.execute(
+            select(Department).where(
+                and_(
+                    Department.tenant_id == tenant_id,
+                    Department.id == department_id,
+                    Department.deleted_at.is_(None),
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_departments(
+        self,
+        tenant_id: UUID,
+        search: Optional[str] = None,
+    ) -> Sequence[Department]:
+        """List all departments."""
+        conditions = [
+            Department.tenant_id == tenant_id,
+            Department.deleted_at.is_(None),
+        ]
+
+        if search:
+            conditions.append(
+                or_(
+                    Department.name.ilike(f"%{search}%"),
+                    Department.code.ilike(f"%{search}%"),
+                )
+            )
+
+        result = await self.db.execute(
+            select(Department)
+            .where(and_(*conditions))
+            .order_by(Department.name)
+        )
+        return result.scalars().all()
+
+    async def update_department(
+        self,
+        tenant_id: UUID,
+        department_id: UUID,
+        name: Optional[str] = None,
+        code: Optional[str] = None,
+        description: Optional[str] = None,
+        head_id: Optional[UUID] = None,
+    ) -> Optional[Department]:
+        """Update a department."""
+        department = await self.get_department(tenant_id, department_id)
+        if not department:
+            return None
+
+        if name is not None:
+            # Check for duplicate name
+            existing = await self.db.execute(
+                select(Department).where(
+                    and_(
+                        Department.tenant_id == tenant_id,
+                        Department.name == name,
+                        Department.id != department_id,
+                        Department.deleted_at.is_(None),
+                    )
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise StaffServiceError(
+                    f"Department '{name}' already exists",
+                    code="duplicate_department",
+                )
+            department.name = name
+
+        if code is not None:
+            department.code = code
+        if description is not None:
+            department.description = description
+        if head_id is not None:
+            department.head_id = head_id
+
+        department.updated_at = datetime.now(UTC)
+        await self.db.commit()
+        await self.db.refresh(department)
+        return department
+
+    async def delete_department(
+        self, tenant_id: UUID, department_id: UUID
+    ) -> bool:
+        """Soft delete a department."""
+        department = await self.get_department(tenant_id, department_id)
+        if not department:
+            return False
+
+        department.deleted_at = datetime.now(UTC)
+        await self.db.commit()
+        return True
+
+    async def get_department_staff_count(
+        self, tenant_id: UUID, department_id: UUID
+    ) -> int:
+        """Get the count of staff in a department."""
+        result = await self.db.execute(
+            select(func.count(Staff.id)).where(
+                and_(
+                    Staff.tenant_id == tenant_id,
+                    Staff.department_id == department_id,
+                    Staff.deleted_at.is_(None),
+                )
+            )
+        )
+        return result.scalar() or 0

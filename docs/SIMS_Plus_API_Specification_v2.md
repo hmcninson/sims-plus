@@ -1,9 +1,9 @@
 # SIMS Plus (School Information Management System Plus) - API Specification
 
-**Version:** 2.0  
-**Date:** January 2026  
-**Author:** Harry McNinson  
-**Status:** Updated with Subdomain Multi-Tenancy
+**Version:** 2.3
+**Date:** January 2026
+**Author:** Harry McNinson
+**Status:** Updated with Finance API (Fee Structures, Invoices, Payments, Scholarships, Credit Notes, Audit Log)
 
 ---
 
@@ -17,8 +17,12 @@
 6. [Students API](#6-students-api)
 7. [Staff API](#7-staff-api)
 8. [Attendance API](#8-attendance-api)
-9. [Finance API](#9-finance-api)
-10. [Error Handling](#10-error-handling)
+9. [Exams API](#9-exams-api)
+10. [Calendar API](#10-calendar-api)
+11. [Timetable API](#11-timetable-api)
+12. [Preschool API](#12-preschool-api)
+13. [Finance API](#13-finance-api)
+14. [Error Handling](#14-error-handling)
 
 ---
 
@@ -130,22 +134,6 @@ Every API request must have tenant context. This is determined by:
 │  6. Process request (all queries auto-filtered by tenant)       │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-### 2.3 Internal API (No Auth Required)
-
-For server-to-server communication:
-
-```
-POST https://api.simsplus.io/internal/tenants/validate/{subdomain}
-Header: X-Internal-Key: {internal_api_key}
-
-Response:
-{
-  "valid": true,
-  "tenant_id": "uuid",
-  "status": "active"
-}
 ```
 
 ---
@@ -268,19 +256,6 @@ GET https://api.simsplus.io/v1/onboarding/check-subdomain/{subdomain}
 }
 ```
 
-**Response (200 OK - Not Available)**
-
-```json
-{
-  "success": true,
-  "data": {
-    "subdomain": "presec",
-    "available": false,
-    "suggestion": "presec-legon"
-  }
-}
-```
-
 ### 4.2 Register New School
 
 ```http
@@ -300,52 +275,6 @@ Content-Type: application/json
 }
 ```
 
-**Response (201 Created)**
-
-```json
-{
-  "success": true,
-  "data": {
-    "tenant_id": "new-tenant-uuid",
-    "subdomain": "newschool",
-    "portal_url": "https://newschool.simsplus.io",
-    "status": "trial",
-    "trial_ends_at": "2026-02-15T00:00:00Z",
-    "admin_user": {
-      "id": "admin-user-uuid",
-      "email": "admin@newschool.edu.gh",
-      "temporary_password_sent": true
-    },
-    "next_steps": [
-      "Check email for login credentials",
-      "Login at https://newschool.simsplus.io",
-      "Complete school profile setup",
-      "Add academic year and terms",
-      "Import or add students"
-    ]
-  }
-}
-```
-
-### 4.3 Subdomain Validation Rules
-
-| Rule | Valid | Invalid |
-|------|-------|---------|
-| Length | 4-63 characters | `abc`, `a` |
-| Characters | `a-z`, `0-9`, `-` | `NewSchool`, `new_school` |
-| Start/End | Letter or number | `-school`, `school-` |
-| Reserved | Not in reserved list | `www`, `app`, `api`, `admin` |
-
-**Reserved Subdomains:**
-
-```json
-[
-  "www", "app", "api", "admin", "mail", "ftp", "status",
-  "blog", "help", "support", "docs", "cdn", "assets",
-  "staging", "dev", "test", "demo", "sandbox"
-]
-```
-
 ---
 
 ## 5. Tenant Management API
@@ -355,47 +284,6 @@ Content-Type: application/json
 ```http
 GET https://presec.simsplus.io/api/v1/tenant
 Authorization: Bearer {token}
-```
-
-**Response**
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "tenant-uuid",
-    "subdomain": "presec",
-    "name": "Presbyterian Boys' Secondary School",
-    "type": "single_school",
-    "status": "active",
-    "logo_url": "https://cdn.simsplus.io/presec/logo.png",
-    "primary_color": "#1B4F72",
-    "subscription": {
-      "plan": "professional",
-      "status": "active",
-      "current_period_end": "2026-12-31T23:59:59Z",
-      "limits": {
-        "max_students": 2000,
-        "max_staff": 200,
-        "storage_gb": 50,
-        "sms_monthly": 500
-      },
-      "usage": {
-        "students": 1234,
-        "staff": 48,
-        "storage_gb": 12.5,
-        "sms_this_month": 150
-      }
-    },
-    "features": {
-      "boarding": true,
-      "transport": true,
-      "multi_curriculum": false,
-      "api_access": true,
-      "custom_domain": false
-    }
-  }
-}
 ```
 
 ### 5.2 Update Tenant Branding
@@ -409,37 +297,6 @@ Content-Type: application/json
   "logo_url": "https://cdn.simsplus.io/presec/new-logo.png",
   "primary_color": "#003366",
   "secondary_color": "#FFD700"
-}
-```
-
-### 5.3 Get Tenant Schools (For School Chains)
-
-```http
-GET https://chainname.simsplus.io/api/v1/tenant/schools
-Authorization: Bearer {token}
-```
-
-**Response**
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "school-1-uuid",
-      "name": "Chain School - Accra Campus",
-      "code": "CSA",
-      "student_count": 500,
-      "staff_count": 30
-    },
-    {
-      "id": "school-2-uuid", 
-      "name": "Chain School - Kumasi Campus",
-      "code": "CSK",
-      "student_count": 450,
-      "staff_count": 28
-    }
-  ]
 }
 ```
 
@@ -458,49 +315,12 @@ Authorization: Bearer {token}
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `status` | string | `active` | Filter by status: active, inactive, withdrawn, graduated |
+| `status` | string | `active` | Filter by status |
 | `class_id` | uuid | - | Filter by class |
-| `gender` | string | - | Filter by gender: male, female |
-| `boarding` | boolean | - | Filter by boarding status |
+| `gender` | string | - | Filter by gender |
 | `q` | string | - | Search by name or student ID |
 | `page` | integer | 1 | Page number |
 | `per_page` | integer | 20 | Items per page (max 100) |
-| `sort` | string | `last_name` | Sort field |
-| `order` | string | `asc` | Sort order: asc, desc |
-
-**Response**
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "student-uuid",
-      "student_id": "STU-2025-001",
-      "first_name": "Kwame",
-      "last_name": "Asante",
-      "other_names": "Kofi",
-      "gender": "male",
-      "date_of_birth": "2010-03-15",
-      "photo_url": "https://cdn.simsplus.io/presec/students/kwame.jpg",
-      "current_class": {
-        "id": "class-uuid",
-        "name": "JHS 2",
-        "section": "A"
-      },
-      "status": "active",
-      "is_boarding": true,
-      "admission_date": "2020-09-01"
-    }
-  ],
-  "meta": {
-    "page": 1,
-    "per_page": 20,
-    "total": 1234,
-    "total_pages": 62
-  }
-}
-```
 
 ### 6.2 Create Student
 
@@ -517,57 +337,15 @@ Content-Type: application/json
   "class_id": "class-uuid",
   "section_id": "section-uuid",
   "admission_date": "2025-01-06",
-  "is_boarding": false,
   "guardians": [
     {
       "first_name": "Kofi",
       "last_name": "Mensah",
       "relationship": "father",
       "phone_primary": "+233241234567",
-      "email": "kofi.mensah@email.com",
-      "is_primary": true,
-      "is_emergency_contact": true
+      "is_primary": true
     }
   ]
-}
-```
-
-**Response (201 Created)**
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "new-student-uuid",
-    "student_id": "STU-2025-002",
-    "first_name": "Ama",
-    "last_name": "Mensah",
-    "portal_url": "https://presec.simsplus.io/students/new-student-uuid"
-  }
-}
-```
-
-### 6.3 Tenant Limit Exceeded Error
-
-```http
-POST https://presec.simsplus.io/api/v1/students
-```
-
-**Response (403 Forbidden)**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TENANT_LIMIT_EXCEEDED",
-    "message": "Student limit reached",
-    "details": {
-      "current": 2000,
-      "limit": 2000,
-      "plan": "professional"
-    },
-    "upgrade_url": "https://presec.simsplus.io/settings/billing/upgrade"
-  }
 }
 ```
 
@@ -582,34 +360,24 @@ GET https://presec.simsplus.io/api/v1/staff
 Authorization: Bearer {token}
 ```
 
-### 7.2 Invite Staff Member
+### 7.2 Get Staff Departments
 
 ```http
-POST https://presec.simsplus.io/api/v1/staff/invite
+GET https://presec.simsplus.io/api/v1/staff/departments
+Authorization: Bearer {token}
+```
+
+### 7.3 Create Department
+
+```http
+POST https://presec.simsplus.io/api/v1/staff/departments
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "email": "new.teacher@email.com",
-  "first_name": "Akua",
-  "last_name": "Darko",
-  "role": "teacher",
-  "department": "Science",
-  "send_invitation": true
-}
-```
-
-**Response**
-
-```json
-{
-  "success": true,
-  "data": {
-    "staff_id": "staff-uuid",
-    "invitation_sent": true,
-    "invitation_expires": "2026-01-13T00:00:00Z",
-    "login_url": "https://presec.simsplus.io/login"
-  }
+  "name": "Science Department",
+  "code": "SCI",
+  "head_id": "staff-uuid"
 }
 ```
 
@@ -626,6 +394,7 @@ Content-Type: application/json
 
 {
   "class_id": "class-uuid",
+  "section_id": "section-uuid",
   "date": "2026-01-06",
   "records": [
     {
@@ -636,35 +405,111 @@ Content-Type: application/json
       "student_id": "student-2-uuid",
       "status": "absent",
       "remarks": "Sick"
-    },
-    {
-      "student_id": "student-3-uuid",
-      "status": "late",
-      "arrival_time": "08:15"
     }
   ]
 }
 ```
 
-### 8.2 Offline Sync
-
-For offline attendance that needs to sync:
+### 8.2 Get Attendance Report
 
 ```http
-POST https://presec.simsplus.io/api/v1/attendance/sync
+GET https://presec.simsplus.io/api/v1/attendance/reports?class_id=uuid&start_date=2026-01-01&end_date=2026-01-31
+Authorization: Bearer {token}
+```
+
+---
+
+## 9. Exams API
+
+### 9.1 List Exams
+
+```http
+GET https://presec.simsplus.io/api/v1/exams?academic_year_id=uuid&term_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "exam-uuid",
+      "name": "End of Term Examination",
+      "exam_type": "end_of_term",
+      "academic_year_id": "year-uuid",
+      "academic_year_name": "2025/2026",
+      "term_id": "term-uuid",
+      "term_name": "Term 1",
+      "start_date": "2026-03-15",
+      "end_date": "2026-03-25",
+      "status": "in_progress",
+      "subjects_count": 12,
+      "classes_count": 8
+    }
+  ]
+}
+```
+
+### 9.2 Create Exam
+
+```http
+POST https://presec.simsplus.io/api/v1/exams
 Authorization: Bearer {token}
 Content-Type: application/json
 
 {
-  "records": [
+  "name": "Mid-Term Examination",
+  "exam_type": "mid_term",
+  "academic_year_id": "year-uuid",
+  "term_id": "term-uuid",
+  "start_date": "2026-02-10",
+  "end_date": "2026-02-15",
+  "description": "Mid-term assessment for all classes"
+}
+```
+
+### 9.3 Add Subjects to Exam
+
+```http
+POST https://presec.simsplus.io/api/v1/exams/{exam_id}/subjects
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "subjects": [
     {
-      "local_id": "local-uuid-1",
+      "subject_id": "subject-uuid",
       "class_id": "class-uuid",
-      "date": "2026-01-05",
-      "student_id": "student-uuid",
-      "status": "present",
-      "marked_at": "2026-01-05T08:30:00Z",
-      "marked_offline": true
+      "max_score": 100,
+      "passing_score": 50,
+      "grading_scale_id": "scale-uuid",
+      "exam_date": "2026-02-10"
+    }
+  ]
+}
+```
+
+### 9.4 Enter Exam Scores
+
+```http
+POST https://presec.simsplus.io/api/v1/exams/{exam_id}/subjects/{subject_id}/scores
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "class_id": "class-uuid",
+  "section_id": "section-uuid",
+  "scores": [
+    {
+      "student_id": "student-1-uuid",
+      "score": 85,
+      "remarks": "Excellent performance"
+    },
+    {
+      "student_id": "student-2-uuid",
+      "score": 72
     }
   ]
 }
@@ -676,13 +521,128 @@ Content-Type: application/json
 {
   "success": true,
   "data": {
-    "synced": 45,
-    "failed": 2,
-    "conflicts": [
+    "saved": 25,
+    "updated": 0,
+    "errors": []
+  }
+}
+```
+
+### 9.5 Get Exam Scores
+
+```http
+GET https://presec.simsplus.io/api/v1/exams/{exam_id}/subjects/{subject_id}/scores?class_id=uuid&section_id=uuid
+Authorization: Bearer {token}
+```
+
+### 9.6 Continuous Assessment (CA)
+
+**List CA Records**
+
+```http
+GET https://presec.simsplus.io/api/v1/exams/ca?term_id=uuid&class_id=uuid&subject_id=uuid
+Authorization: Bearer {token}
+```
+
+**Enter CA Scores**
+
+```http
+POST https://presec.simsplus.io/api/v1/exams/ca
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "term_id": "term-uuid",
+  "class_id": "class-uuid",
+  "section_id": "section-uuid",
+  "subject_id": "subject-uuid",
+  "assessment_type": "class_test",
+  "assessment_name": "Class Test 1",
+  "max_score": 20,
+  "date": "2026-01-15",
+  "scores": [
+    {
+      "student_id": "student-uuid",
+      "score": 18
+    }
+  ]
+}
+```
+
+### 9.7 Report Cards
+
+**Generate Report Cards**
+
+```http
+POST https://presec.simsplus.io/api/v1/exams/{exam_id}/report-cards/generate
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "class_id": "class-uuid",
+  "section_id": "section-uuid",
+  "include_ca": true,
+  "ca_weight": 30,
+  "exam_weight": 70
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "generated": 45,
+    "updated": 0,
+    "class_name": "JHS 2A"
+  }
+}
+```
+
+**Get Student Report Card**
+
+```http
+GET https://presec.simsplus.io/api/v1/exams/{exam_id}/report-cards/{student_id}
+Authorization: Bearer {token}
+```
+
+**Download Report Card PDF**
+
+```http
+GET https://presec.simsplus.io/api/v1/exams/{exam_id}/report-cards/{student_id}/pdf
+Authorization: Bearer {token}
+```
+
+### 9.8 Exam Analytics
+
+```http
+GET https://presec.simsplus.io/api/v1/exams/{exam_id}/analytics?class_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "class_average": 68.5,
+    "highest_score": 95,
+    "lowest_score": 32,
+    "pass_rate": 78.5,
+    "grade_distribution": {
+      "A": 12,
+      "B": 25,
+      "C": 18,
+      "D": 8,
+      "F": 5
+    },
+    "subject_performance": [
       {
-        "local_id": "local-uuid-x",
-        "error": "Record already exists for this date",
-        "resolution": "skipped"
+        "subject": "Mathematics",
+        "average": 72.3,
+        "pass_rate": 85
       }
     ]
   }
@@ -691,12 +651,857 @@ Content-Type: application/json
 
 ---
 
-## 9. Finance API
+## 10. Calendar API
 
-### 9.1 Initiate Mobile Money Payment
+### 10.1 List School Holidays
 
 ```http
-POST https://presec.simsplus.io/api/v1/payments/momo/initiate
+GET https://presec.simsplus.io/api/v1/academic/holidays?academic_year_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "holiday-uuid",
+      "name": "Independence Day",
+      "date": "2026-03-06",
+      "end_date": null,
+      "type": "public_holiday",
+      "description": "Ghana Independence Day",
+      "is_recurring": true
+    },
+    {
+      "id": "holiday-uuid-2",
+      "name": "Mid-Term Break",
+      "date": "2026-02-15",
+      "end_date": "2026-02-21",
+      "type": "school_break",
+      "description": "Term 1 mid-term break"
+    }
+  ]
+}
+```
+
+### 10.2 Create Holiday/Event
+
+```http
+POST https://presec.simsplus.io/api/v1/academic/holidays
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "Sports Day",
+  "date": "2026-02-28",
+  "end_date": null,
+  "type": "school_event",
+  "description": "Annual inter-house sports competition",
+  "academic_year_id": "year-uuid"
+}
+```
+
+**Event Types:**
+- `public_holiday` - National/public holidays
+- `school_break` - Term breaks, vacations
+- `school_event` - School activities, events
+- `exam_period` - Examination periods
+- `other` - Other calendar events
+
+### 10.3 Update Holiday/Event
+
+```http
+PUT https://presec.simsplus.io/api/v1/academic/holidays/{holiday_id}
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "Sports Day",
+  "date": "2026-03-01",
+  "description": "Rescheduled annual sports competition"
+}
+```
+
+### 10.4 Delete Holiday/Event
+
+```http
+DELETE https://presec.simsplus.io/api/v1/academic/holidays/{holiday_id}
+Authorization: Bearer {token}
+```
+
+### 10.5 Get School Days Count
+
+```http
+GET https://presec.simsplus.io/api/v1/academic/terms/{term_id}/school-days
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "term_id": "term-uuid",
+    "term_name": "Term 1",
+    "start_date": "2026-01-06",
+    "end_date": "2026-04-05",
+    "total_days": 90,
+    "weekend_days": 26,
+    "holidays": 5,
+    "school_days": 59,
+    "days_elapsed": 15,
+    "days_remaining": 44
+  }
+}
+```
+
+---
+
+## 11. Timetable API
+
+### 11.1 Get Class Timetable
+
+```http
+GET https://presec.simsplus.io/api/v1/timetable/classes/{class_id}?section_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "class_id": "class-uuid",
+    "class_name": "JHS 2",
+    "section_id": "section-uuid",
+    "section_name": "A",
+    "periods": [
+      {
+        "id": "period-uuid",
+        "day": "monday",
+        "start_time": "08:00",
+        "end_time": "08:45",
+        "subject_id": "subject-uuid",
+        "subject_name": "Mathematics",
+        "teacher_id": "teacher-uuid",
+        "teacher_name": "Mr. Asante",
+        "room": "Room 101"
+      }
+    ]
+  }
+}
+```
+
+### 11.2 Create/Update Timetable
+
+```http
+POST https://presec.simsplus.io/api/v1/timetable/classes/{class_id}
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "section_id": "section-uuid",
+  "term_id": "term-uuid",
+  "periods": [
+    {
+      "day": "monday",
+      "start_time": "08:00",
+      "end_time": "08:45",
+      "subject_id": "subject-uuid",
+      "teacher_id": "teacher-uuid",
+      "room": "Room 101"
+    },
+    {
+      "day": "monday",
+      "start_time": "08:45",
+      "end_time": "09:30",
+      "subject_id": "subject-uuid-2",
+      "teacher_id": "teacher-uuid-2",
+      "room": "Room 101"
+    }
+  ]
+}
+```
+
+### 11.3 Get Teacher Timetable
+
+```http
+GET https://presec.simsplus.io/api/v1/timetable/teachers/{teacher_id}?term_id=uuid
+Authorization: Bearer {token}
+```
+
+### 11.4 Delete Period
+
+```http
+DELETE https://presec.simsplus.io/api/v1/timetable/periods/{period_id}
+Authorization: Bearer {token}
+```
+
+### 11.5 Check Conflicts
+
+```http
+POST https://presec.simsplus.io/api/v1/timetable/check-conflicts
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "teacher_id": "teacher-uuid",
+  "day": "monday",
+  "start_time": "08:00",
+  "end_time": "08:45",
+  "exclude_period_id": "period-uuid"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "has_conflict": true,
+    "conflicts": [
+      {
+        "type": "teacher",
+        "message": "Teacher already assigned to JHS 1A at this time",
+        "period_id": "conflicting-period-uuid"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 12. Preschool API
+
+The Preschool module provides APIs for early childhood education management, including developmental assessments, observations, and daily activity tracking.
+
+> **Note:** For complete API documentation, see [PRESCHOOL_ARCHITECTURE.md](./PRESCHOOL_ARCHITECTURE.md)
+
+### 12.1 Developmental Domains
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/preschool/domains` | List developmental domains |
+| GET | `/preschool/domains/{id}/milestones` | Get milestones for domain |
+
+### 12.2 Observations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/preschool/observations` | List observations |
+| POST | `/preschool/observations` | Create observation |
+| GET | `/preschool/observations/student/{id}` | Get student observations |
+
+### 12.3 Daily Activity Logs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/preschool/daily-logs` | List daily logs |
+| POST | `/preschool/daily-logs` | Create/update daily log |
+| GET | `/preschool/daily-logs/student/{id}` | Get student daily logs |
+
+### 12.4 Assessments
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/preschool/assessments` | List assessments |
+| POST | `/preschool/assessments` | Create assessment |
+| GET | `/preschool/assessments/student/{id}` | Get student assessments |
+
+### 12.5 Progress Reports
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/preschool/reports/student/{id}` | Get student progress report |
+| GET | `/preschool/reports/student/{id}/pdf` | Download progress report PDF |
+
+---
+
+## 13. Finance API
+
+The Finance module provides comprehensive fee management, invoicing, payment recording, and scholarship management.
+
+### 13.1 Fee Types
+
+**List Fee Types**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/fee-types
+Authorization: Bearer {token}
+```
+
+**Create Fee Type**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/fee-types
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "Tuition Fee",
+  "description": "Main tuition fee",
+  "category": "tuition",
+  "is_active": true
+}
+```
+
+**Fee Type Categories:** `tuition`, `examination`, `facilities`, `activities`, `other`
+
+### 13.2 Fee Structures
+
+**List Fee Structures**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/fee-structures?academic_year_id=uuid&term_id=uuid
+Authorization: Bearer {token}
+```
+
+**Create Fee Structure**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/fee-structures
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "Term 1 Fees - JHS 1",
+  "description": "Fee structure for JHS 1 students",
+  "academic_year_id": "year-uuid",
+  "term_id": "term-uuid",
+  "class_id": "class-uuid",
+  "level_category": "jhs",
+  "student_type": "all",
+  "items": [
+    {
+      "name": "Tuition",
+      "amount": 500.00,
+      "fee_type_id": "fee-type-uuid",
+      "is_optional": false
+    },
+    {
+      "name": "Exam Fee",
+      "amount": 50.00,
+      "fee_type_id": "fee-type-uuid",
+      "is_optional": false
+    }
+  ]
+}
+```
+
+**Level Categories:** `preschool`, `primary`, `jhs`, `shs`
+**Student Types:** `all`, `boarding`, `day`
+
+### 13.3 Invoices
+
+**List Invoices**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/invoices?status=issued&academic_year_id=uuid&q=search
+Authorization: Bearer {token}
+```
+
+**Create Single Invoice**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "student_id": "student-uuid",
+  "fee_structure_id": "fee-structure-uuid",
+  "academic_year_id": "year-uuid",
+  "term_id": "term-uuid",
+  "due_date": "2026-02-15",
+  "discount_amount": 0,
+  "notes": "Term 1 school fees"
+}
+```
+
+**Bulk Generate Invoices**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices/bulk-generate
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "fee_structure_id": "fee-structure-uuid",
+  "academic_year_id": "year-uuid",
+  "term_id": "term-uuid",
+  "class_id": "class-uuid",
+  "section_id": "section-uuid",
+  "due_date": "2026-02-15",
+  "issue_immediately": false
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "created": 45,
+    "skipped": 5,
+    "failed": 0,
+    "errors": [],
+    "invoice_ids": ["uuid1", "uuid2", "..."]
+  }
+}
+```
+
+**Issue Invoice**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices/{invoice_id}/issue
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "issue_date": "2026-01-15"
+}
+```
+
+**Cancel Invoice**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices/{invoice_id}/cancel
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "reason": "Duplicate invoice created"
+}
+```
+
+**Sync Invoices with Fee Structure**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices/sync
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "fee_structure_id": "fee-structure-uuid",
+  "academic_year_id": "year-uuid",
+  "term_id": "term-uuid"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "updated": 30,
+    "skipped": 15,
+    "failed": 0,
+    "errors": [],
+    "skipped_reasons": {
+      "issued": 5,
+      "partial": 8,
+      "paid": 2
+    }
+  }
+}
+```
+
+**Email Invoice**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/invoices/{invoice_id}/email
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "email": "parent@email.com",
+  "recipient_name": "Mr. Mensah",
+  "cc_emails": ["accountant@school.edu", "headmaster@school.edu"]
+}
+```
+
+**Invoice Statuses:** `draft`, `issued`, `partial`, `paid`, `overdue`, `cancelled`
+
+### 13.4 Payments
+
+**List Payments**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/payments?payment_method=cash&start_date=2026-01-01
+Authorization: Bearer {token}
+```
+
+**Record Payment**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/payments
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "invoice_id": "invoice-uuid",
+  "student_id": "student-uuid",
+  "amount": 500.00,
+  "payment_method": "cash",
+  "payment_date": "2026-01-15",
+  "payer_name": "Mr. Kofi Mensah",
+  "payer_phone": "+233241234567",
+  "notes": "Partial payment for Term 1 fees"
+}
+```
+
+**Payment Methods:** `cash`, `momo_mtn`, `momo_vodafone`, `momo_airteltigo`, `bank_transfer`, `cheque`, `card`, `other`
+
+**Void Payment**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/payments/{payment_id}/void
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "reason": "Payment recorded in error"
+}
+```
+
+**Get Payment Receipt**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/payments/{payment_id}/receipt
+Authorization: Bearer {token}
+```
+
+### 13.5 Scholarships
+
+**List Scholarships**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/scholarships?is_active=true
+Authorization: Bearer {token}
+```
+
+**Create Scholarship**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/scholarships
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "name": "Academic Excellence Award",
+  "code": "AEA-2026",
+  "description": "For students with outstanding academic performance",
+  "scholarship_type": "merit",
+  "coverage_type": "percentage",
+  "coverage_value": 50.00,
+  "max_recipients": 10,
+  "academic_year_id": "year-uuid",
+  "eligibility_criteria": {
+    "min_average": 80
+  }
+}
+```
+
+**Scholarship Types:** `full`, `partial`, `merit`, `need_based`, `athletic`, `special`
+**Coverage Types:** `percentage`, `fixed_amount`
+
+**Award Scholarship to Student**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/scholarships/{scholarship_id}/award
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "student_id": "student-uuid",
+  "effective_from": "2026-01-01",
+  "effective_to": "2026-12-31",
+  "coverage_override": null,
+  "notes": "Awarded for outstanding performance"
+}
+```
+
+**Bulk Award Scholarship**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/scholarships/{scholarship_id}/award-bulk
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "student_ids": ["student-1-uuid", "student-2-uuid"],
+  "effective_from": "2026-01-01",
+  "effective_to": "2026-12-31",
+  "notes": "Merit scholarship recipients"
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "awarded": 2,
+    "skipped": 0,
+    "failed": 0,
+    "errors": [],
+    "student_scholarship_ids": ["uuid1", "uuid2"]
+  }
+}
+```
+
+**Revoke Scholarship**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/scholarships/{scholarship_id}/recipients/{student_scholarship_id}/revoke
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "reason": "Student no longer meets eligibility criteria"
+}
+```
+
+**Get Scholarship Recipients**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/scholarships/{scholarship_id}/recipients
+Authorization: Bearer {token}
+```
+
+**Get Student's Scholarships**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/scholarships/student/{student_id}
+Authorization: Bearer {token}
+```
+
+### 13.6 Credit Notes
+
+Credit notes handle overpayments, fee reductions, and error corrections. They follow a workflow: draft → issued → applied/refunded/cancelled.
+
+**List Credit Notes**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/credit-notes?status=issued&q=search
+Authorization: Bearer {token}
+```
+
+**Query Parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | - | Filter by status (draft, issued, applied, refunded, cancelled) |
+| `type` | string | - | Filter by type (overpayment, fee_reduction, error_correction) |
+| `q` | string | - | Search by credit note number or student name |
+| `page` | integer | 1 | Page number |
+| `per_page` | integer | 20 | Items per page |
+
+**Create Credit Note**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/credit-notes
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "student_id": "student-uuid",
+  "invoice_id": "invoice-uuid",
+  "type": "overpayment",
+  "amount": 150.00,
+  "reason": "Overpayment on Term 1 fees"
+}
+```
+
+**Credit Note Types:** `overpayment`, `fee_reduction`, `error_correction`
+
+**Issue Credit Note**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/credit-notes/{credit_note_id}/issue
+Authorization: Bearer {token}
+```
+
+**Apply Credit Note to Invoice**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/credit-notes/{credit_note_id}/apply
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "invoice_id": "invoice-uuid",
+  "amount": 150.00
+}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "credit_note_id": "credit-note-uuid",
+    "invoice_id": "invoice-uuid",
+    "amount_applied": 150.00,
+    "credit_note_remaining": 0.00,
+    "invoice_new_balance": 350.00
+  }
+}
+```
+
+**Refund Credit Note**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/credit-notes/{credit_note_id}/refund
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "refund_method": "cash",
+  "refund_reference": "REF-001",
+  "refunded_to": "Mr. Kofi Mensah"
+}
+```
+
+**Cancel Credit Note**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/credit-notes/{credit_note_id}/cancel
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+  "reason": "Created in error"
+}
+```
+
+**Get Student Credit Balance**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/credit-notes/student/{student_id}/balance
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "student_id": "student-uuid",
+    "available_credit": 200.00,
+    "total_issued": 500.00,
+    "total_applied": 250.00,
+    "total_refunded": 50.00
+  }
+}
+```
+
+**Credit Note Statuses:** `draft`, `issued`, `applied`, `partially_applied`, `refunded`, `cancelled`
+
+> **Note:** When a credit note is issued, the system can auto-apply it to the student's oldest unpaid invoice if configured.
+
+### 13.7 Finance Audit Log
+
+All finance transactions are logged to an immutable audit trail.
+
+**Get Audit Log**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/audit-log?entity_type=invoice&entity_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "log-uuid",
+      "entity_type": "invoice",
+      "entity_id": "invoice-uuid",
+      "action": "status_change",
+      "old_values": {"status": "draft"},
+      "new_values": {"status": "issued"},
+      "performed_by": "user-uuid",
+      "performed_by_name": "Admin User",
+      "performed_at": "2026-01-15T10:30:00Z",
+      "ip_address": "192.168.1.1"
+    }
+  ]
+}
+```
+
+**Entity Types:** `invoice`, `payment`, `credit_note`, `scholarship`, `fee_structure`
+
+### 13.8 Finance Dashboard
+
+**Get Dashboard Statistics**
+
+```http
+GET https://presec.simsplus.io/api/v1/finance/dashboard?academic_year_id=uuid&term_id=uuid
+Authorization: Bearer {token}
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "stats": {
+      "expected_revenue": 125000.00,
+      "collected_revenue": 45000.00,
+      "outstanding_balance": 80000.00,
+      "total_invoices": 200,
+      "paid_invoices": 50,
+      "partial_invoices": 30,
+      "overdue_invoices": 25,
+      "total_payments": 85,
+      "total_scholarships_value": 15000.00,
+      "scholarship_recipients": 12
+    },
+    "recent_payments": [
+      {
+        "id": "payment-uuid",
+        "receipt_number": "RCP-2026-001",
+        "student_name": "Kofi Asante",
+        "amount": 500.00,
+        "payment_method": "cash",
+        "payment_date": "2026-01-15"
+      }
+    ],
+    "outstanding_by_class": [
+      {
+        "class_id": "class-uuid",
+        "class_name": "JHS 1",
+        "student_count": 45,
+        "total_outstanding": 15000.00
+      }
+    ]
+  }
+}
+```
+
+### 13.9 Mobile Money Payment (Future)
+
+**Initiate Mobile Money Payment**
+
+```http
+POST https://presec.simsplus.io/api/v1/finance/payments/momo/initiate
 Authorization: Bearer {token}
 Content-Type: application/json
 
@@ -728,7 +1533,7 @@ Content-Type: application/json
 }
 ```
 
-### 9.2 Payment Webhook (MoMo Callback)
+**Payment Webhook (MoMo Callback)**
 
 ```http
 POST https://api.simsplus.io/v1/webhooks/momo/mtn
@@ -748,9 +1553,9 @@ Content-Type: application/json
 
 ---
 
-## 10. Error Handling
+## 14. Error Handling
 
-### 10.1 Error Response Format
+### 14.1 Error Response Format
 
 ```json
 {
@@ -764,7 +1569,7 @@ Content-Type: application/json
 }
 ```
 
-### 10.2 Error Codes
+### 14.2 Error Codes
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
@@ -781,8 +1586,14 @@ Content-Type: application/json
 | `NOT_FOUND` | 404 | Resource not found |
 | `VALIDATION_ERROR` | 422 | Request validation failed |
 | `RATE_LIMITED` | 429 | Too many requests |
+| `SCORE_VALIDATION_ERROR` | 422 | Score exceeds maximum |
+| `EXAM_NOT_FOUND` | 404 | Exam does not exist |
+| `TIMETABLE_CONFLICT` | 409 | Schedule conflict detected |
+| `INVOICE_NOT_DRAFT` | 400 | Invoice cannot be modified (not in draft status) |
+| `CREDIT_NOTE_INVALID_STATUS` | 400 | Credit note action not allowed in current status |
+| `INSUFFICIENT_CREDIT` | 400 | Credit note balance insufficient for operation |
 
-### 10.3 Rate Limiting
+### 14.3 Rate Limiting
 
 | Endpoint Type | Limit | Window |
 |--------------|-------|--------|
@@ -808,3 +1619,6 @@ X-RateLimit-Reset: 1704067260
 |---------|------|--------|---------|
 | 1.0 | January 2026 | Harry McNinson | Initial version |
 | 2.0 | January 2026 | Harry McNinson | Added subdomain multi-tenancy, tenant context, onboarding API |
+| 2.1 | January 2026 | Harry McNinson | Added Exams API, Calendar API, Timetable API, updated Preschool API |
+| 2.2 | January 2026 | Harry McNinson | Added complete Finance API: fee types, fee structures, invoices, payments, scholarships, dashboard |
+| 2.3 | January 2026 | Harry McNinson | Added Credit Notes API, Finance Audit Log API, additional error codes |

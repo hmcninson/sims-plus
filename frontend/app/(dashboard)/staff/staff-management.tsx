@@ -9,15 +9,15 @@ import {
   Search,
   MoreHorizontal,
   Loader2,
-  Briefcase,
-  Filter,
   Download,
+  Upload,
   Pencil,
   Trash2,
   Eye,
   UserCheck,
   UserX,
   GraduationCap,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,7 +60,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { getStaff, deleteStaff, getStaffStats } from "@/actions/staff.action";
+import { getStaff, deleteStaff, getStaffStats, exportStaff } from "@/actions/staff.action";
+import { ImportStaffDialog } from "./import-staff-dialog";
 import type {
   StaffListItem,
   StaffStats,
@@ -80,8 +81,8 @@ const STATUS_CONFIG: Record<StaffStatus, { label: string; color: string }> = {
 
 // Staff type configuration
 const TYPE_CONFIG: Record<StaffType, { label: string; color: string }> = {
-  teaching: { label: "Teaching", color: "bg-purple-500" },
-  non_teaching: { label: "Non-Teaching", color: "bg-blue-500" },
+  teaching: { label: "Teaching", color: "bg-blue-500" },
+  non_teaching: { label: "Non-Teaching", color: "bg-teal-500" },
   administrative: { label: "Administrative", color: "bg-indigo-500" },
 };
 
@@ -103,6 +104,8 @@ export function StaffManagement({
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [deleteConfirm, setDeleteConfirm] = useState<StaffListItem | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
   // Fetch staff with filters
   const fetchStaff = useCallback(async (overrides?: {
@@ -199,6 +202,35 @@ export function StaffManagement({
     return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
   };
 
+  // Handle export
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const result = await exportStaff({
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        staff_type: typeFilter !== "all" ? typeFilter : undefined,
+      });
+
+      if (result.success && result.data) {
+        const url = window.URL.createObjectURL(result.data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `staff_export_${new Date().toISOString().split("T")[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+        toast.success("Staff data exported successfully");
+      } else {
+        toast.error(result.error || "Failed to export staff");
+      }
+    } catch {
+      toast.error("Failed to export staff");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -210,6 +242,31 @@ export function StaffManagement({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Export
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setShowImportDialog(true)}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Import
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/staff/departments">
+              <Building2 className="mr-2 h-4 w-4" />
+              Departments
+            </Link>
+          </Button>
           <Button asChild>
             <Link href="/staff/new">
               <UserPlus className="mr-2 h-4 w-4" />
@@ -246,10 +303,10 @@ export function StaffManagement({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Teaching</CardTitle>
-            <GraduationCap className="h-4 w-4 text-purple-500" />
+            <GraduationCap className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{stats.teaching}</div>
+            <div className="text-2xl font-bold text-blue-600">{stats.teaching}</div>
             <p className="text-xs text-muted-foreground">
               {stats.non_teaching} non-teaching, {stats.administrative} admin
             </p>
@@ -519,6 +576,13 @@ export function StaffManagement({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Dialog */}
+      <ImportStaffDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onSuccess={() => fetchStaff()}
+      />
     </div>
   );
 }

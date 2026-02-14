@@ -334,7 +334,7 @@ export function Classes({ initialData }: ClassesProps) {
 
   const getLevelCategory = (level?: string): string => {
     if (!level) return "other";
-    if (level.startsWith("nursery") || level.startsWith("kg")) return "preschool";
+    if (level === "creche" || level.startsWith("nursery") || level.startsWith("kg")) return "preschool";
     if (level.startsWith("primary")) return "primary";
     if (level.startsWith("jhs")) return "jhs";
     if (level.startsWith("shs")) return "shs";
@@ -395,6 +395,7 @@ export function Classes({ initialData }: ClassesProps) {
   // Level options for the dropdown
   const levelOptions = [
     { group: "Preschool", options: [
+      { value: "creche", label: "Creche" },
       { value: "nursery_1", label: "Nursery 1" },
       { value: "nursery_2", label: "Nursery 2" },
       { value: "kg_1", label: "KG 1" },

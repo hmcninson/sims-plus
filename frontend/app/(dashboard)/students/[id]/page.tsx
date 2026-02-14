@@ -38,6 +38,8 @@ import {
   AlertCircle,
   Camera,
   Loader2,
+  FilePlus2,
+  Award,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -771,7 +773,19 @@ export default function StudentDetailPage() {
               icon={CreditCard}
               title="View Fees"
               description="Check fee status and payments"
-              disabled
+              href={`/finance/invoices?q=${encodeURIComponent(student.student_id)}`}
+            />
+            <QuickAction
+              icon={FilePlus2}
+              title="Generate Invoice"
+              description="Create invoice for this student"
+              href={`/finance/invoices/generate?student_id=${studentId}`}
+            />
+            <QuickAction
+              icon={Award}
+              title="Scholarships"
+              description="View scholarships and awards"
+              href={`/students/${studentId}/scholarships`}
             />
             <QuickAction
               icon={ClipboardList}

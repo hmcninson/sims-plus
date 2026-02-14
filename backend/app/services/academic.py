@@ -579,9 +579,19 @@ class AcademicService:
         self,
         tenant_id: UUID,
         category: Optional[str] = None,
+        class_level: Optional[str] = None,
         active_only: bool = True,
     ) -> Sequence[Subject]:
-        """List subjects."""
+        """List subjects, optionally filtered by class level.
+
+        Args:
+            tenant_id: The tenant ID
+            category: Filter by subject category
+            class_level: Filter by class level (preschool, primary, jhs, shs).
+                        Returns subjects where applicable_levels contains this level,
+                        or where applicable_levels is null (applies to all levels).
+            active_only: Only return active subjects
+        """
         conditions = [
             Subject.tenant_id == tenant_id,
             Subject.deleted_at.is_(None),
@@ -590,6 +600,17 @@ class AcademicService:
             conditions.append(Subject.category == category)
         if active_only:
             conditions.append(Subject.is_active == True)
+
+        # Filter by class level if specified
+        # Subject applies if: applicable_levels is NULL (all levels) OR contains the specified level
+        if class_level:
+            from sqlalchemy import or_, text
+            conditions.append(
+                or_(
+                    Subject.applicable_levels.is_(None),
+                    Subject.applicable_levels.contains([class_level]),
+                )
+            )
 
         result = await self.db.execute(
             select(Subject).where(and_(*conditions)).order_by(Subject.name)
@@ -644,6 +665,16 @@ class AcademicService:
             raise AcademicServiceError("Class not found", code="class_not_found")
         if not subject:
             raise AcademicServiceError("Subject not found", code="subject_not_found")
+
+        # Prevent subject assignment to preschool classes
+        # Preschool uses Learning Areas and Developmental Skills instead
+        preschool_levels = {"creche", "preschool", "nursery_1", "nursery_2", "kg_1", "kg_2"}
+        if class_.level and class_.level.value in preschool_levels:
+            raise AcademicServiceError(
+                "Subjects cannot be assigned to preschool classes. "
+                "Preschool classes use Learning Areas and Developmental Skills instead.",
+                code="preschool_no_subjects",
+            )
 
         # Check for existing assignment
         existing = await self.db.execute(
@@ -706,6 +737,25 @@ class AcademicService:
                 )
             )
             .options(selectinload(ClassSubject.subject))
+        )
+        return result.scalars().all()
+
+    async def get_subjects_for_classes(
+        self, tenant_id: UUID, class_ids: list[UUID]
+    ) -> Sequence[ClassSubject]:
+        """Get all subjects assigned to multiple classes in one query."""
+        if not class_ids:
+            return []
+        result = await self.db.execute(
+            select(ClassSubject)
+            .where(
+                and_(
+                    ClassSubject.tenant_id == tenant_id,
+                    ClassSubject.class_id.in_(class_ids),
+                )
+            )
+            .options(selectinload(ClassSubject.subject))
+            .order_by(ClassSubject.class_id)
         )
         return result.scalars().all()
 
@@ -937,6 +987,8 @@ class AcademicService:
         midterm_weight: Decimal,
         end_term_weight: Decimal,
         academic_year_id: Optional[UUID] = None,
+        ca_total_weight: Optional[Decimal] = None,
+        exam_total_weight: Optional[Decimal] = None,
     ) -> AssessmentWeight:
         """Set assessment weights for a tenant (optionally for specific academic year)."""
         # Check if weights exist
@@ -957,6 +1009,10 @@ class AcademicService:
             weights.homework_weight = homework_weight
             weights.midterm_weight = midterm_weight
             weights.end_term_weight = end_term_weight
+            if ca_total_weight is not None:
+                weights.ca_total_weight = ca_total_weight
+            if exam_total_weight is not None:
+                weights.exam_total_weight = exam_total_weight
             weights.updated_at = datetime.now(UTC)
         else:
             # Create new
@@ -967,6 +1023,8 @@ class AcademicService:
                 homework_weight=homework_weight,
                 midterm_weight=midterm_weight,
                 end_term_weight=end_term_weight,
+                ca_total_weight=ca_total_weight or Decimal("50"),
+                exam_total_weight=exam_total_weight or Decimal("50"),
             )
             self.db.add(weights)
 

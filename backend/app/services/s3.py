@@ -92,7 +92,7 @@ class S3Service:
             raise RuntimeError(f"Failed to create S3 bucket: {e}")
 
     def _set_public_read_policy(self) -> None:
-        """Set bucket policy to allow public read for logos, avatars, and student photos."""
+        """Set bucket policy to allow public read for logos, avatars, student photos, and staff photos."""
         policy = {
             "Version": "2012-10-17",
             "Statement": [
@@ -117,6 +117,13 @@ class S3Service:
                     "Action": "s3:GetObject",
                     "Resource": f"arn:aws:s3:::{self.bucket}/students/*",
                 },
+                {
+                    "Sid": "PublicReadStaff",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": f"arn:aws:s3:::{self.bucket}/staff/*",
+                },
             ],
         }
         self.client.put_bucket_policy(
@@ -135,10 +142,11 @@ class S3Service:
             has_logos = any(stmt.get("Sid") == "PublicReadLogos" for stmt in statements)
             has_avatars = any(stmt.get("Sid") == "PublicReadAvatars" for stmt in statements)
             has_students = any(stmt.get("Sid") == "PublicReadStudents" for stmt in statements)
+            has_staff = any(stmt.get("Sid") == "PublicReadStaff" for stmt in statements)
 
             # Update policy if any statement is missing
-            if not has_logos or not has_avatars or not has_students:
-                print(f"S3: Updating bucket policy - logos={has_logos}, avatars={has_avatars}, students={has_students}")
+            if not has_logos or not has_avatars or not has_students or not has_staff:
+                print(f"S3: Updating bucket policy - logos={has_logos}, avatars={has_avatars}, students={has_students}, staff={has_staff}")
                 self._set_public_read_policy()
                 print("S3: Bucket policy updated successfully")
             else:

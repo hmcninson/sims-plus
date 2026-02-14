@@ -15,11 +15,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including WeasyPrint requirements)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
+    # WeasyPrint dependencies
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    libcairo2 \
+    libgirepository1.0-dev \
+    gir1.2-pango-1.0 \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # =========================
