@@ -59,19 +59,11 @@ export async function bulkMarkStudentAttendance(
 ): Promise<ActionResult<BulkAttendanceResult>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    console.log("[Attendance] Saving bulk attendance:", {
-      section_id: data.section_id,
-      date: data.date,
-      records_count: data.records.length,
-      has_token: !!token,
-      subdomain,
-    });
     const response = await apiPost<BulkAttendanceResult>(
       "/attendance/students/bulk",
       data,
       { token, subdomain }
     );
-    console.log("[Attendance] Save successful:", response);
     return { success: true, data: response };
   } catch (error) {
     console.error("[Attendance] Save failed:", error);
@@ -199,7 +191,7 @@ export async function deleteStudentAttendance(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -353,7 +345,7 @@ export async function deleteStaffAttendance(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

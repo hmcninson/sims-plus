@@ -416,7 +416,7 @@ export function RatingScales({ initialData }: RatingScalesProps) {
                         {error}
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="name">Scale Name</Label>
                         <Input
@@ -716,7 +716,7 @@ export function RatingScales({ initialData }: RatingScalesProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="rating_short_code">Code *</Label>
                 <Input
@@ -767,7 +767,7 @@ export function RatingScales({ initialData }: RatingScalesProps) {
                 }
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="rating_color">Color</Label>
                 <div className="flex items-center gap-2">

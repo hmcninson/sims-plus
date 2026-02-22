@@ -499,7 +499,7 @@ export function ScholarshipsList() {
               />
             </div>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder="Academic Year" />
               </SelectTrigger>
               <SelectContent>
@@ -512,7 +512,7 @@ export function ScholarshipsList() {
               </SelectContent>
             </Select>
             <Select value={selectedType} onValueChange={setSelectedType}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -524,7 +524,7 @@ export function ScholarshipsList() {
               </SelectContent>
             </Select>
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-full sm:w-[120px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>

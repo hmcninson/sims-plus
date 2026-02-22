@@ -2,13 +2,22 @@
 SIMS Plus - Media Upload API Endpoints
 
 API endpoints for file uploads (logos, avatars, documents, etc.)
+
+SECURITY:
+- Magic byte validation prevents Content-Type spoofing attacks.
+- Student/staff photos return presigned URLs (not public URLs).
+- Error messages never leak internal S3 details.
 """
 
+import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.api.deps import CurrentUserId, RequestTenant, require_permissions
 from app.schemas.media import FileUploadResponse
 from app.services.s3 import S3Service, get_s3_service
+from app.utils.sanitize import validate_file_magic
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -69,6 +78,13 @@ async def upload_logo(
             detail="File is empty",
         )
 
+    # Verify actual file content matches claimed Content-Type (prevents spoofing)
+    if not validate_file_magic(content, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match declared type",
+        )
+
     # Generate unique key
     key = s3.generate_unique_key(
         folder="logos",
@@ -83,10 +99,11 @@ async def upload_logo(
             key=key,
             content_type=file.content_type,
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("File upload failed", folder="logos", tenant_id=str(tenant.tenant_id))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}",
+            detail="File upload failed. Please try again later.",
         )
 
     return FileUploadResponse(
@@ -111,7 +128,11 @@ async def upload_student_photo(
     file: UploadFile = File(..., description="Student photo (PNG, JPEG, or WEBP)"),
     s3: S3Service = Depends(get_s3_service),
 ) -> FileUploadResponse:
-    """Upload a student photo to S3."""
+    """Upload a student photo to S3.
+
+    Returns a presigned URL (not a public URL) because student photos
+    are PII and must not be publicly accessible.
+    """
 
     # Validate file type
     if file.content_type not in ALLOWED_LOGO_TYPES:
@@ -137,6 +158,13 @@ async def upload_student_photo(
             detail="File is empty",
         )
 
+    # Verify actual file content matches claimed Content-Type (prevents spoofing)
+    if not validate_file_magic(content, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match declared type",
+        )
+
     # Generate unique key using student_id for organization
     key = s3.generate_unique_key(
         folder="students",
@@ -144,17 +172,21 @@ async def upload_student_photo(
         original_filename=f"{student_id}.{file.filename or 'photo.png'}",
     )
 
-    # Upload to S3
+    # Upload to S3 (student photos are private, not publicly readable)
     try:
-        url = s3.upload_file(
+        s3.upload_file(
             file_content=content,
             key=key,
             content_type=file.content_type,
         )
-    except Exception as e:
+        # Return a presigned URL instead of the public URL because
+        # student photos are PII of minors and must not be public
+        url = s3.generate_presigned_url(key)
+    except Exception:
+        logger.exception("File upload failed", folder="students", tenant_id=str(tenant.tenant_id))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}",
+            detail="File upload failed. Please try again later.",
         )
 
     return FileUploadResponse(
@@ -179,7 +211,11 @@ async def upload_staff_photo(
     file: UploadFile = File(..., description="Staff photo (PNG, JPEG, or WEBP)"),
     s3: S3Service = Depends(get_s3_service),
 ) -> FileUploadResponse:
-    """Upload a staff photo to S3."""
+    """Upload a staff photo to S3.
+
+    Returns a presigned URL (not a public URL) because staff photos
+    are PII and must not be publicly accessible.
+    """
 
     # Validate file type
     if file.content_type not in ALLOWED_LOGO_TYPES:
@@ -205,6 +241,13 @@ async def upload_staff_photo(
             detail="File is empty",
         )
 
+    # Verify actual file content matches claimed Content-Type (prevents spoofing)
+    if not validate_file_magic(content, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match declared type",
+        )
+
     # Generate unique key using staff_id for organization
     key = s3.generate_unique_key(
         folder="staff",
@@ -212,17 +255,21 @@ async def upload_staff_photo(
         original_filename=f"{staff_id}.{file.filename or 'photo.png'}",
     )
 
-    # Upload to S3
+    # Upload to S3 (staff photos are private, not publicly readable)
     try:
-        url = s3.upload_file(
+        s3.upload_file(
             file_content=content,
             key=key,
             content_type=file.content_type,
         )
-    except Exception as e:
+        # Return a presigned URL instead of the public URL because
+        # staff photos are PII and must not be publicly accessible
+        url = s3.generate_presigned_url(key)
+    except Exception:
+        logger.exception("File upload failed", folder="staff", tenant_id=str(tenant.tenant_id))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}",
+            detail="File upload failed. Please try again later.",
         )
 
     return FileUploadResponse(
@@ -272,10 +319,17 @@ async def upload_avatar(
             detail="File is empty",
         )
 
-    # Generate unique key using user_id for organization
+    # Verify actual file content matches claimed Content-Type (prevents spoofing)
+    if not validate_file_magic(content, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match declared type",
+        )
+
+    # Generate unique key — use tenant_id (not user_id) for consistent S3 path structure
     key = s3.generate_unique_key(
         folder="avatars",
-        tenant_id=str(current_user_id),
+        tenant_id=str(tenant.tenant_id),
         original_filename=file.filename or "avatar.png",
     )
 
@@ -286,10 +340,11 @@ async def upload_avatar(
             key=key,
             content_type=file.content_type,
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("File upload failed", folder="avatars", tenant_id=str(tenant.tenant_id))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload file: {str(e)}",
+            detail="File upload failed. Please try again later.",
         )
 
     return FileUploadResponse(

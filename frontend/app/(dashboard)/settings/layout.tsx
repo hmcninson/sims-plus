@@ -15,6 +15,7 @@ import {
   Mail,
   Database,
   Baby,
+  ScrollText,
 } from "lucide-react";
 
 const settingsNavItems = [
@@ -96,6 +97,12 @@ const settingsNavItems = [
         href: "/settings/data",
         icon: Database,
         description: "Import, export, backup",
+      },
+      {
+        title: "Audit Log",
+        href: "/settings/audit-log",
+        icon: ScrollText,
+        description: "Security event history",
       },
     ],
   },

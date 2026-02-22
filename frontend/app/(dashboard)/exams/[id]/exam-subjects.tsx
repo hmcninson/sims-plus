@@ -242,7 +242,7 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <Select value={selectedClass} onValueChange={setSelectedClass}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="Filter by class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -270,9 +270,9 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Subject</TableHead>
-                        <TableHead>Max Score</TableHead>
-                        <TableHead>Pass Mark</TableHead>
-                        <TableHead>Date/Time</TableHead>
+                        <TableHead className="hidden sm:table-cell">Max Score</TableHead>
+                        <TableHead className="hidden md:table-cell">Pass Mark</TableHead>
+                        <TableHead className="hidden md:table-cell">Date/Time</TableHead>
                         <TableHead>Progress</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
@@ -289,9 +289,9 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
                               </p>
                             </div>
                           </TableCell>
-                          <TableCell>{subject.max_score}</TableCell>
-                          <TableCell>{subject.pass_mark}</TableCell>
-                          <TableCell>
+                          <TableCell className="hidden sm:table-cell">{subject.max_score}</TableCell>
+                          <TableCell className="hidden md:table-cell">{subject.pass_mark}</TableCell>
+                          <TableCell className="hidden md:table-cell">
                             {subject.exam_date ? (
                               <div>
                                 <p>{format(parseISO(subject.exam_date), "MMM d")}</p>
@@ -382,7 +382,7 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="max_score">Max Score</Label>
                 <Input
@@ -408,7 +408,7 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="exam_date">Exam Date</Label>
                 <Input
@@ -432,7 +432,7 @@ export function ExamSubjects({ examId, subjects }: ExamSubjectsProps) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="duration">Duration (minutes)</Label>
                 <Input

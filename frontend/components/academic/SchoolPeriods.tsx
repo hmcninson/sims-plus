@@ -351,7 +351,7 @@ export function SchoolPeriods() {
           </TabsContent>
 
           <TabsContent value="section" className="mt-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Select Class</Label>
                 <Select value={selectedClassId} onValueChange={setSelectedClassId}>
@@ -418,7 +418,7 @@ export function SchoolPeriods() {
                       {error}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label htmlFor="period_number">Period Number</Label>
                       <Input
@@ -449,7 +449,7 @@ export function SchoolPeriods() {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label htmlFor="start_time">Start Time</Label>
                       <Input

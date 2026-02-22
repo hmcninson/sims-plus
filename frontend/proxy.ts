@@ -13,26 +13,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-// Reserved subdomains that should not be treated as tenant subdomains
+// Reserved subdomains -- MUST match database seed data AND backend/middleware/tenant.py
 const RESERVED_SUBDOMAINS = new Set([
-  "www",
-  "app",
-  "api",
-  "admin",
-  "mail",
-  "ftp",
-  "status",
-  "blog",
-  "help",
-  "support",
-  "docs",
-  "cdn",
-  "assets",
-  "staging",
-  "dev",
-  "test",
-  "demo",
-  "sandbox",
+  "www", "app", "api", "admin", "mail", "ftp", "status", "blog",
+  "help", "support", "docs", "cdn", "assets", "staging", "dev",
+  "test", "demo", "sandbox", "beta", "alpha", "portal", "login",
+  "register", "signup", "dashboard", "billing", "payments",
+  "webhooks", "graphql", "ws", "static", "media", "images",
+  "files", "downloads", "uploads",
 ]);
 
 /**
@@ -151,7 +139,10 @@ function isPublicRoute(pathname: string): boolean {
  * Handles subdomain detection and sets tenant context headers.
  */
 export default function proxy(request: NextRequest): NextResponse {
-  const hostname = request.headers.get("host") || "";
+  // In production behind Nginx, the original host may be in x-forwarded-host
+  const hostname = request.headers.get("x-forwarded-host")
+    || request.headers.get("host")
+    || "";
   const pathname = request.nextUrl.pathname;
   const searchParams = request.nextUrl.searchParams;
 

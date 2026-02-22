@@ -5,9 +5,9 @@ Common dependencies injected into API endpoints.
 """
 
 from collections.abc import AsyncGenerator
-from typing import Annotated, Optional
-from uuid import UUID
+from typing import Annotated
 
+import structlog
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -16,51 +16,122 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import async_session_maker
-from app.middleware.tenant import get_tenant_context, TenantContext
+from app.middleware.tenant import TenantContext
 from app.services.token_blacklist import get_token_blacklist_service
+
+logger = structlog.get_logger()
 
 # OAuth2 scheme for JWT token extraction
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+# Paths that don't require tenant context (subset of middleware PUBLIC_PATHS)
+_PUBLIC_PATHS = {
+    "/health",
+    "/api/v1/onboarding/register",
+    "/api/v1/onboarding/suggest-subdomain",
+    "/api/v1/tenant/check-subdomain",
+    "/api/v1/tenant/validate",
+}
+
+_PUBLIC_PATH_PREFIXES = (
+    "/api/v1/tenant/validate/",
+    "/api/v1/tenant/check-subdomain/",
+    "/api/v1/onboarding/",
+    "/api/v1/auth/register",
+    "/api/v1/auth/validate-reset-token",
+    "/api/v1/auth/reset-password",
+    "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
+)
+
+
+def _is_public_path(path: str) -> bool:
+    """Check if path doesn't require tenant context."""
+    if path in _PUBLIC_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in _PUBLIC_PATH_PREFIXES)
+
 
 async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     """
-    Get database session dependency with tenant RLS context.
+    Tenant-scoped database session.
 
-    This dependency:
-    1. Creates a database session
-    2. Sets the tenant context for Row-Level Security (if available)
-    3. Yields the session for use in the endpoint
-    4. Commits or rolls back based on success/failure
+    Sets the PostgreSQL session variable for RLS based on tenant_id
+    from request.state (set by TenantMiddleware).
 
-    The tenant context is extracted from request.state (set by TenantMiddleware).
+    SECURITY:
+    - Raises HTTP 400 if tenant context is missing for non-public API routes.
+    - This prevents accidental unscoped queries that would return zero rows
+      (silent data loss) with hardened RLS.
+    - Always clears tenant context in finally block.
     """
     async with async_session_maker() as session:
         try:
-            # Set tenant context for RLS if available
             tenant_id = getattr(request.state, "tenant_id", None)
+
             if tenant_id:
                 await session.execute(
-                    text("SELECT set_tenant_context(:tenant_id)"),
+                    text("SELECT set_tenant_context(CAST(:tenant_id AS uuid))"),
                     {"tenant_id": str(tenant_id)},
                 )
+            else:
+                # CRITICAL: Reject non-public API routes without tenant context.
+                # This prevents silent zero-row queries with hardened RLS.
+                path = request.url.path
+                if path.startswith("/api/") and not _is_public_path(path):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Tenant context required but not set. Access via school subdomain.",
+                    )
 
+            yield session
+            await session.commit()
+        except HTTPException:
+            raise  # Don't rollback for HTTP exceptions we raised intentionally
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            try:
+                await session.execute(text("SELECT clear_tenant_context()"))
+            except Exception:
+                logger.warning(
+                    "clear_tenant_context_failed",
+                    tenant_id=str(tenant_id) if tenant_id else None,
+                    exc_info=True,
+                )
+            await session.close()
+
+
+async def get_unscoped_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Database session WITHOUT tenant RLS context.
+
+    Use ONLY for:
+    - Tenant lookup in middleware (tenants table has no RLS)
+    - Onboarding (creating new tenant + school + admin user)
+    - Audit log insertion (audit_logs table has no RLS)
+    - Reserved subdomain queries
+
+    SECURITY WARNING:
+    With FORCE ROW LEVEL SECURITY and sims_app_user, this session
+    CANNOT read/write tenant-scoped tables because tenant_id = NULL
+    evaluates to FALSE. It only works for non-RLS tables (tenants,
+    reserved_subdomains, audit_logs).
+    """
+    async with async_session_maker() as session:
+        try:
             yield session
             await session.commit()
         except Exception:
             await session.rollback()
             raise
         finally:
-            # Clear tenant context
-            try:
-                await session.execute(text("SELECT clear_tenant_context()"))
-            except Exception:
-                pass  # Ignore errors during cleanup
             await session.close()
 
 
-# Type alias for database session dependency
+# Type aliases for dependency injection
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+UnscopedDatabaseSession = Annotated[AsyncSession, Depends(get_unscoped_db)]
 
 
 async def get_current_user_id(
@@ -92,6 +163,10 @@ async def get_current_user_id(
         )
         user_id: str | None = payload.get("sub")
         if user_id is None:
+            raise credentials_exception
+
+        # Reject non-access tokens (e.g., refresh tokens must not be used as access tokens)
+        if payload.get("type") != "access":
             raise credentials_exception
 
         # Check if token is blacklisted

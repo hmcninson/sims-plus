@@ -507,8 +507,8 @@ function EditEntryDialog({ entry, onClose, onSave, isPending }: EditEntryDialogP
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="exam_date" className="text-right">
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+              <Label htmlFor="exam_date" className="sm:text-right">
                 Date
               </Label>
               <Input
@@ -516,11 +516,11 @@ function EditEntryDialog({ entry, onClose, onSave, isPending }: EditEntryDialogP
                 type="date"
                 value={formData.exam_date}
                 onChange={(e) => setFormData({ ...formData, exam_date: e.target.value })}
-                className="col-span-3"
+                className="sm:col-span-3"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="exam_time" className="text-right">
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+              <Label htmlFor="exam_time" className="sm:text-right">
                 Time
               </Label>
               <Input
@@ -528,11 +528,11 @@ function EditEntryDialog({ entry, onClose, onSave, isPending }: EditEntryDialogP
                 type="time"
                 value={formData.exam_time}
                 onChange={(e) => setFormData({ ...formData, exam_time: e.target.value })}
-                className="col-span-3"
+                className="sm:col-span-3"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="duration" className="text-right">
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+              <Label htmlFor="duration" className="sm:text-right">
                 Duration (min)
               </Label>
               <Input
@@ -541,11 +541,11 @@ function EditEntryDialog({ entry, onClose, onSave, isPending }: EditEntryDialogP
                 value={formData.duration_minutes}
                 onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
                 placeholder="e.g., 120"
-                className="col-span-3"
+                className="sm:col-span-3"
               />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="venue" className="text-right">
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+              <Label htmlFor="venue" className="sm:text-right">
                 Venue
               </Label>
               <Input
@@ -553,7 +553,7 @@ function EditEntryDialog({ entry, onClose, onSave, isPending }: EditEntryDialogP
                 value={formData.venue}
                 onChange={(e) => setFormData({ ...formData, venue: e.target.value })}
                 placeholder="e.g., Main Hall"
-                className="col-span-3"
+                className="sm:col-span-3"
               />
             </div>
           </div>

@@ -6,6 +6,7 @@ Password hashing, JWT token creation/validation, and security helpers.
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -87,6 +88,7 @@ def create_access_token(
         "sub": subject,
         "exp": expire,
         "iat": datetime.now(UTC),
+        "jti": str(uuid4()),  # Unique ID prevents identical tokens within same second
         "type": "access",
     }
 
@@ -135,6 +137,7 @@ def create_refresh_token(
         "sub": subject,
         "exp": expire,
         "iat": datetime.now(UTC),
+        "jti": str(uuid4()),  # Unique ID prevents identical tokens within same second
         "type": "refresh",
     }
 

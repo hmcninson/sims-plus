@@ -56,7 +56,7 @@ class Department(Base, TenantMixin, SoftDeleteMixin):
         "Staff",
         back_populates="department_rel",
         foreign_keys="Staff.department_id",
-        lazy="selectin",
+        lazy="raise",
     )
 
 
@@ -184,27 +184,29 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
     )
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use selectinload()/joinedload() explicitly in queries that need these.
     school: Mapped[Optional["School"]] = relationship(
         "School",
         back_populates="staff_members",
-        lazy="selectin",
+        lazy="raise",
     )
     user: Mapped[Optional["User"]] = relationship(
         "User",
         back_populates="staff_profile",
-        lazy="selectin",
+        lazy="raise",
     )
     department_rel: Mapped[Optional["Department"]] = relationship(
         "Department",
         back_populates="staff_members",
         foreign_keys=[department_id],
-        lazy="selectin",
+        lazy="raise",
     )
     class_assignments: Mapped[list["StaffClassAssignment"]] = relationship(
         "StaffClassAssignment",
         back_populates="staff",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="raise",
     )
 
     @property
@@ -258,10 +260,10 @@ class StaffClassAssignment(Base, TenantMixin):
     staff: Mapped["Staff"] = relationship(
         "Staff",
         back_populates="class_assignments",
-        lazy="selectin",
+        lazy="raise",
     )
     section: Mapped["ClassSection"] = relationship(
         "ClassSection",
         back_populates="staff_assignments",
-        lazy="selectin",
+        lazy="raise",
     )

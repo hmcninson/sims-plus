@@ -162,7 +162,7 @@ export function ScoreEntrySelector({
           />
         </div>
         <Select value={classFilter} onValueChange={setClassFilter}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Filter by class" />
           </SelectTrigger>
           <SelectContent>
@@ -178,7 +178,7 @@ export function ScoreEntrySelector({
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as ExamSubjectStatus | "all")}
         >
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className="w-full sm:w-[150px]">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>

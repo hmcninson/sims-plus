@@ -407,7 +407,7 @@ export function LearningAreas({ initialData }: LearningAreasProps) {
                         {error}
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="name">Name</Label>
                         <Input
@@ -446,7 +446,7 @@ export function LearningAreas({ initialData }: LearningAreasProps) {
                         rows={2}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label htmlFor="icon">Icon Name</Label>
                         <Input

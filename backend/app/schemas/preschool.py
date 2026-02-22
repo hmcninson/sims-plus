@@ -168,6 +168,7 @@ class PreschoolRatingResponse(PreschoolRatingBase):
     """Schema for rating response."""
 
     id: UUID
+    tenant_id: UUID
     scale_id: UUID
     created_at: datetime
     updated_at: datetime

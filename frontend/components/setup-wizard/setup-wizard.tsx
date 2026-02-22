@@ -118,9 +118,14 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
         }
       });
     } else if (currentStep === 3) {
-      // Create classes and sections
+      // Create classes and sections.
+      // This loop is resilient to partial failures: if a class already exists
+      // (e.g., from a previous interrupted attempt), we skip it and continue
+      // creating the remaining classes. Only truly fatal errors abort the loop.
       startTransition(async () => {
-        let allSuccess = true;
+        let createdCount = 0;
+        let skippedCount = 0;
+        const errors: string[] = [];
 
         for (const classItem of classesData) {
           const classResult = await createClass({
@@ -131,6 +136,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
           });
 
           if (classResult.success && classResult.data) {
+            createdCount++;
             // Create sections for this class
             for (const sectionName of classItem.sections) {
               await createSection({
@@ -139,15 +145,38 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
               });
             }
           } else {
-            allSuccess = false;
-            break;
+            const errorMsg = classResult.error || "Unknown error";
+            // If the class already exists (duplicate), skip and continue
+            const isDuplicate =
+              errorMsg.toLowerCase().includes("already exists") ||
+              errorMsg.toLowerCase().includes("duplicate");
+            if (isDuplicate) {
+              skippedCount++;
+              continue;
+            }
+            // For non-duplicate errors (auth, network, etc.), record and continue
+            // trying the remaining classes instead of aborting everything
+            errors.push(`${classItem.name}: ${errorMsg}`);
           }
         }
 
-        if (allSuccess) {
+        if (errors.length === 0) {
+          // All classes created or already existed
+          if (skippedCount > 0) {
+            toast.info(`${skippedCount} class(es) already existed and were skipped.`);
+          }
           setCurrentStep(currentStep + 1);
         } else {
-          toast.error("Failed to create some classes");
+          // Some classes failed for non-duplicate reasons
+          toast.error(
+            `Failed to create ${errors.length} class(es)`,
+            { description: errors.join("; ") },
+          );
+          // Still advance if at least some classes were created
+          if (createdCount > 0 || skippedCount > 0) {
+            toast.info("You can add the remaining classes later from the Classes page.");
+            setCurrentStep(currentStep + 1);
+          }
         }
       });
     } else {
@@ -318,7 +347,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone</Label>
                     <Input
@@ -344,7 +373,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="city">City/Town</Label>
                     <Input
@@ -396,7 +425,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="start_date">Start Date</Label>
                     <Input

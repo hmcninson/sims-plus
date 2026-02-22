@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CalendarPlus, Loader2 } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { CalendarPlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,8 +14,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -47,6 +69,44 @@ const HOLIDAY_TYPES: { value: HolidayType; label: string }[] = [
   { value: "event", label: "School Event" },
 ];
 
+const eventFormSchema = z
+  .object({
+    name: z.string().min(1, "Event name is required").max(255, "Event name is too long"),
+    date: z.string().min(1, "Date is required"),
+    endDate: z.string().optional(),
+    holiday_type: z.enum(["holiday", "vacation", "exam", "event"] as const),
+    description: z.string().max(500, "Description must be 500 characters or fewer").optional(),
+    academic_year_id: z.string().optional(),
+    is_recurring: z.boolean(),
+    isMultiDay: z.boolean(),
+  })
+  .refine(
+    (data) => {
+      if (data.isMultiDay && data.endDate) {
+        return new Date(data.endDate) >= new Date(data.date);
+      }
+      return true;
+    },
+    {
+      message: "End date must be on or after the start date",
+      path: ["endDate"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.isMultiDay) {
+        return !!data.endDate;
+      }
+      return true;
+    },
+    {
+      message: "End date is required for multi-day events",
+      path: ["endDate"],
+    }
+  );
+
+type EventFormValues = z.infer<typeof eventFormSchema>;
+
 function formatDateForInput(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toISOString().split("T")[0];
@@ -62,25 +122,27 @@ export function EventForm({
   onSuccess,
 }: EventFormProps) {
   const isEditing = !!event;
-
-  const [formData, setFormData] = useState({
-    name: "",
-    date: "",
-    endDate: "",
-    holiday_type: "event" as HolidayType,
-    description: "",
-    academic_year_id: "",
-    is_recurring: false,
-    isMultiDay: false,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const form = useForm<EventFormValues>({
+    resolver: zodResolver(eventFormSchema),
+    defaultValues: {
+      name: "",
+      date: "",
+      endDate: "",
+      holiday_type: "event",
+      description: "",
+      academic_year_id: "",
+      is_recurring: false,
+      isMultiDay: false,
+    },
+  });
 
   // Reset form when dialog opens/closes or event changes
   useEffect(() => {
     if (open) {
       if (event) {
-        setFormData({
+        form.reset({
           name: event.name,
           date: event.date,
           endDate: "",
@@ -91,7 +153,7 @@ export function EventForm({
           isMultiDay: false,
         });
       } else {
-        setFormData({
+        form.reset({
           name: "",
           date: defaultDate ? formatDateForInput(defaultDate) : "",
           endDate: "",
@@ -103,48 +165,28 @@ export function EventForm({
         });
       }
     }
-  }, [open, event, defaultDate, selectedAcademicYearId]);
+  }, [open, event, defaultDate, selectedAcademicYearId, form]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const isMultiDay = form.watch("isMultiDay");
 
-    if (!formData.name.trim()) {
-      toast.error("Please enter an event name");
-      return;
-    }
-
-    if (!formData.date) {
-      toast.error("Please select a date");
-      return;
-    }
-
-    setIsSubmitting(true);
-
+  async function onSubmit(values: EventFormValues) {
     try {
-      // If multi-day, create events for each day in the range
-      if (formData.isMultiDay && formData.endDate) {
-        const startDate = new Date(formData.date);
-        const endDate = new Date(formData.endDate);
+      if (values.isMultiDay && values.endDate) {
+        const startDate = new Date(values.date);
+        const endDate = new Date(values.endDate);
 
-        if (endDate < startDate) {
-          toast.error("End date must be after start date");
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Create events for each day in the range
         const current = new Date(startDate);
         let successCount = 0;
         let errorCount = 0;
 
         while (current <= endDate) {
           const result = await createSchoolHoliday({
-            name: formData.name,
+            name: values.name,
             date: formatDateForInput(current),
-            holiday_type: formData.holiday_type,
-            description: formData.description || undefined,
-            academic_year_id: formData.academic_year_id || undefined,
-            is_recurring: formData.is_recurring,
+            holiday_type: values.holiday_type,
+            description: values.description || undefined,
+            academic_year_id: values.academic_year_id || undefined,
+            is_recurring: values.is_recurring,
           });
 
           if (result.success) {
@@ -167,15 +209,14 @@ export function EventForm({
           toast.error("Failed to create events");
         }
       } else {
-        // Single day event
         if (isEditing && event) {
           const result = await updateSchoolHoliday(event.id, {
-            name: formData.name,
-            date: formData.date,
-            holiday_type: formData.holiday_type,
-            description: formData.description || undefined,
-            academic_year_id: formData.academic_year_id || undefined,
-            is_recurring: formData.is_recurring,
+            name: values.name,
+            date: values.date,
+            holiday_type: values.holiday_type,
+            description: values.description || undefined,
+            academic_year_id: values.academic_year_id || undefined,
+            is_recurring: values.is_recurring,
           });
 
           if (result.success) {
@@ -187,12 +228,12 @@ export function EventForm({
           }
         } else {
           const result = await createSchoolHoliday({
-            name: formData.name,
-            date: formData.date,
-            holiday_type: formData.holiday_type,
-            description: formData.description || undefined,
-            academic_year_id: formData.academic_year_id || undefined,
-            is_recurring: formData.is_recurring,
+            name: values.name,
+            date: values.date,
+            holiday_type: values.holiday_type,
+            description: values.description || undefined,
+            academic_year_id: values.academic_year_id || undefined,
+            is_recurring: values.is_recurring,
           });
 
           if (result.success) {
@@ -205,18 +246,12 @@ export function EventForm({
         }
       }
     } catch {
-      toast.error("An error occurred");
-    } finally {
-      setIsSubmitting(false);
+      toast.error("An unexpected error occurred");
     }
-  };
+  }
 
-  const handleDelete = async () => {
+  async function handleDelete() {
     if (!event) return;
-
-    if (!confirm("Are you sure you want to delete this event?")) {
-      return;
-    }
 
     setIsDeleting(true);
 
@@ -231,11 +266,11 @@ export function EventForm({
         toast.error(result.error || "Failed to delete event");
       }
     } catch {
-      toast.error("An error occurred");
+      toast.error("An unexpected error occurred");
     } finally {
       setIsDeleting(false);
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -252,173 +287,259 @@ export function EventForm({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Event Name */}
-          <div className="space-y-2">
-            <Label htmlFor="name">Event Name *</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              placeholder="e.g., Independence Day"
-              required
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Event Name */}
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Event Name</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="e.g., Independence Day"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {/* Event Type */}
-          <div className="space-y-2">
-            <Label htmlFor="type">Event Type</Label>
-            <Select
-              value={formData.holiday_type}
-              onValueChange={(value: HolidayType) =>
-                setFormData({ ...formData, holiday_type: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {HOLIDAY_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Date */}
-          <div className="space-y-2">
-            <Label htmlFor="date">
-              {formData.isMultiDay ? "Start Date *" : "Date *"}
-            </Label>
-            <Input
-              id="date"
-              type="date"
-              value={formData.date}
-              onChange={(e) =>
-                setFormData({ ...formData, date: e.target.value })
-              }
-              required
+            {/* Event Type */}
+            <FormField
+              control={form.control}
+              name="holiday_type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Event Type</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {HOLIDAY_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {/* Multi-day toggle (only for new events) */}
-          {!isEditing && (
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="multiDay"
-                checked={formData.isMultiDay}
-                onCheckedChange={(checked) =>
-                  setFormData({ ...formData, isMultiDay: checked === true })
-                }
+            {/* Date */}
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {isMultiDay ? "Start Date" : "Date"}
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Multi-day toggle (only for new events) */}
+            {!isEditing && (
+              <FormField
+                control={form.control}
+                name="isMultiDay"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="cursor-pointer">
+                        Multi-day event
+                      </FormLabel>
+                      <FormDescription>
+                        Creates separate entries for each day in the range (e.g., vacation period)
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
               />
-              <Label htmlFor="multiDay" className="text-sm cursor-pointer">
-                Multi-day event (e.g., vacation period)
-              </Label>
-            </div>
-          )}
+            )}
 
-          {/* End Date (for multi-day events) */}
-          {formData.isMultiDay && (
-            <div className="space-y-2">
-              <Label htmlFor="endDate">End Date *</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={formData.endDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, endDate: e.target.value })
-                }
-                min={formData.date}
-                required={formData.isMultiDay}
+            {/* End Date (for multi-day events) */}
+            {isMultiDay && (
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>End Date</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        min={form.getValues("date")}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-          )}
+            )}
 
-          {/* Academic Year */}
-          <div className="space-y-2">
-            <Label htmlFor="academicYear">Academic Year</Label>
-            <Select
-              value={formData.academic_year_id || "none"}
-              onValueChange={(value) =>
-                setFormData({
-                  ...formData,
-                  academic_year_id: value === "none" ? "" : value,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select academic year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">All Years</SelectItem>
-                {academicYears.map((year) => (
-                  <SelectItem key={year.id} value={year.id}>
-                    {year.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
-              placeholder="Optional description..."
-              rows={2}
+            {/* Academic Year */}
+            <FormField
+              control={form.control}
+              name="academic_year_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Academic Year</FormLabel>
+                  <Select
+                    onValueChange={(value) =>
+                      field.onChange(value === "none" ? "" : value)
+                    }
+                    value={field.value || "none"}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select academic year" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">All Years</SelectItem>
+                      {academicYears.map((year) => (
+                        <SelectItem key={year.id} value={year.id}>
+                          {year.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Leave as "All Years" for recurring national holidays
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          {/* Recurring */}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="recurring"
-              checked={formData.is_recurring}
-              onCheckedChange={(checked) =>
-                setFormData({ ...formData, is_recurring: checked === true })
-              }
+            {/* Description */}
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Optional description..."
+                      rows={2}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-            <Label htmlFor="recurring" className="text-sm cursor-pointer">
-              Recurring annually (same date each year)
-            </Label>
-          </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            {isEditing && (
+            {/* Recurring */}
+            <FormField
+              control={form.control}
+              name="is_recurring"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel className="cursor-pointer">
+                      Recurring annually
+                    </FormLabel>
+                    <FormDescription>
+                      This event occurs on the same date every year
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              {isEditing && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={form.formState.isSubmitting || isDeleting}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete event</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete &ldquo;{event?.name}&rdquo;? This
+                        action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isDeleting}>
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={isDeleting}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {isDeleting && (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        )}
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              <div className="flex-1" />
               <Button
                 type="button"
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={isSubmitting || isDeleting}
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={form.formState.isSubmitting || isDeleting}
               >
-                {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Delete
+                Cancel
               </Button>
-            )}
-            <div className="flex-1" />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting || isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || isDeleting}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEditing ? "Update" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
+              <Button
+                type="submit"
+                disabled={form.formState.isSubmitting || isDeleting}
+              >
+                {form.formState.isSubmitting && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {isEditing ? "Update" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

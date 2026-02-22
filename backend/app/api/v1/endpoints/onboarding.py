@@ -4,14 +4,11 @@ SIMS Plus - Onboarding Endpoints
 API endpoints for school registration and onboarding.
 """
 
-from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import get_db
-from app.config import settings
+from app.api.deps import UnscopedDatabaseSession
 from app.schemas.onboarding import (
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
@@ -30,7 +27,7 @@ router = APIRouter()
 )
 async def register_school(
     registration: SchoolRegistrationRequest,
-    db: AsyncSession = Depends(get_db),
+    db: UnscopedDatabaseSession,
 ) -> SchoolRegistrationResponse:
     """
     Register a new school on SIMS Plus.
@@ -105,6 +102,7 @@ async def suggest_subdomains(
             description="School name to base suggestions on",
         ),
     ],
+    db: UnscopedDatabaseSession,
     count: Annotated[
         int,
         Query(
@@ -113,7 +111,6 @@ async def suggest_subdomains(
             description="Number of suggestions to return",
         ),
     ] = 3,
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Get subdomain suggestions based on school name.

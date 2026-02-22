@@ -10,18 +10,25 @@ This middleware:
 4. Makes tenant info available to request state
 """
 
+import json
 import re
 from contextvars import ContextVar
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Request, HTTPException, status
+import redis.asyncio as aioredis
+from fastapi import Request, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
+
+import structlog
 
 from app.db.session import async_session_maker
+from app.utils.cache_keys import CacheKeys
+
+logger = structlog.get_logger()
 
 # Context variable to store current tenant info
 _tenant_context: ContextVar[Optional[dict]] = ContextVar("tenant_context", default=None)
@@ -82,11 +89,14 @@ def clear_tenant_context() -> None:
 # Subdomain validation pattern
 SUBDOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]+$")
 
-# Reserved subdomains
+# Reserved subdomains -- MUST match database seed data AND frontend/proxy.ts
 RESERVED_SUBDOMAINS = {
     "www", "app", "api", "admin", "mail", "ftp", "status", "blog",
     "help", "support", "docs", "cdn", "assets", "staging", "dev",
-    "test", "demo", "sandbox",
+    "test", "demo", "sandbox", "beta", "alpha", "portal", "login",
+    "register", "signup", "dashboard", "billing", "payments",
+    "webhooks", "graphql", "ws", "static", "media", "images",
+    "files", "downloads", "uploads",
 }
 
 # Paths that don't require tenant context
@@ -107,6 +117,7 @@ PUBLIC_PATH_PREFIXES = (
     "/api/v1/auth/validate-reset-token",  # Token validation doesn't need tenant
     "/api/v1/auth/reset-password",  # Password reset uses token for tenant context
     "/api/v1/onboarding/",  # Onboarding is public
+    "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
 )
 
 
@@ -174,6 +185,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
     Middleware to handle tenant context for multi-tenancy.
 
     Extracts subdomain from request and sets database RLS context.
+    Tenant lookups are cached in Redis (10-minute TTL) using the shared
+    app.state.redis client created at startup, reducing database load
+    under high concurrency.
     """
 
     async def dispatch(
@@ -208,38 +222,45 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if not subdomain:
             # For API routes that require tenant context
             if path.startswith("/api/v1/") and not is_public_path(path):
-                raise HTTPException(
+                # Return JSONResponse directly -- raising HTTPException inside
+                # BaseHTTPMiddleware.dispatch() does not get converted to a
+                # proper HTTP response in newer Starlette versions.
+                return JSONResponse(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Tenant context required. Access via school subdomain.",
+                    content={"detail": "Tenant context required. Access via school subdomain."},
                 )
             return await call_next(request)
 
+        # Use the shared Redis client from app lifespan (never create per-request connections)
+        redis_client = getattr(request.app.state, "redis", None)
+
         # Validate tenant exists and is active
         async with async_session_maker() as db:
-            tenant = await self._get_tenant_by_subdomain(db, subdomain)
+            tenant = await self._get_tenant_by_subdomain(db, subdomain, redis_client)
 
             if not tenant:
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"School '{subdomain}' not found",
+                    content={"detail": f"School '{subdomain}' not found"},
                 )
 
             if not tenant["is_active"]:
-                raise HTTPException(
+                return JSONResponse(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="This school account is currently suspended",
+                    content={"detail": "This school account is currently suspended"},
                 )
 
             # Set tenant context in context variable
+            tenant_uuid = UUID(tenant["id"])
             set_tenant_context(
-                tenant_id=tenant["id"],
+                tenant_id=tenant_uuid,
                 subdomain=tenant["subdomain"],
                 name=tenant["name"],
                 is_active=tenant["is_active"],
             )
 
             # Store tenant info in request state for easy access
-            request.state.tenant_id = tenant["id"]
+            request.state.tenant_id = tenant_uuid
             request.state.tenant_subdomain = tenant["subdomain"]
             request.state.tenant_name = tenant["name"]
 
@@ -255,17 +276,43 @@ class TenantMiddleware(BaseHTTPMiddleware):
         self,
         db: AsyncSession,
         subdomain: str,
+        redis_client: Optional[aioredis.Redis],
     ) -> Optional[dict]:
-        """
-        Get tenant by subdomain.
+        """Get tenant by subdomain with Redis cache.
+
+        Flow:
+        1. Check Redis for cached tenant data
+        2. If cache hit AND is_active: return cached data
+        3. If cache miss: query PostgreSQL, cache result, return it
+        4. If cached but is_active=false: caller handles 403
+
+        Cache TTL: 10 minutes (CacheKeys.TENANT_LOOKUP_TTL).
+        Cache is invalidated via invalidate_tenant_cache() when tenant
+        data changes (name update, deactivation, subdomain change, etc.).
 
         Args:
-            db: Database session
+            db: Database session (used on cache miss)
             subdomain: Tenant subdomain
+            redis_client: Shared Redis client from app.state.redis (may be None during tests)
 
         Returns:
-            Tenant dict or None
+            Tenant dict {id, subdomain, name, is_active, settings} or None
         """
+        subdomain_lower = subdomain.lower()
+        cache_key = CacheKeys.tenant_by_subdomain(subdomain_lower)
+
+        # Try cache first
+        if redis_client is not None:
+            try:
+                cached = await redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception:
+                # Redis failure should not break tenant lookup.
+                # Fall through to database query.
+                logger.warning("redis_cache_read_failed", action="tenant_lookup")
+
+        # Cache miss -- query database
         result = await db.execute(
             text("""
                 SELECT id, subdomain, name, is_active
@@ -273,19 +320,32 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 WHERE subdomain = :subdomain
                 AND deleted_at IS NULL
             """),
-            {"subdomain": subdomain.lower()},
+            {"subdomain": subdomain_lower},
         )
         row = result.fetchone()
 
         if not row:
             return None
 
-        return {
-            "id": row.id,
+        tenant_data = {
+            "id": str(row.id),
             "subdomain": row.subdomain,
             "name": row.name,
             "is_active": row.is_active,
         }
+
+        # Write to cache (best effort -- don't fail request if Redis is down)
+        if redis_client is not None:
+            try:
+                await redis_client.setex(
+                    cache_key,
+                    CacheKeys.TENANT_LOOKUP_TTL,
+                    json.dumps(tenant_data),
+                )
+            except Exception:
+                logger.warning("redis_cache_write_failed", action="tenant_lookup")
+
+        return tenant_data
 
 
 async def set_db_tenant_context(db: AsyncSession, tenant_id: UUID) -> None:
@@ -300,7 +360,7 @@ async def set_db_tenant_context(db: AsyncSession, tenant_id: UUID) -> None:
         tenant_id: Tenant UUID
     """
     await db.execute(
-        text("SELECT set_tenant_context(:tenant_id)"),
+        text("SELECT set_tenant_context(CAST(:tenant_id AS uuid))"),
         {"tenant_id": str(tenant_id)},
     )
 
@@ -313,3 +373,36 @@ async def clear_db_tenant_context(db: AsyncSession) -> None:
         db: Database session
     """
     await db.execute(text("SELECT clear_tenant_context()"))
+
+
+async def invalidate_tenant_cache(
+    redis_client: aioredis.Redis,
+    subdomain: str,
+    old_subdomain: Optional[str] = None,
+) -> None:
+    """Invalidate the cached tenant lookup for a subdomain.
+
+    Call this when tenant data changes (name update, deactivation, etc.).
+    If the subdomain itself was changed, pass the previous value as
+    old_subdomain so the stale cache entry is also removed.
+
+    Args:
+        redis_client: Shared Redis client (app.state.redis)
+        subdomain: Current subdomain to invalidate
+        old_subdomain: Previous subdomain to invalidate (if subdomain changed)
+    """
+    try:
+        cache_key = CacheKeys.tenant_by_subdomain(subdomain.lower())
+        await redis_client.delete(cache_key)
+
+        # If subdomain was changed, also delete the old key so stale data
+        # doesn't keep resolving to the old tenant record.
+        if old_subdomain and old_subdomain.lower() != subdomain.lower():
+            old_cache_key = CacheKeys.tenant_by_subdomain(old_subdomain.lower())
+            await redis_client.delete(old_cache_key)
+    except Exception:
+        logger.warning(
+            "tenant_cache_invalidation_failed",
+            subdomain=subdomain,
+            old_subdomain=old_subdomain,
+        )

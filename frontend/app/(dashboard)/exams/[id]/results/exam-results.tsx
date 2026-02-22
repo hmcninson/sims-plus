@@ -190,7 +190,7 @@ export function ExamResults({ exam, classes }: ExamResultsProps) {
           <span className="text-sm font-medium">Class:</span>
         </div>
         <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue placeholder="Select a class" />
           </SelectTrigger>
           <SelectContent>
@@ -209,7 +209,7 @@ export function ExamResults({ exam, classes }: ExamResultsProps) {
               <span className="text-sm font-medium">Section:</span>
             </div>
             <Select value={selectedSectionId} onValueChange={setSelectedSectionId}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="All sections" />
               </SelectTrigger>
               <SelectContent>
@@ -316,7 +316,7 @@ export function ExamResults({ exam, classes }: ExamResultsProps) {
                   placeholder="Search students..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-[250px]"
+                  className="pl-9 w-full sm:w-[250px]"
                 />
               </div>
             </CardHeader>

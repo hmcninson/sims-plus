@@ -4,7 +4,6 @@ SIMS Plus - Email Service
 Handles sending emails via SMTP with template support.
 """
 
-import logging
 from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -13,11 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 import aiosmtplib
+import structlog
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # Template directory
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates" / "email"
@@ -148,21 +148,17 @@ class EmailService:
             if cc_emails:
                 cc_info = f"CC: {', '.join(cc_emails)}\n"
             logger.info(
-                f"\n{'='*60}\n"
-                f"[DEV EMAIL] Would send email:\n"
-                f"To: {to_email}\n"
-                f"{cc_info}"
-                f"Subject: {subject}\n"
-                f"{attachment_info}"
-                f"{'='*60}\n"
-                f"{html_content[:1000]}...\n"
-                f"{'='*60}\n"
+                "dev_email_skipped",
+                to=to_email,
+                subject=subject,
+                cc=cc_emails or [],
+                attachments=[a[1] for a in attachments] if attachments else [],
             )
             return True
 
         # Check if SMTP is configured
         if not settings.SMTP_HOST:
-            logger.warning("SMTP not configured. Email not sent.")
+            logger.warning("smtp_not_configured", to=to_email)
             return False
 
         try:
@@ -192,15 +188,14 @@ class EmailService:
                 recipients=all_recipients,
             )
 
-            cc_log = f" (CC: {', '.join(cc_emails)})" if cc_emails else ""
-            logger.info(f"Email sent successfully to {to_email}{cc_log}")
+            logger.info("email_sent", to=to_email, cc=cc_emails or [])
             return True
 
-        except aiosmtplib.SMTPException as e:
-            logger.error(f"SMTP error sending email to {to_email}: {e}")
+        except aiosmtplib.SMTPException:
+            logger.error("smtp_error", to=to_email, exc_info=True)
             return False
-        except Exception as e:
-            logger.exception(f"Failed to send email to {to_email}: {e}")
+        except Exception:
+            logger.exception("email_send_failed", to=to_email)
             return False
 
     async def send_welcome_email(
@@ -247,8 +242,8 @@ class EmailService:
                 trial_ends_at=trial_end_str,
                 current_year=datetime.now().year,
             )
-        except Exception as e:
-            logger.error(f"Failed to render welcome email template: {e}")
+        except Exception:
+            logger.error("welcome_email_template_render_failed", exc_info=True)
             # Fallback to plain text
             html_content = self._get_welcome_email_fallback(
                 admin_name=admin_name,
@@ -471,6 +466,178 @@ class EmailService:
         return await self.send_email(
             to_email=to_email,
             subject="Reset Your SIMS Plus Password",
+            html_content=html_content,
+        )
+
+    async def send_attendance_alert(
+        self,
+        to_email: str,
+        student_name: str,
+        date: str,
+        status: str,
+        school_name: str,
+    ) -> bool:
+        """Send attendance alert to parent/guardian."""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>Attendance Alert</title></head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1B4F72; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; font-size: 24px;">{school_name}</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">Attendance Notification</p>
+                </div>
+                <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p>Dear Parent/Guardian,</p>
+                    <p>This is to inform you that <strong>{student_name}</strong> was marked as
+                    <strong style="color: #dc2626;">{status}</strong> on <strong>{date}</strong>.</p>
+                    <p>If you believe this is an error, please contact the school administration.</p>
+                    <p>Best regards,<br><strong>{school_name}</strong></p>
+                </div>
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p>&copy; {datetime.now().year} SIMS Plus</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"Attendance Alert - {student_name} | {school_name}",
+            html_content=html_content,
+        )
+
+    async def send_exam_results_notification(
+        self,
+        to_email: str,
+        student_name: str,
+        exam_name: str,
+        school_name: str,
+    ) -> bool:
+        """Send exam results availability notification."""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>Exam Results</title></head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1B4F72; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; font-size: 24px;">{school_name}</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">Exam Results Notification</p>
+                </div>
+                <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p>Dear Parent/Guardian,</p>
+                    <p>The results for <strong>{exam_name}</strong> are now available for <strong>{student_name}</strong>.</p>
+                    <p>Please log in to the parent portal to view the detailed results and report card.</p>
+                    <p>Best regards,<br><strong>{school_name}</strong></p>
+                </div>
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p>&copy; {datetime.now().year} SIMS Plus</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"Exam Results Available - {student_name} | {school_name}",
+            html_content=html_content,
+        )
+
+    async def send_fee_reminder(
+        self,
+        to_email: str,
+        student_name: str,
+        amount_due: float,
+        currency: str,
+        due_date: str,
+        school_name: str,
+    ) -> bool:
+        """Send fee payment reminder."""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>Fee Reminder</title></head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1B4F72; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; font-size: 24px;">{school_name}</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">Fee Payment Reminder</p>
+                </div>
+                <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p>Dear Parent/Guardian,</p>
+                    <p>This is a reminder that there is an outstanding balance for <strong>{student_name}</strong>.</p>
+                    <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                        <p style="color: #666; margin: 0;">Amount Due</p>
+                        <p style="font-size: 28px; font-weight: bold; color: #dc2626; margin: 10px 0;">{currency} {amount_due:,.2f}</p>
+                        <p style="color: #666; margin: 0;">Due by: {due_date}</p>
+                    </div>
+                    <p>Please make payment at your earliest convenience to avoid any disruption.</p>
+                    <p>Best regards,<br><strong>{school_name}</strong></p>
+                </div>
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p>&copy; {datetime.now().year} SIMS Plus</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"Fee Payment Reminder - {student_name} | {school_name}",
+            html_content=html_content,
+        )
+
+    async def send_user_invite(
+        self,
+        to_email: str,
+        inviter_name: str,
+        school_name: str,
+        temp_password: str,
+        role: str,
+        portal_url: str,
+    ) -> bool:
+        """Send account invitation email to a new user."""
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>Account Invitation</title></head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #1B4F72; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0; font-size: 24px;">You're Invited!</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9;">{school_name} on SIMS Plus</p>
+                </div>
+                <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p>Hello,</p>
+                    <p><strong>{inviter_name}</strong> has invited you to join <strong>{school_name}</strong> on SIMS Plus as a <strong>{role}</strong>.</p>
+                    <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                        <h3 style="color: #1B4F72; margin-top: 0;">Your Login Credentials</h3>
+                        <p><strong>Email:</strong> {to_email}</p>
+                        <p><strong>Temporary Password:</strong> {temp_password}</p>
+                    </div>
+                    <p style="text-align: center;">
+                        <a href="{portal_url}"
+                           style="display: inline-block; padding: 12px 24px;
+                                  background-color: #1B4F72; color: white;
+                                  text-decoration: none; border-radius: 4px;">
+                            Login to SIMS Plus
+                        </a>
+                    </p>
+                    <p style="color: #e74c3c; font-weight: bold;">Please change your password after your first login.</p>
+                    <p>Best regards,<br><strong>{school_name}</strong></p>
+                </div>
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p>&copy; {datetime.now().year} SIMS Plus</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return await self.send_email(
+            to_email=to_email,
+            subject=f"You're Invited to {school_name} | SIMS Plus",
             html_content=html_content,
         )
 

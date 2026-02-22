@@ -38,11 +38,12 @@ class AttendanceStatus(str, Enum):
     SICK = "sick"
 
 
-class StudentAttendance(Base, TenantMixin):
+class StudentAttendance(Base, TenantMixin, SoftDeleteMixin):
     """
     Student Attendance model.
 
     Records daily attendance for students.
+    Uses SoftDeleteMixin so records are never physically deleted.
     """
     __tablename__ = "student_attendance"
     __table_args__ = (
@@ -115,25 +116,28 @@ class StudentAttendance(Base, TenantMixin):
     )
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use selectinload()/joinedload() explicitly in queries that need these.
     student: Mapped["Student"] = relationship(
         "Student",
-        lazy="selectin",
+        lazy="raise",
     )
     section: Mapped["ClassSection"] = relationship(
         "ClassSection",
-        lazy="selectin",
+        lazy="raise",
     )
     term: Mapped[Optional["Term"]] = relationship(
         "Term",
-        lazy="selectin",
+        lazy="raise",
     )
 
 
-class StaffAttendance(Base, TenantMixin):
+class StaffAttendance(Base, TenantMixin, SoftDeleteMixin):
     """
     Staff Attendance model.
 
     Records daily attendance for staff members.
+    Uses SoftDeleteMixin so records are never physically deleted.
     """
     __tablename__ = "staff_attendance"
     __table_args__ = (
@@ -165,7 +169,7 @@ class StaffAttendance(Base, TenantMixin):
         comment="Date of attendance",
     )
     status: Mapped[AttendanceStatus] = mapped_column(
-        SQLEnum(AttendanceStatus, name="attendancestatus", create_constraint=False),
+        SQLEnum(AttendanceStatus, name="attendancestatus", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=AttendanceStatus.PRESENT,
     )
@@ -202,9 +206,9 @@ class StaffAttendance(Base, TenantMixin):
     # Relationships
     staff: Mapped["Staff"] = relationship(
         "Staff",
-        lazy="selectin",
+        lazy="raise",
     )
     term: Mapped[Optional["Term"]] = relationship(
         "Term",
-        lazy="selectin",
+        lazy="raise",
     )

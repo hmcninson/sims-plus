@@ -437,7 +437,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                     }
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="short_name">Short Name</Label>
                     <Input
@@ -469,7 +469,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                     </Select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="capacity">Capacity</Label>
                     <Input
@@ -582,7 +582,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
               value={levelFilter}
               onValueChange={(value) => setLevelFilter(value as keyof typeof CATEGORY_CONFIG | "all")}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Filter by level" />
               </SelectTrigger>
               <SelectContent>
@@ -634,7 +634,12 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                         </CollapsibleTrigger>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium">{classItem.name}</p>
+                            <Link
+                              href={`/classes/${classItem.id}`}
+                              className="font-medium hover:text-primary hover:underline transition-colors"
+                            >
+                              {classItem.name}
+                            </Link>
                             {classItem.short_name && (
                               <Badge variant="outline">{classItem.short_name}</Badge>
                             )}
@@ -723,6 +728,12 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
                             <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                              <Link href={`/classes/${classItem.id}`}>
+                                <GraduationCap className="mr-2 h-4 w-4" />
+                                View Details
+                              </Link>
+                            </DropdownMenuItem>
                             <DropdownMenuItem asChild>
                               <Link href={`/students?class_id=${classItem.id}`}>
                                 <Users className="mr-2 h-4 w-4" />
@@ -896,7 +907,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                   }
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_short_name">Short Name</Label>
                   <Input
@@ -927,7 +938,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_capacity">Capacity</Label>
                   <Input

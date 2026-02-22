@@ -150,26 +150,28 @@ class Student(Base, TenantMixin, SoftDeleteMixin):
     )
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use selectinload()/joinedload() explicitly in queries that need these.
     school: Mapped[Optional["School"]] = relationship(
         "School",
         back_populates="students",
-        lazy="selectin",
+        lazy="raise",
     )
     class_: Mapped[Optional["Class"]] = relationship(
         "Class",
         back_populates="students",
-        lazy="selectin",
+        lazy="raise",
     )
     section: Mapped[Optional["ClassSection"]] = relationship(
         "ClassSection",
         back_populates="students",
-        lazy="selectin",
+        lazy="raise",
     )
     guardians: Mapped[list["StudentGuardian"]] = relationship(
         "StudentGuardian",
         back_populates="student_rel",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="raise",
     )
 
     @property
@@ -239,7 +241,7 @@ class Guardian(Base, TenantMixin, SoftDeleteMixin):
         "StudentGuardian",
         back_populates="guardian_rel",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="raise",
     )
 
     @property
@@ -284,10 +286,10 @@ class StudentGuardian(Base, TenantMixin):
     student_rel: Mapped["Student"] = relationship(
         "Student",
         back_populates="guardians",
-        lazy="selectin",
+        lazy="raise",
     )
     guardian_rel: Mapped["Guardian"] = relationship(
         "Guardian",
         back_populates="students",
-        lazy="selectin",
+        lazy="raise",
     )

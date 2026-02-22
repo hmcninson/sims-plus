@@ -70,13 +70,21 @@ class User(Base, TenantMixin, SoftDeleteMixin):
 
     # Role & Status
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole),
+        SQLEnum(
+            UserRole,
+            name="userrole",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=UserRole.TEACHER,
         nullable=False,
         index=True,
     )
     status: Mapped[UserStatus] = mapped_column(
-        SQLEnum(UserStatus),
+        SQLEnum(
+            UserStatus,
+            name="userstatus",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         default=UserStatus.PENDING,
         nullable=False,
     )
@@ -84,7 +92,7 @@ class User(Base, TenantMixin, SoftDeleteMixin):
     # School association (for school-level users)
     school_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        # ForeignKey("schools.id"),  # Will be added when School model exists
+        ForeignKey("schools.id"),
         nullable=True,
         index=True,
     )
@@ -116,11 +124,13 @@ class User(Base, TenantMixin, SoftDeleteMixin):
     timezone: Mapped[str] = mapped_column(String(50), default="Africa/Accra")
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use joinedload() explicitly in queries that need the staff profile.
     staff_profile: Mapped["Staff | None"] = relationship(
         "Staff",
         back_populates="user",
         uselist=False,
-        lazy="selectin",
+        lazy="raise",
     )
 
     @property

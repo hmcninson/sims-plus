@@ -61,6 +61,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { getStaff, deleteStaff, getStaffStats, exportStaff } from "@/actions/staff.action";
+import { CollapsibleFilters } from "@/components/filters/collapsible-filters";
 import { ImportStaffDialog } from "./import-staff-dialog";
 import type {
   StaffListItem,
@@ -349,12 +350,17 @@ export function StaffManagement({
               </Button>
             </form>
 
-            <div className="flex gap-2">
+            <CollapsibleFilters
+              activeFilterCount={
+                (statusFilter !== "all" ? 1 : 0) +
+                (typeFilter !== "all" ? 1 : 0)
+              }
+            >
               <Select
                 value={statusFilter}
                 onValueChange={handleStatusChange}
               >
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full md:w-[150px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -371,7 +377,7 @@ export function StaffManagement({
                 value={typeFilter}
                 onValueChange={handleTypeChange}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -393,7 +399,7 @@ export function StaffManagement({
                   Clear
                 </Button>
               )}
-            </div>
+            </CollapsibleFilters>
           </div>
 
           {/* Staff Table */}
@@ -402,10 +408,10 @@ export function StaffManagement({
               <TableHeader>
                 <TableRow>
                   <TableHead>Staff Member</TableHead>
-                  <TableHead>Staff ID</TableHead>
-                  <TableHead>Job Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Department</TableHead>
+                  <TableHead className="hidden sm:table-cell">Staff ID</TableHead>
+                  <TableHead className="hidden md:table-cell">Job Title</TableHead>
+                  <TableHead className="hidden lg:table-cell">Type</TableHead>
+                  <TableHead className="hidden lg:table-cell">Department</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -452,11 +458,11 @@ export function StaffManagement({
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="hidden sm:table-cell font-mono text-sm">
                         {staff.staff_id}
                       </TableCell>
-                      <TableCell>{staff.job_title}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">{staff.job_title}</TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         <Badge
                           variant="outline"
                           className={`${TYPE_CONFIG[staff.staff_type]?.color || "bg-gray-500"} text-white border-0`}
@@ -464,7 +470,7 @@ export function StaffManagement({
                           {TYPE_CONFIG[staff.staff_type]?.label || staff.staff_type}
                         </Badge>
                       </TableCell>
-                      <TableCell>{staff.department || "-"}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{staff.department || "-"}</TableCell>
                       <TableCell>
                         <Badge
                           variant="secondary"

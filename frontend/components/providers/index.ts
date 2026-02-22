@@ -11,3 +11,9 @@ export {
   type TenantInfo,
   type TenantBranding,
 } from "./TenantProvider";
+
+export {
+  SessionProvider,
+  useSession,
+  usePermissions,
+} from "./SessionProvider";

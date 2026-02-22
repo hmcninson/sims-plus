@@ -28,7 +28,7 @@ def upgrade() -> None:
         DO $$
         BEGIN
             IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'uq_student_scholarship_unique'
+                SELECT 1 FROM pg_class WHERE relname = 'uq_student_scholarship_unique'
             ) THEN
                 ALTER TABLE student_scholarships
                 ADD CONSTRAINT uq_student_scholarship_unique

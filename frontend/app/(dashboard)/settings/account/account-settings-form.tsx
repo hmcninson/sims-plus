@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { changePassword } from "@/actions/user.action";
 import { logout } from "@/actions/auth.action";
+import { clearOfflineData } from "@/lib/offline/db";
 
 interface AccountSettingsFormProps {
   user: {
@@ -121,8 +122,9 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
           confirmPassword: "",
         });
         // Logout user since tokens are invalidated
-        setTimeout(() => {
-          logout();
+        setTimeout(async () => {
+          try { await clearOfflineData(); } catch { /* ignore */ }
+          await logout();
         }, 2000);
       } else {
         toast.error("Failed to change password", {
@@ -140,6 +142,7 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
 
   const handleLogoutAllSessions = async () => {
     toast.info("Logging out from all sessions...");
+    try { await clearOfflineData(); } catch { /* ignore */ }
     await logout();
   };
 

@@ -14,6 +14,9 @@ import {
   Check,
   Save,
   Search,
+  WifiOff,
+  RefreshCw,
+  CloudOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,6 +51,9 @@ import {
   getSectionAttendanceSummary,
   bulkMarkStudentAttendance,
 } from "@/actions/attendance.action";
+import { useNetworkStatus } from "@/hooks/use-network-status";
+import { queueAttendance, syncPendingAttendance, getAttendanceQueueSize } from "@/lib/offline/sync";
+import { useSession } from "@/components/providers/SessionProvider";
 import type { Class, StudentAttendanceListItem, SectionAttendanceSummary, AttendanceStatus } from "@/types";
 
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; icon: React.ElementType; bgColor: string; selectedClass: string }[] = [
@@ -63,6 +69,7 @@ interface AttendanceMarkingProps {
 }
 
 export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
+  const { tenant } = useSession();
   const [isPending, startTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -73,6 +80,60 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
   const [attendanceData, setAttendanceData] = useState<Record<string, AttendanceStatus>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Offline support
+  const { isOnline } = useNetworkStatus();
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Poll pending queue size
+  useEffect(() => {
+    const updateCount = async () => {
+      try {
+        const count = await getAttendanceQueueSize();
+        setPendingCount(count);
+      } catch {
+        // Ignore - IndexedDB may not be available
+      }
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-sync when coming back online
+  useEffect(() => {
+    if (isOnline && pendingCount > 0) {
+      handleSyncNow();
+    }
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSyncNow = async () => {
+    if (!isOnline || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const result = await syncPendingAttendance(async (sectionId, date, records) => {
+        const res = await bulkMarkStudentAttendance({
+          section_id: sectionId,
+          date,
+          records: records.map((r) => ({ student_id: r.student_id, status: r.status as AttendanceStatus })),
+        });
+        return res.success;
+      });
+      const count = await getAttendanceQueueSize();
+      setPendingCount(count);
+      if (result.synced > 0) {
+        toast.success(`Synced ${result.synced} pending attendance record${result.synced !== 1 ? "s" : ""}`);
+      }
+      if (result.failed > 0) {
+        toast.error(`${result.failed} record${result.failed !== 1 ? "s" : ""} failed to sync`);
+      }
+    } catch {
+      toast.error("Failed to sync pending records");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const selectedClass = classes.find((c) => c.id === selectedClassId);
 
@@ -158,7 +219,7 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
     setHasChanges(true);
   };
 
-  // Save attendance
+  // Save attendance (with offline fallback)
   const handleSave = async () => {
     if (!selectedSectionId || !selectedDate || Object.keys(attendanceData).length === 0) {
       toast.error("Please mark attendance for at least one student");
@@ -171,6 +232,27 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
       student_id: studentId,
       status,
     }));
+
+    if (!isOnline) {
+      // Queue offline
+      try {
+        await queueAttendance(
+          selectedSectionId,
+          selectedDate,
+          records.map((r) => ({ student_id: r.student_id, status: r.status, notes: undefined })),
+          tenant.id
+        );
+        setPendingCount((c) => c + 1);
+        toast.info("Saved locally -- will sync when online", {
+          description: `${records.length} attendance records queued`,
+        });
+        setHasChanges(false);
+      } catch {
+        toast.error("Failed to save offline. Please try again.");
+      }
+      setIsSaving(false);
+      return;
+    }
 
     const result = await bulkMarkStudentAttendance({
       section_id: selectedSectionId,
@@ -186,7 +268,22 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
       // Refresh data
       fetchStudents();
     } else {
-      toast.error(result.error || "Failed to save attendance");
+      // If the API call failed (e.g. network error despite being "online"), try offline
+      try {
+        await queueAttendance(
+          selectedSectionId,
+          selectedDate,
+          records.map((r) => ({ student_id: r.student_id, status: r.status, notes: undefined })),
+          tenant.id
+        );
+        setPendingCount((c) => c + 1);
+        toast.info("Saved locally -- will sync when online", {
+          description: result.error || "Network error occurred",
+        });
+        setHasChanges(false);
+      } catch {
+        toast.error(result.error || "Failed to save attendance");
+      }
     }
 
     setIsSaving(false);
@@ -207,17 +304,57 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
             Mark and manage student attendance records
           </p>
         </div>
-        {hasChanges && (
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Changes
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && isOnline && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncNow}
+              disabled={isSyncing}
+            >
+              {isSyncing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Sync ({pendingCount})
+            </Button>
+          )}
+          {hasChanges && (
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Changes
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Offline Mode Banner */}
+      {!isOnline && (
+        <div className="flex items-center gap-3 rounded-lg border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-700 dark:bg-yellow-950 dark:text-yellow-200">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Offline Mode</p>
+            <p className="text-yellow-700 dark:text-yellow-300">
+              You are currently offline. Attendance will be saved locally and synced when your connection is restored.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Sync Banner */}
+      {pendingCount > 0 && isOnline && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200">
+          <CloudOff className="h-4 w-4 shrink-0" />
+          <p>
+            {pendingCount} attendance record{pendingCount !== 1 ? "s" : ""} pending sync.
+          </p>
+        </div>
+      )}
 
       {/* Selection Controls */}
       <Card>
@@ -227,7 +364,7 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-4">
-            <div className="w-[280px]">
+            <div className="w-full sm:w-[280px]">
               <Label htmlFor="class">Class</Label>
               <Select value={selectedClassId} onValueChange={handleClassChange}>
                 <SelectTrigger id="class" className="mt-1.5 w-full">
@@ -243,7 +380,7 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
               </Select>
             </div>
 
-            <div className="w-[280px]">
+            <div className="w-full sm:w-[280px]">
               <Label htmlFor="section">Section</Label>
               <Select
                 value={selectedSectionId}
@@ -263,7 +400,7 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
               </Select>
             </div>
 
-            <div className="w-[280px]">
+            <div className="w-full sm:w-[280px]">
               <Label htmlFor="date">Date</Label>
               <Input
                 id="date"
@@ -386,8 +523,8 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Student</TableHead>
-                      <TableHead>Student ID</TableHead>
-                      <TableHead>Gender</TableHead>
+                      <TableHead className="hidden sm:table-cell">Student ID</TableHead>
+                      <TableHead className="hidden md:table-cell">Gender</TableHead>
                       <TableHead className="text-center">Status</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -411,10 +548,10 @@ export function AttendanceMarking({ classes }: AttendanceMarkingProps) {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">
+                        <TableCell className="hidden sm:table-cell font-mono text-sm">
                           {student.student_number}
                         </TableCell>
-                        <TableCell className="capitalize">{student.gender}</TableCell>
+                        <TableCell className="hidden md:table-cell capitalize">{student.gender}</TableCell>
                         <TableCell>
                           <ToggleGroup
                             type="single"

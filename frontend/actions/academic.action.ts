@@ -1,8 +1,8 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
-import { getValidAccessToken } from "./auth.action";
+import { apiGet, apiPost, apiPut, apiDelete, ApiError } from "@/lib/api";
+import { getValidAccessToken, refreshAccessToken } from "./auth.action";
 import type {
   ActionResult,
   AcademicYear,
@@ -42,6 +42,32 @@ async function getAuthContext() {
     token: token || undefined,
     subdomain: cookieStore.get("x-subdomain")?.value,
   };
+}
+
+/**
+ * Execute an API call with automatic retry on 401 (expired token).
+ *
+ * If the first attempt returns 401, we refresh the access token and
+ * retry exactly once. This handles the edge case where the JWT expires
+ * between `getAuthContext()` and the actual API call, or when the
+ * cookie TTL and JWT `exp` are slightly out of sync.
+ */
+async function withAuthRetry<T>(
+  apiFn: (opts: { token?: string; subdomain?: string }) => Promise<T>,
+): Promise<T> {
+  const ctx = await getAuthContext();
+  try {
+    return await apiFn(ctx);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      // Token may have just expired -- refresh and retry once
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return await apiFn({ ...ctx, token: newToken });
+      }
+    }
+    throw error;
+  }
 }
 
 // =========================
@@ -108,11 +134,9 @@ export async function createAcademicYear(
   data: AcademicYearCreate
 ): Promise<ActionResult<AcademicYear>> {
   try {
-    const { token, subdomain } = await getAuthContext();
-    const response = await apiPost<AcademicYear>("/academic/academic-years", data, {
-      token,
-      subdomain,
-    });
+    const response = await withAuthRetry((opts) =>
+      apiPost<AcademicYear>("/academic/academic-years", data, opts),
+    );
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -145,7 +169,7 @@ export async function deleteAcademicYear(id: string): Promise<ActionResult<void>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/academic-years/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -217,7 +241,7 @@ export async function deleteTerm(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/terms/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -280,8 +304,9 @@ export async function getClass(id: string): Promise<ActionResult<Class>> {
 
 export async function createClass(data: ClassCreate): Promise<ActionResult<Class>> {
   try {
-    const { token, subdomain } = await getAuthContext();
-    const response = await apiPost<Class>("/academic/classes", data, { token, subdomain });
+    const response = await withAuthRetry((opts) =>
+      apiPost<Class>("/academic/classes", data, opts),
+    );
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -308,7 +333,7 @@ export async function deleteClass(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/classes/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -350,8 +375,9 @@ export async function getSection(id: string): Promise<ActionResult<ClassSection>
 
 export async function createSection(data: ClassSectionCreate): Promise<ActionResult<ClassSection>> {
   try {
-    const { token, subdomain } = await getAuthContext();
-    const response = await apiPost<ClassSection>("/academic/sections", data, { token, subdomain });
+    const response = await withAuthRetry((opts) =>
+      apiPost<ClassSection>("/academic/sections", data, opts),
+    );
     return { success: true, data: response };
   } catch (error) {
     return {
@@ -384,7 +410,7 @@ export async function deleteSection(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/sections/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -461,7 +487,7 @@ export async function deleteSubject(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/subjects/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -532,7 +558,7 @@ export async function removeSubjectFromClass(
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/classes/${classId}/subjects/${subjectId}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -615,7 +641,7 @@ export async function deleteGradingScale(id: string): Promise<ActionResult<void>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/academic/grading-scales/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

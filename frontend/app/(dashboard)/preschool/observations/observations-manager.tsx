@@ -352,7 +352,7 @@ export function ObservationsManager({ classes, learningAreas }: ObservationsMana
   // Form fields - rendered inline to prevent re-mounting on state change
   const formFields = (
     <div className="grid gap-4 py-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Type *</Label>
           <Select

@@ -217,9 +217,9 @@ export default function DepartmentsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead>Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Staff Count</TableHead>
+                    <TableHead className="hidden sm:table-cell">Code</TableHead>
+                    <TableHead className="hidden sm:table-cell">Description</TableHead>
+                    <TableHead className="hidden md:table-cell">Staff Count</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -227,13 +227,13 @@ export default function DepartmentsPage() {
                   {departments.map((dept) => (
                     <TableRow key={dept.id}>
                       <TableCell className="font-medium">{dept.name}</TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="hidden sm:table-cell font-mono text-sm">
                         {dept.code || "-"}
                       </TableCell>
-                      <TableCell className="max-w-[300px] truncate">
+                      <TableCell className="hidden sm:table-cell max-w-[300px] truncate">
                         {dept.description || "-"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <div className="flex items-center gap-1">
                           <Users className="h-4 w-4 text-muted-foreground" />
                           {dept.staff_count}

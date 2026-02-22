@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import (
     DatabaseSession,
     RequestTenant,
+    ValidatedUser,
     require_permissions,
 )
 from app.schemas.academic import (
@@ -99,6 +100,7 @@ async def create_timetable_entry(
     data: TimetableEntryCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> TimetableEntryResponse:
     """Create a new timetable entry for a class/section.
 
@@ -124,7 +126,7 @@ async def create_timetable_entry(
             notes=data.notes,
         )
         # Refresh to load relations
-        entry = await service.get_timetable_entry(entry.id)
+        entry = await service.get_timetable_entry(tenant.tenant_id, entry.id)
         return _format_entry_response(entry)
     except TimetableServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -141,6 +143,7 @@ async def get_class_timetable(
     academic_year_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
     section_id: Optional[UUID] = Query(None, description="Filter by section"),
     term_id: Optional[UUID] = Query(None, description="Filter by term. If not set, returns year-wide timetable."),
 ) -> TimetableWeekResponse:
@@ -152,16 +155,16 @@ async def get_class_timetable(
     """
     service = TimetableService(db)
 
-    # Get class details
-    class_data = await service.get_class_with_details(class_id)
+    # Get class details (defense-in-depth: tenant_id verified)
+    class_data = await service.get_class_with_details(tenant.tenant_id, class_id)
     if not class_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Class not found",
         )
 
-    # Get academic year
-    academic_year = await service.get_academic_year(academic_year_id)
+    # Get academic year (defense-in-depth: tenant_id verified)
+    academic_year = await service.get_academic_year(tenant.tenant_id, academic_year_id)
     if not academic_year:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -183,7 +186,7 @@ async def get_class_timetable(
     # Get term if provided
     term_data = None
     if term_id:
-        term_data = await service.get_term(term_id)
+        term_data = await service.get_term(tenant.tenant_id, term_id)
         if not term_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -240,6 +243,7 @@ async def get_teacher_timetable(
     academic_year_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
     term_id: Optional[UUID] = Query(None, description="Filter by term. If not set, returns all entries."),
 ) -> list[TimetableEntryResponse]:
     """Get the timetable for a teacher.
@@ -271,6 +275,7 @@ async def bulk_update_timetable(
     data: TimetableBulkCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> list[TimetableEntryResponse]:
     """Bulk create/update timetable for a class/section.
 
@@ -295,7 +300,7 @@ async def bulk_update_timetable(
         # Get entries with relations loaded
         result = []
         for entry in entries:
-            loaded_entry = await service.get_timetable_entry(entry.id)
+            loaded_entry = await service.get_timetable_entry(tenant.tenant_id, entry.id)
             result.append(_format_entry_response(loaded_entry))
 
         return result
@@ -317,6 +322,7 @@ async def bulk_update_timetable(
 async def get_school_periods(
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
     class_id: Optional[UUID] = Query(None, description="Filter by class (uses hierarchy: section > class > school)"),
     section_id: Optional[UUID] = Query(None, description="Filter by section"),
     active_only: bool = Query(True, description="Only return active periods"),
@@ -349,6 +355,7 @@ async def create_school_period(
     data: SchoolPeriodCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> SchoolPeriodResponse:
     """Create a new school period.
 
@@ -384,6 +391,7 @@ async def update_school_period(
     data: SchoolPeriodUpdate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> SchoolPeriodResponse:
     """Update a school period."""
     service = TimetableService(db)
@@ -410,6 +418,7 @@ async def delete_school_period(
     period_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> None:
     """Delete a school period."""
     service = TimetableService(db)
@@ -432,6 +441,7 @@ async def bulk_create_school_periods(
     data: SchoolPeriodBulkCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> list[SchoolPeriodResponse]:
     """Bulk create school periods at a specific level, replacing existing periods at that level.
 
@@ -463,6 +473,7 @@ async def bulk_create_school_periods(
 async def get_school_holidays(
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
     academic_year_id: Optional[UUID] = Query(None, description="Filter by academic year"),
 ) -> list[SchoolHolidayResponse]:
     """Get all school holidays for the current tenant."""
@@ -482,6 +493,7 @@ async def create_school_holiday(
     data: SchoolHolidayCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> SchoolHolidayResponse:
     """Create a new school holiday."""
     service = TimetableService(db)
@@ -511,6 +523,7 @@ async def update_school_holiday(
     data: SchoolHolidayUpdate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> SchoolHolidayResponse:
     """Update a school holiday."""
     service = TimetableService(db)
@@ -537,6 +550,7 @@ async def delete_school_holiday(
     holiday_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> None:
     """Delete a school holiday."""
     service = TimetableService(db)
@@ -564,10 +578,11 @@ async def get_timetable_entry(
     entry_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> TimetableEntryResponse:
     """Get a single timetable entry by ID."""
     service = TimetableService(db)
-    entry = await service.get_timetable_entry(entry_id)
+    entry = await service.get_timetable_entry(tenant.tenant_id, entry_id)
 
     if not entry:
         raise HTTPException(
@@ -589,6 +604,7 @@ async def update_timetable_entry(
     data: TimetableEntryUpdate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> TimetableEntryResponse:
     """Update a timetable entry."""
     service = TimetableService(db)
@@ -607,7 +623,7 @@ async def update_timetable_entry(
             )
 
         # Refresh to load relations
-        entry = await service.get_timetable_entry(entry.id)
+        entry = await service.get_timetable_entry(tenant.tenant_id, entry.id)
         return _format_entry_response(entry)
     except TimetableServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
@@ -623,11 +639,12 @@ async def delete_timetable_entry(
     entry_id: UUID,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> None:
     """Delete a timetable entry."""
     service = TimetableService(db)
 
-    deleted = await service.delete_timetable_entry(entry_id)
+    deleted = await service.delete_timetable_entry(tenant.tenant_id, entry_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

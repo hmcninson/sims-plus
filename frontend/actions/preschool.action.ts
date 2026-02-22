@@ -49,12 +49,10 @@ export async function getLearningAreas(
 ): Promise<ActionResult<LearningArea[]>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    console.log("[getLearningAreas] token:", token ? "present" : "missing", "subdomain:", subdomain);
     const response = await apiGet<LearningArea[]>(
       `/preschool/learning-areas?include_inactive=${includeInactive}`,
       { token, subdomain }
     );
-    console.log("[getLearningAreas] response:", response);
     return { success: true, data: response };
   } catch (error) {
     console.error("[getLearningAreas] error:", error);
@@ -140,7 +138,7 @@ export async function deleteLearningArea(id: string): Promise<ActionResult<void>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/preschool/learning-areas/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -249,7 +247,7 @@ export async function deleteSkill(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/preschool/skills/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -336,7 +334,7 @@ export async function deleteRatingScale(id: string): Promise<ActionResult<void>>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/preschool/rating-scales/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -528,7 +526,7 @@ export async function deleteObservation(id: string): Promise<ActionResult<void>>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/preschool/observations/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

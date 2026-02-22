@@ -149,6 +149,7 @@ class LearningArea(Base, TenantMixin, SoftDeleteMixin):
         back_populates="learning_area",
         cascade="all, delete-orphan",
         order_by="DevelopmentalSkill.display_order",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -221,11 +222,13 @@ class DevelopmentalSkill(Base, TenantMixin, SoftDeleteMixin):
     learning_area: Mapped["LearningArea"] = relationship(
         "LearningArea",
         back_populates="skills",
+        lazy="raise",
     )
     assessments: Mapped[list["StudentSkillAssessment"]] = relationship(
         "StudentSkillAssessment",
         back_populates="skill",
         cascade="all, delete-orphan",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -270,6 +273,7 @@ class PreschoolRatingScale(Base, TenantMixin, SoftDeleteMixin):
         back_populates="scale",
         cascade="all, delete-orphan",
         order_by="PreschoolRating.numeric_value",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -281,9 +285,11 @@ class PreschoolRatingScale(Base, TenantMixin, SoftDeleteMixin):
 # =========================
 
 
-class PreschoolRating(Base):
+class PreschoolRating(Base, TenantMixin, SoftDeleteMixin):
     """
     Individual ratings within a scale.
+
+    Tenant-scoped and soft-deletable for proper multi-tenant isolation.
 
     Example ratings:
     - Not Yet Observed (NYO, 0)
@@ -295,13 +301,7 @@ class PreschoolRating(Base):
 
     __tablename__ = "preschool_ratings"
     __table_args__ = (
-        UniqueConstraint("scale_id", "short_code", name="uq_rating_code"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
+        UniqueConstraint("tenant_id", "scale_id", "short_code", name="uq_rating_code"),
     )
 
     scale_id: Mapped[uuid.UUID] = mapped_column(
@@ -345,20 +345,11 @@ class PreschoolRating(Base):
         default=0,
     )
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
     # Relationships
     scale: Mapped["PreschoolRatingScale"] = relationship(
         "PreschoolRatingScale",
         back_populates="ratings",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -435,26 +426,32 @@ class StudentSkillAssessment(Base, TenantMixin):
     student: Mapped["Student"] = relationship(
         "Student",
         foreign_keys=[student_id],
+        lazy="raise",
     )
     skill: Mapped["DevelopmentalSkill"] = relationship(
         "DevelopmentalSkill",
         back_populates="assessments",
+        lazy="raise",
     )
     academic_year: Mapped["AcademicYear"] = relationship(
         "AcademicYear",
         foreign_keys=[academic_year_id],
+        lazy="raise",
     )
     term: Mapped["Term"] = relationship(
         "Term",
         foreign_keys=[term_id],
+        lazy="raise",
     )
     rating: Mapped["PreschoolRating | None"] = relationship(
         "PreschoolRating",
         foreign_keys=[rating_id],
+        lazy="raise",
     )
     assessed_by_user: Mapped["User | None"] = relationship(
         "User",
         foreign_keys=[assessed_by],
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -534,14 +531,17 @@ class ProgressObservation(Base, TenantMixin, SoftDeleteMixin):
     student: Mapped["Student"] = relationship(
         "Student",
         foreign_keys=[student_id],
+        lazy="raise",
     )
     learning_area: Mapped["LearningArea | None"] = relationship(
         "LearningArea",
         foreign_keys=[learning_area_id],
+        lazy="raise",
     )
     recorded_by_user: Mapped["User | None"] = relationship(
         "User",
         foreign_keys=[recorded_by],
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -666,10 +666,12 @@ class DailyActivityLog(Base, TenantMixin, SoftDeleteMixin):
     student: Mapped["Student"] = relationship(
         "Student",
         foreign_keys=[student_id],
+        lazy="raise",
     )
     logged_by_user: Mapped["User | None"] = relationship(
         "User",
         foreign_keys=[logged_by],
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -802,18 +804,22 @@ class PreschoolReport(Base, TenantMixin, SoftDeleteMixin):
     student: Mapped["Student"] = relationship(
         "Student",
         foreign_keys=[student_id],
+        lazy="raise",
     )
     academic_year: Mapped["AcademicYear"] = relationship(
         "AcademicYear",
         foreign_keys=[academic_year_id],
+        lazy="raise",
     )
     term: Mapped["Term"] = relationship(
         "Term",
         foreign_keys=[term_id],
+        lazy="raise",
     )
     class_: Mapped["Class"] = relationship(
         "Class",
         foreign_keys=[class_id],
+        lazy="raise",
     )
 
     def __repr__(self) -> str:

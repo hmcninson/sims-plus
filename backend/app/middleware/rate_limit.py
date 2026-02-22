@@ -35,13 +35,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/api/v1/onboarding/suggest-subdomain": ("subdomain", "subdomain"),
     }
 
-    # Endpoints that should be excluded from rate limiting
+    # Endpoints that should be excluded from rate limiting.
+    # /auth/me is excluded because it is called on every page load by the
+    # frontend dashboard layout for session validation. Including it in the
+    # general rate limit bucket causes false 429 responses during normal
+    # navigation, which the frontend misinterprets as a session expiry.
     EXCLUDED_ENDPOINTS = {
         "/health",
         "/status",
         "/docs",
         "/redoc",
         "/openapi.json",
+        "/api/v1/auth/me",
     }
 
     def __init__(self, app, redis_client: Optional[redis.Redis] = None):

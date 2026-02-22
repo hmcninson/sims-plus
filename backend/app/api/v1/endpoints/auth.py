@@ -238,6 +238,10 @@ async def refresh_tokens(
             detail=e.message,
         )
 
+    # Blacklist the old refresh token to prevent reuse (token rotation security)
+    blacklist_service = await get_token_blacklist_service()
+    await blacklist_service.blacklist_token(token_request.refresh_token)
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,

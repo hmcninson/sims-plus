@@ -272,9 +272,52 @@ export function NewStaffForm() {
   return (
     <Card>
       <CardContent className="p-6">
+        {/* Mobile: Horizontal step indicator */}
+        <div className="md:hidden mb-6">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => {
+              const isActive = currentStep === step.id;
+              const isCompleted = currentStep > step.id;
+              return (
+                <div key={step.id} className="flex flex-1 items-center">
+                  <button
+                    type="button"
+                    onClick={() => { if (isCompleted) setCurrentStep(step.id); }}
+                    disabled={!isCompleted && !isActive}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-medium ${
+                        isCompleted
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : isActive
+                          ? "border-primary text-primary"
+                          : "border-muted-foreground/30 text-muted-foreground"
+                      }`}
+                    >
+                      {isCompleted ? <Check className="h-3 w-3" /> : step.id}
+                    </span>
+                    <span className={`text-[10px] font-medium text-center leading-tight max-w-[60px] ${
+                      isActive ? "text-foreground" : "text-muted-foreground"
+                    }`}>
+                      {step.title}
+                    </span>
+                  </button>
+                  {index < steps.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-1 ${isCompleted ? "bg-primary" : "bg-muted"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground text-center">
+            Step {currentStep} of {steps.length}: {steps[currentStep - 1]?.title}
+          </p>
+        </div>
+
         <div className="flex gap-8">
-          {/* Left Side - Step Indicator */}
-          <div className="w-48 shrink-0">
+          {/* Left Side - Step Indicator (Desktop only) */}
+          <div className="hidden md:block w-48 shrink-0">
             <div className="sticky top-6 space-y-2">
               {steps.map((step, index) => {
                 const StepIcon = step.icon;
@@ -884,7 +927,7 @@ export function NewStaffForm() {
                         <User className="h-4 w-4" />
                         Personal Information
                       </h4>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground">Staff ID:</span>{" "}
                           <span className="font-medium font-mono">{formValues.staff_id}</span>
@@ -914,7 +957,7 @@ export function NewStaffForm() {
                         <Phone className="h-4 w-4" />
                         Contact Information
                       </h4>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground">Email:</span>{" "}
                           <span className="font-medium">{formValues.email}</span>
@@ -930,7 +973,7 @@ export function NewStaffForm() {
                           </div>
                         )}
                         {(formValues.address || formValues.city || formValues.region) && (
-                          <div className="col-span-2">
+                          <div className="md:col-span-2">
                             <span className="text-muted-foreground">Address:</span>{" "}
                             <span className="font-medium">
                               {[formValues.address, formValues.city, formValues.region]
@@ -940,7 +983,7 @@ export function NewStaffForm() {
                           </div>
                         )}
                         {formValues.emergency_contact_name && (
-                          <div className="col-span-2">
+                          <div className="md:col-span-2">
                             <span className="text-muted-foreground">Emergency Contact:</span>{" "}
                             <span className="font-medium">
                               {formValues.emergency_contact_name}
@@ -958,7 +1001,7 @@ export function NewStaffForm() {
                         <Briefcase className="h-4 w-4" />
                         Employment Information
                       </h4>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground">Staff Type:</span>{" "}
                           <Badge variant="secondary">{getStaffTypeLabel(formValues.staff_type)}</Badge>
@@ -1005,7 +1048,7 @@ export function NewStaffForm() {
                           <CreditCard className="h-4 w-4" />
                           Banking Information
                         </h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                           {formValues.bank_name && (
                             <div>
                               <span className="text-muted-foreground">Bank:</span>{" "}

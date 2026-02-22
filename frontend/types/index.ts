@@ -93,6 +93,24 @@ export interface RegistrationResponse {
   trial_ends_at?: string;
 }
 
+/**
+ * Session context returned by getCurrentUserContext().
+ * Contains user info, tenant metadata, and permission strings
+ * for the authenticated session.
+ */
+export interface SessionContext {
+  user: User;
+  tenant: {
+    id: string;
+    name: string;
+    subdomain: string;
+    subscription_tier: string;
+    logo_url?: string;
+    primary_color?: string;
+  };
+  permissions: string[];
+}
+
 // =========================
 // Tenant & School Types
 // =========================
@@ -427,11 +445,14 @@ export interface StudentGuardianUpdate {
 // API Response Types
 // =========================
 
-export interface ActionResult<T = void> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
+/**
+ * Discriminated union for server action results.
+ * Enables TypeScript narrowing: if (result.success) { result.data } is safe.
+ * The optional `code` on failure lets UI distinguish 401/403/429 etc.
+ */
+export type ActionResult<T = void> =
+  | { success: true; data: T; error?: undefined; code?: undefined }
+  | { success: false; error: string; code?: number; data?: undefined };
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -1985,6 +2006,1063 @@ export interface SchoolHolidayUpdate {
   holiday_type?: HolidayType;
   academic_year_id?: string;
   is_recurring?: boolean;
+}
+
+// =========================
+// Notification Types
+// =========================
+
+export type NotificationType = "info" | "success" | "warning" | "error" | "system";
+export type NotificationCategory = "academic" | "finance" | "attendance" | "exam" | "general" | "admin";
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  category: NotificationCategory;
+  reference_id?: string;
+  reference_type?: string;
+  is_read: boolean;
+  read_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationListResponse {
+  items: Notification[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
+// =========================
+// Report Types
+// =========================
+
+export type FinancialReportType = "fee_collection" | "outstanding_fees" | "payment_summary";
+
+export interface FinancialReportRequest {
+  report_type: FinancialReportType;
+  academic_year_id: string;
+  term_id?: string;
+  class_id?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface AttendanceReportRequest {
+  class_id: string;
+  section_id?: string;
+  date_from: string;
+  date_to: string;
+}
+
+export interface ReportGenerationResponse {
+  report_type: string;
+  generated_at: string;
+  filters: Record<string, unknown>;
+}
+
+// =========================
+// User Invite Types
+// =========================
+
+export interface UserInviteRequest {
+  email: string;
+  role: UserRole;
+  first_name: string;
+  last_name: string;
+}
+
+export interface UserInviteResponse {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: UserRole;
+  status: UserStatus;
+  created_at: string;
+}
+
+// =========================
+// Audit Log Types
+// =========================
+
+export interface AuditLogEntry {
+  id: string;
+  event_type: string;
+  user_id?: string;
+  user_email?: string;
+  ip_address?: string;
+  details?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+// =========================
+// Dashboard Types
+// =========================
+
+export interface AttendanceTodayStats {
+  present: number;
+  absent: number;
+  rate: number;
+}
+
+export interface FinanceSummaryStats {
+  total_billed: number;
+  total_collected: number;
+  collection_rate: number;
+  outstanding: number;
+}
+
+export interface DashboardStats {
+  total_students: number;
+  total_staff: number;
+  total_classes: number;
+  attendance_today: AttendanceTodayStats;
+  finance: FinanceSummaryStats;
+}
+
+export interface AttendanceTrendPoint {
+  date: string;
+  present: number;
+  absent: number;
+  late: number;
+  rate: number;
+}
+
+export interface FeeCollectionTrendPoint {
+  month: string;
+  billed: number;
+  collected: number;
+}
+
+export interface ClassPerformancePoint {
+  class_name: string;
+  average: number;
+  highest: number;
+  lowest: number;
+}
+
+export interface GenderDistribution {
+  male: number;
+  female: number;
+}
+
+export interface RecentActivityItem {
+  event_type: string;
+  description: string;
+  timestamp: string;
+  user_name?: string;
+}
+
+export interface DashboardResponse {
+  stats: DashboardStats;
+  recent_activity: RecentActivityItem[];
+}
+
+export interface StudentPromotionRequest {
+  from_class_id: string;
+  to_class_id: string;
+  student_ids: string[];
+}
+
+export interface StudentPromotionResponse {
+  promoted: number;
+  failed: number;
+  errors: Array<{ student_id: string; error: string }>;
+}
+
+// =========================
+// Boarding Types
+// =========================
+
+export type HouseGender = "male" | "female" | "mixed";
+export type DormitoryType = "room" | "hall" | "cubicle";
+export type BedType = "single" | "bunk_upper" | "bunk_lower";
+export type BedStatus = "available" | "occupied" | "maintenance";
+export type BoardingStatus = "active" | "withdrawn" | "suspended" | "graduated";
+export type RollCallType = "morning" | "evening" | "lights_out" | "emergency";
+export type RollCallEntryStatus = "present" | "absent" | "sick_bay" | "exeat" | "awol";
+export type ExeatType = "weekend" | "medical" | "emergency" | "funeral" | "other";
+export type ExeatStatus = "pending" | "approved" | "denied" | "active" | "overdue" | "returned";
+export type BoardingIncidentType =
+  | "disciplinary"
+  | "health"
+  | "property_damage"
+  | "missing_student"
+  | "bullying"
+  | "theft"
+  | "other";
+export type IncidentSeverity = "low" | "medium" | "high" | "critical";
+export type DiningMealType = "breakfast" | "lunch" | "dinner" | "snack";
+
+// Houses
+
+export interface House {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  name: string;
+  house_code: string;
+  gender: HouseGender;
+  capacity: number;
+  house_parent_id?: string;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HouseCreate {
+  name: string;
+  house_code: string;
+  gender: HouseGender;
+  capacity: number;
+  house_parent_id?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+export interface HouseUpdate {
+  name?: string;
+  house_code?: string;
+  gender?: HouseGender;
+  capacity?: number;
+  house_parent_id?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+export interface HouseDetail extends House {
+  house_parent_name?: string;
+  dormitory_count: number;
+  current_occupancy: number;
+}
+
+export interface HouseListResponse {
+  items: House[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Dormitories
+
+export interface Dormitory {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  house_id: string;
+  name: string;
+  floor?: string;
+  capacity: number;
+  dormitory_type: DormitoryType;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DormitoryDetail extends Dormitory {
+  house_name?: string;
+  bed_count: number;
+  occupied_beds: number;
+  available_beds: number;
+}
+
+export interface DormitoryCreate {
+  house_id: string;
+  name: string;
+  floor?: string;
+  capacity: number;
+  dormitory_type: DormitoryType;
+  is_active?: boolean;
+}
+
+export interface DormitoryUpdate {
+  name?: string;
+  floor?: string;
+  capacity?: number;
+  dormitory_type?: DormitoryType;
+  is_active?: boolean;
+}
+
+export interface DormitoryListResponse {
+  items: Dormitory[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Beds
+
+export interface Bed {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  dormitory_id: string;
+  bed_number: string;
+  bed_type: BedType;
+  status: BedStatus;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BedDetail extends Bed {
+  dormitory_name?: string;
+  house_name?: string;
+  occupant_name?: string;
+  occupant_id?: string;
+}
+
+export interface BedCreate {
+  dormitory_id: string;
+  bed_number: string;
+  bed_type: BedType;
+  status?: BedStatus;
+  is_active?: boolean;
+}
+
+export interface BedBulkCreate {
+  dormitory_id: string;
+  bed_type: BedType;
+  count: number;
+  prefix?: string;
+}
+
+export interface BedUpdate {
+  bed_number?: string;
+  bed_type?: BedType;
+  status?: BedStatus;
+  is_active?: boolean;
+}
+
+export interface BedListResponse {
+  items: Bed[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Student Boarding Assignments
+
+export interface StudentBoarding {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  house_id: string;
+  dormitory_id?: string;
+  bed_id?: string;
+  academic_year_id: string;
+  boarding_status: BoardingStatus;
+  check_in_date: string;
+  check_out_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentBoardingDetail extends StudentBoarding {
+  student_name?: string;
+  house_name?: string;
+  dormitory_name?: string;
+  bed_number?: string;
+  academic_year_name?: string;
+}
+
+export interface StudentBoardingCreate {
+  student_id: string;
+  house_id: string;
+  dormitory_id?: string;
+  bed_id?: string;
+  academic_year_id: string;
+  boarding_status?: BoardingStatus;
+  check_in_date: string;
+}
+
+export interface StudentBoardingUpdate {
+  house_id?: string;
+  dormitory_id?: string;
+  bed_id?: string;
+  boarding_status?: BoardingStatus;
+  check_out_date?: string;
+}
+
+export interface StudentBoardingBulkAssign {
+  student_ids: string[];
+  house_id: string;
+  academic_year_id: string;
+  check_in_date: string;
+}
+
+export interface StudentBoardingListResponse {
+  items: StudentBoardingDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Roll Calls
+
+export interface RollCallEntry {
+  id: string;
+  roll_call_id: string;
+  student_id: string;
+  status: RollCallEntryStatus;
+  notes?: string;
+  student_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RollCallEntryCreate {
+  student_id: string;
+  status: RollCallEntryStatus;
+  notes?: string;
+}
+
+export interface BoardingRollCall {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  house_id: string;
+  date: string;
+  roll_call_type: RollCallType;
+  conducted_by_id: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoardingRollCallDetail extends BoardingRollCall {
+  house_name?: string;
+  conducted_by_name?: string;
+  entries: RollCallEntry[];
+  present_count: number;
+  absent_count: number;
+  total_count: number;
+}
+
+export interface BoardingRollCallCreate {
+  house_id: string;
+  date: string;
+  roll_call_type: RollCallType;
+  notes?: string;
+}
+
+export interface BoardingRollCallSubmit {
+  house_id: string;
+  date: string;
+  roll_call_type: RollCallType;
+  notes?: string;
+  entries: RollCallEntryCreate[];
+}
+
+export interface BoardingRollCallListResponse {
+  items: BoardingRollCall[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Exeats
+
+export interface Exeat {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  requested_by_id: string;
+  approved_by_id?: string;
+  exeat_type: ExeatType;
+  reason: string;
+  start_date: string;
+  end_date: string;
+  actual_return_date?: string;
+  status: ExeatStatus;
+  guardian_notified: boolean;
+  guardian_phone?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExeatDetail extends Exeat {
+  student_name?: string;
+  requested_by_name?: string;
+  approved_by_name?: string;
+}
+
+export interface ExeatCreate {
+  student_id: string;
+  exeat_type: ExeatType;
+  reason: string;
+  start_date: string;
+  end_date: string;
+  guardian_phone?: string;
+  notes?: string;
+}
+
+export interface ExeatApprovalUpdate {
+  status: "approved" | "denied";
+  notes?: string;
+}
+
+export interface ExeatReturnUpdate {
+  actual_return_date: string;
+  notes?: string;
+}
+
+export interface ExeatListResponse {
+  items: ExeatDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Boarding Incidents
+
+export interface BoardingIncident {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  reported_by_id: string;
+  incident_type: BoardingIncidentType;
+  severity: IncidentSeverity;
+  description: string;
+  action_taken?: string;
+  resolved: boolean;
+  resolved_by_id?: string;
+  resolved_at?: string;
+  parent_notified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoardingIncidentDetail extends BoardingIncident {
+  student_name?: string;
+  reported_by_name?: string;
+  resolved_by_name?: string;
+}
+
+export interface BoardingIncidentCreate {
+  student_id: string;
+  incident_type: BoardingIncidentType;
+  severity: IncidentSeverity;
+  description: string;
+  action_taken?: string;
+}
+
+export interface BoardingIncidentUpdate {
+  incident_type?: BoardingIncidentType;
+  severity?: IncidentSeverity;
+  description?: string;
+  action_taken?: string;
+}
+
+export interface BoardingIncidentResolve {
+  action_taken: string;
+  parent_notified?: boolean;
+}
+
+export interface BoardingIncidentListResponse {
+  items: BoardingIncidentDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Dining
+
+export interface DiningMeal {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  date: string;
+  meal_type: DiningMealType;
+  menu_description?: string;
+  head_count?: number;
+  prepared_by?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiningMealCreate {
+  date: string;
+  meal_type: DiningMealType;
+  menu_description?: string;
+  head_count?: number;
+  prepared_by?: string;
+  notes?: string;
+}
+
+export interface DiningMealUpdate {
+  meal_type?: DiningMealType;
+  menu_description?: string;
+  head_count?: number;
+  prepared_by?: string;
+  notes?: string;
+}
+
+export interface DiningMealListResponse {
+  items: DiningMeal[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Boarding Stats
+
+export interface BoardingStats {
+  total_houses: number;
+  total_dormitories: number;
+  total_beds: number;
+  available_beds: number;
+  occupied_beds: number;
+  total_boarders: number;
+  active_exeats: number;
+  pending_exeats: number;
+  unresolved_incidents: number;
+}
+
+// =========================
+// Transport Types
+// =========================
+
+export type VehicleType = "bus" | "minibus" | "van" | "car";
+export type VehicleStatus = "active" | "maintenance" | "retired";
+export type DriverStatus = "active" | "on_leave" | "terminated";
+export type RouteType = "morning_pickup" | "afternoon_dropoff" | "both";
+export type StudentTransportStatus = "active" | "suspended" | "cancelled";
+export type TripType = "morning_pickup" | "afternoon_dropoff" | "field_trip" | "other";
+export type TripStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
+export type MaintenanceType = "routine" | "repair" | "inspection" | "emergency";
+
+// Vehicles
+
+export interface Vehicle {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  registration_number: string;
+  vehicle_type: VehicleType;
+  make?: string;
+  model_name?: string;
+  year?: number;
+  capacity: number;
+  status: VehicleStatus;
+  insurance_expiry?: string;
+  roadworthy_expiry?: string;
+  gps_tracker_id?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleDetail extends Vehicle {
+  active_route_count: number;
+  last_maintenance_date?: string;
+  next_maintenance_date?: string;
+}
+
+export interface VehicleCreate {
+  registration_number: string;
+  vehicle_type: VehicleType;
+  make?: string;
+  model_name?: string;
+  year?: number;
+  capacity: number;
+  status?: VehicleStatus;
+  insurance_expiry?: string;
+  roadworthy_expiry?: string;
+  gps_tracker_id?: string;
+  notes?: string;
+}
+
+export interface VehicleUpdate {
+  registration_number?: string;
+  vehicle_type?: VehicleType;
+  make?: string;
+  model_name?: string;
+  year?: number;
+  capacity?: number;
+  status?: VehicleStatus;
+  insurance_expiry?: string;
+  roadworthy_expiry?: string;
+  gps_tracker_id?: string;
+  notes?: string;
+}
+
+export interface VehicleListResponse {
+  items: Vehicle[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Drivers
+
+export interface Driver {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  staff_id?: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  license_number: string;
+  license_expiry: string;
+  license_class: string;
+  status: DriverStatus;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DriverCreate {
+  staff_id?: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  license_number: string;
+  license_expiry: string;
+  license_class: string;
+  status?: DriverStatus;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+}
+
+export interface DriverUpdate {
+  staff_id?: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  license_number?: string;
+  license_expiry?: string;
+  license_class?: string;
+  status?: DriverStatus;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+}
+
+export interface DriverListResponse {
+  items: Driver[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Route Stops
+
+export interface RouteStop {
+  id: string;
+  tenant_id: string;
+  route_id: string;
+  stop_name: string;
+  stop_order: number;
+  pickup_time?: string;
+  dropoff_time?: string;
+  latitude?: number;
+  longitude?: number;
+  landmark?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouteStopCreate {
+  stop_name: string;
+  stop_order: number;
+  pickup_time?: string;
+  dropoff_time?: string;
+  latitude?: number;
+  longitude?: number;
+  landmark?: string;
+}
+
+export interface RouteStopUpdate {
+  stop_name?: string;
+  stop_order?: number;
+  pickup_time?: string;
+  dropoff_time?: string;
+  latitude?: number;
+  longitude?: number;
+  landmark?: string;
+}
+
+// Routes
+
+export interface TransportRoute {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  name: string;
+  route_code: string;
+  description?: string;
+  distance_km?: number;
+  estimated_duration_minutes?: number;
+  vehicle_id?: string;
+  driver_id?: string;
+  route_type: RouteType;
+  is_active: boolean;
+  transport_fee_per_term?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TransportRouteDetail extends TransportRoute {
+  vehicle_registration?: string;
+  driver_name?: string;
+  stops: RouteStop[];
+  student_count: number;
+}
+
+export interface TransportRouteCreate {
+  name: string;
+  route_code: string;
+  description?: string;
+  distance_km?: number;
+  estimated_duration_minutes?: number;
+  vehicle_id?: string;
+  driver_id?: string;
+  route_type: RouteType;
+  is_active?: boolean;
+  transport_fee_per_term?: number;
+  stops?: RouteStopCreate[];
+}
+
+export interface TransportRouteUpdate {
+  name?: string;
+  route_code?: string;
+  description?: string;
+  distance_km?: number;
+  estimated_duration_minutes?: number;
+  vehicle_id?: string;
+  driver_id?: string;
+  route_type?: RouteType;
+  is_active?: boolean;
+  transport_fee_per_term?: number;
+}
+
+export interface TransportRouteListResponse {
+  items: TransportRoute[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Student Transport Assignments
+
+export interface StudentTransport {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  student_id: string;
+  route_id: string;
+  stop_id: string;
+  academic_year_id: string;
+  status: StudentTransportStatus;
+  pickup_guardian_phone?: string;
+  special_instructions?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudentTransportDetail extends StudentTransport {
+  student_name?: string;
+  route_name?: string;
+  stop_name?: string;
+  academic_year_name?: string;
+  pickup_time?: string;
+  dropoff_time?: string;
+}
+
+export interface StudentTransportCreate {
+  student_id: string;
+  route_id: string;
+  stop_id: string;
+  academic_year_id: string;
+  status?: StudentTransportStatus;
+  pickup_guardian_phone?: string;
+  special_instructions?: string;
+}
+
+export interface StudentTransportUpdate {
+  route_id?: string;
+  stop_id?: string;
+  status?: StudentTransportStatus;
+  pickup_guardian_phone?: string;
+  special_instructions?: string;
+}
+
+export interface StudentTransportListResponse {
+  items: StudentTransportDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Trip Logs
+
+export interface TripLog {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  route_id: string;
+  vehicle_id: string;
+  driver_id: string;
+  trip_date: string;
+  trip_type: TripType;
+  departure_time?: string;
+  arrival_time?: string;
+  odometer_start?: number;
+  odometer_end?: number;
+  student_count: number;
+  status: TripStatus;
+  incidents?: string;
+  logged_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TripLogDetail extends TripLog {
+  route_name?: string;
+  vehicle_registration?: string;
+  driver_name?: string;
+  logged_by_name?: string;
+}
+
+export interface TripLogCreate {
+  route_id: string;
+  vehicle_id: string;
+  driver_id: string;
+  trip_date: string;
+  trip_type: TripType;
+  departure_time?: string;
+  arrival_time?: string;
+  odometer_start?: number;
+  odometer_end?: number;
+  student_count: number;
+  status?: TripStatus;
+  incidents?: string;
+}
+
+export interface TripLogUpdate {
+  departure_time?: string;
+  arrival_time?: string;
+  odometer_start?: number;
+  odometer_end?: number;
+  student_count?: number;
+  status?: TripStatus;
+  incidents?: string;
+}
+
+export interface TripLogListResponse {
+  items: TripLogDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Vehicle Maintenance
+
+export interface VehicleMaintenance {
+  id: string;
+  tenant_id: string;
+  school_id: string;
+  vehicle_id: string;
+  maintenance_type: MaintenanceType;
+  description: string;
+  cost?: number;
+  service_date: string;
+  next_service_date?: string;
+  odometer_reading?: number;
+  service_provider?: string;
+  invoice_number?: string;
+  logged_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleMaintenanceDetail extends VehicleMaintenance {
+  vehicle_registration?: string;
+  logged_by_name?: string;
+}
+
+export interface VehicleMaintenanceCreate {
+  vehicle_id: string;
+  maintenance_type: MaintenanceType;
+  description: string;
+  cost?: number;
+  service_date: string;
+  next_service_date?: string;
+  odometer_reading?: number;
+  service_provider?: string;
+  invoice_number?: string;
+}
+
+export interface VehicleMaintenanceUpdate {
+  maintenance_type?: MaintenanceType;
+  description?: string;
+  cost?: number;
+  service_date?: string;
+  next_service_date?: string;
+  odometer_reading?: number;
+  service_provider?: string;
+  invoice_number?: string;
+}
+
+export interface VehicleMaintenanceListResponse {
+  items: VehicleMaintenanceDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+// Transport Stats
+
+export interface TransportStats {
+  total_vehicles: number;
+  active_vehicles: number;
+  maintenance_vehicles: number;
+  total_drivers: number;
+  active_drivers: number;
+  total_routes: number;
+  active_routes: number;
+  total_students_assigned: number;
+  trips_today: number;
 }
 
 // Re-export School types

@@ -115,15 +115,21 @@ class TimetableService:
             is_active=True,
         )
         self.db.add(entry)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(entry)
         return entry
 
     async def get_timetable_entry(
-        self, entry_id: UUID, include_relations: bool = True
+        self, tenant_id: UUID, entry_id: UUID, include_relations: bool = True
     ) -> Optional[ClassTimetable]:
         """Get a timetable entry by ID."""
-        query = select(ClassTimetable).where(ClassTimetable.id == entry_id)
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        query = select(ClassTimetable).where(
+            and_(
+                ClassTimetable.tenant_id == tenant_id,
+                ClassTimetable.id == entry_id,
+            )
+        )
         if include_relations:
             query = query.options(
                 selectinload(ClassTimetable.class_),
@@ -224,7 +230,8 @@ class TimetableService:
         self, entry_id: UUID, tenant_id: UUID, **kwargs
     ) -> Optional[ClassTimetable]:
         """Update a timetable entry."""
-        entry = await self.get_timetable_entry(entry_id, include_relations=False)
+        # Defense-in-depth: tenant_id verified in get_timetable_entry
+        entry = await self.get_timetable_entry(tenant_id, entry_id, include_relations=False)
         if not entry:
             return None
 
@@ -249,18 +256,19 @@ class TimetableService:
                 setattr(entry, key, value)
 
         entry.updated_at = datetime.now(UTC)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(entry)
         return entry
 
-    async def delete_timetable_entry(self, entry_id: UUID) -> bool:
+    async def delete_timetable_entry(self, tenant_id: UUID, entry_id: UUID) -> bool:
         """Delete a timetable entry (hard delete)."""
-        entry = await self.get_timetable_entry(entry_id, include_relations=False)
+        # Defense-in-depth: tenant_id verified in get_timetable_entry
+        entry = await self.get_timetable_entry(tenant_id, entry_id, include_relations=False)
         if not entry:
             return False
 
         await self.db.delete(entry)
-        await self.db.commit()
+        await self.db.flush()
         return True
 
     async def bulk_update_timetable(
@@ -323,7 +331,7 @@ class TimetableService:
             self.db.add(entry)
             created_entries.append(entry)
 
-        await self.db.commit()
+        await self.db.flush()
 
         # Refresh all entries to get IDs and load relations
         for entry in created_entries:
@@ -400,20 +408,29 @@ class TimetableService:
                 code="teacher_conflict",
             )
 
-    async def get_class_with_details(self, class_id: UUID) -> Optional[Class]:
+    async def get_class_with_details(self, tenant_id: UUID, class_id: UUID) -> Optional[Class]:
         """Get class with sections loaded."""
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
         query = (
             select(Class)
-            .where(and_(Class.id == class_id, Class.deleted_at.is_(None)))
+            .where(
+                and_(
+                    Class.tenant_id == tenant_id,
+                    Class.id == class_id,
+                    Class.deleted_at.is_(None),
+                )
+            )
             .options(selectinload(Class.sections))
         )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_academic_year(self, academic_year_id: UUID) -> Optional[AcademicYear]:
+    async def get_academic_year(self, tenant_id: UUID, academic_year_id: UUID) -> Optional[AcademicYear]:
         """Get academic year by ID."""
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
         query = select(AcademicYear).where(
             and_(
+                AcademicYear.tenant_id == tenant_id,
                 AcademicYear.id == academic_year_id,
                 AcademicYear.deleted_at.is_(None),
             )
@@ -458,9 +475,16 @@ class TimetableService:
             "total_periods": len(entries),
         }
 
-    async def get_term(self, term_id: UUID) -> Optional[Term]:
+    async def get_term(self, tenant_id: UUID, term_id: UUID) -> Optional[Term]:
         """Get term by ID."""
-        query = select(Term).where(Term.id == term_id)
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        query = select(Term).where(
+            and_(
+                Term.tenant_id == tenant_id,
+                Term.id == term_id,
+                Term.deleted_at.is_(None),
+            )
+        )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
@@ -564,9 +588,15 @@ class TimetableService:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def get_school_period(self, period_id: UUID) -> Optional[SchoolPeriod]:
+    async def get_school_period(self, tenant_id: UUID, period_id: UUID) -> Optional[SchoolPeriod]:
         """Get a school period by ID."""
-        query = select(SchoolPeriod).where(SchoolPeriod.id == period_id)
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        query = select(SchoolPeriod).where(
+            and_(
+                SchoolPeriod.tenant_id == tenant_id,
+                SchoolPeriod.id == period_id,
+            )
+        )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
@@ -618,7 +648,7 @@ class TimetableService:
             is_active=True,
         )
         self.db.add(period)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(period)
         return period
 
@@ -626,8 +656,9 @@ class TimetableService:
         self, period_id: UUID, tenant_id: UUID, **kwargs
     ) -> Optional[SchoolPeriod]:
         """Update a school period."""
-        period = await self.get_school_period(period_id)
-        if not period or period.tenant_id != tenant_id:
+        # Defense-in-depth: tenant_id verified in get_school_period
+        period = await self.get_school_period(tenant_id, period_id)
+        if not period:
             return None
 
         for key, value in kwargs.items():
@@ -635,18 +666,19 @@ class TimetableService:
                 setattr(period, key, value)
 
         period.updated_at = datetime.now(UTC)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(period)
         return period
 
     async def delete_school_period(self, period_id: UUID, tenant_id: UUID) -> bool:
         """Delete a school period."""
-        period = await self.get_school_period(period_id)
-        if not period or period.tenant_id != tenant_id:
+        # Defense-in-depth: tenant_id verified in get_school_period
+        period = await self.get_school_period(tenant_id, period_id)
+        if not period:
             return False
 
         await self.db.delete(period)
-        await self.db.commit()
+        await self.db.flush()
         return True
 
     async def bulk_create_school_periods(
@@ -690,7 +722,7 @@ class TimetableService:
             self.db.add(period)
             created_periods.append(period)
 
-        await self.db.commit()
+        await self.db.flush()
         for period in created_periods:
             await self.db.refresh(period)
 
@@ -718,9 +750,15 @@ class TimetableService:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def get_school_holiday(self, holiday_id: UUID) -> Optional[SchoolHoliday]:
+    async def get_school_holiday(self, tenant_id: UUID, holiday_id: UUID) -> Optional[SchoolHoliday]:
         """Get a school holiday by ID."""
-        query = select(SchoolHoliday).where(SchoolHoliday.id == holiday_id)
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        query = select(SchoolHoliday).where(
+            and_(
+                SchoolHoliday.tenant_id == tenant_id,
+                SchoolHoliday.id == holiday_id,
+            )
+        )
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
@@ -762,7 +800,7 @@ class TimetableService:
             is_recurring=is_recurring,
         )
         self.db.add(holiday)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(holiday)
         return holiday
 
@@ -770,8 +808,9 @@ class TimetableService:
         self, holiday_id: UUID, tenant_id: UUID, **kwargs
     ) -> Optional[SchoolHoliday]:
         """Update a school holiday."""
-        holiday = await self.get_school_holiday(holiday_id)
-        if not holiday or holiday.tenant_id != tenant_id:
+        # Defense-in-depth: tenant_id verified in get_school_holiday
+        holiday = await self.get_school_holiday(tenant_id, holiday_id)
+        if not holiday:
             return None
 
         for key, value in kwargs.items():
@@ -779,16 +818,17 @@ class TimetableService:
                 setattr(holiday, key, value)
 
         holiday.updated_at = datetime.now(UTC)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(holiday)
         return holiday
 
     async def delete_school_holiday(self, holiday_id: UUID, tenant_id: UUID) -> bool:
         """Delete a school holiday."""
-        holiday = await self.get_school_holiday(holiday_id)
-        if not holiday or holiday.tenant_id != tenant_id:
+        # Defense-in-depth: tenant_id verified in get_school_holiday
+        holiday = await self.get_school_holiday(tenant_id, holiday_id)
+        if not holiday:
             return False
 
         await self.db.delete(holiday)
-        await self.db.commit()
+        await self.db.flush()
         return True

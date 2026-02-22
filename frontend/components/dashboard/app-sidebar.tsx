@@ -25,6 +25,8 @@ import {
   CalendarDays,
   FileHeart,
   Calendar,
+  Megaphone,
+  StickyNote,
 } from "lucide-react";
 
 import {
@@ -60,6 +62,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/format";
 import { logout } from "@/actions/auth.action";
+import { clearOfflineData } from "@/lib/offline/db";
 
 interface User {
   first_name: string;
@@ -210,9 +213,14 @@ const navigationGroups: NavGroup[] = [
         url: "/boarding",
         icon: Building2,
         subItems: [
+          { title: "Overview", url: "/boarding" },
+          { title: "Houses", url: "/boarding/houses" },
           { title: "Dormitories", url: "/boarding/dormitories" },
-          { title: "Exeats", url: "/boarding/exeats" },
+          { title: "Assignments", url: "/boarding/assignments" },
           { title: "Roll Call", url: "/boarding/roll-call" },
+          { title: "Exeats", url: "/boarding/exeats" },
+          { title: "Incidents", url: "/boarding/incidents" },
+          { title: "Dining", url: "/boarding/dining" },
         ],
       },
       {
@@ -220,9 +228,12 @@ const navigationGroups: NavGroup[] = [
         url: "/transport",
         icon: Bus,
         subItems: [
-          { title: "Routes", url: "/transport/routes" },
+          { title: "Overview", url: "/transport" },
           { title: "Vehicles", url: "/transport/vehicles" },
+          { title: "Drivers", url: "/transport/drivers" },
+          { title: "Routes", url: "/transport/routes" },
           { title: "Assignments", url: "/transport/assignments" },
+          { title: "Trips", url: "/transport/trips" },
         ],
       },
     ],
@@ -231,11 +242,20 @@ const navigationGroups: NavGroup[] = [
     label: "Communication",
     items: [
       {
+        title: "Announcements",
+        url: "/announcements",
+        icon: Megaphone,
+      },
+      {
+        title: "Teacher Notes",
+        url: "/teacher-notes",
+        icon: StickyNote,
+      },
+      {
         title: "Messages",
         url: "/messages",
         icon: MessageSquare,
         subItems: [
-          { title: "Announcements", url: "/messages/announcements" },
           { title: "SMS", url: "/messages/sms" },
           { title: "Email", url: "/messages/email" },
         ],
@@ -455,16 +475,14 @@ export function AppSidebar({ user, schoolName, ...props }: AppSidebarProps) {
                   <Link href="/settings/account">Account</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <form action={logout} className="w-full">
-                    <button
-                      type="submit"
-                      className="flex w-full items-center gap-2"
-                    >
-                      <LogOut className="size-4" />
-                      Sign out
-                    </button>
-                  </form>
+                <DropdownMenuItem
+                  onSelect={async () => {
+                    try { await clearOfflineData(); } catch { /* ignore */ }
+                    await logout();
+                  }}
+                >
+                  <LogOut className="size-4" />
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -2,14 +2,17 @@
 SIMS Plus - Tenant Endpoints
 
 API endpoints for tenant operations including subdomain validation.
+
+All endpoints here query the `tenants` table, which is NOT tenant-scoped
+(no RLS). They use UnscopedDatabaseSession so they work without a tenant
+context being set (e.g., before login, during subdomain validation).
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Path, Query
 
-from app.db.session import async_session_maker
+from app.api.deps import UnscopedDatabaseSession
 from app.schemas.tenant import (
     SubdomainCheckRequest,
     SubdomainCheckResponse,
@@ -21,12 +24,6 @@ from app.services.tenant import TenantService
 
 
 router = APIRouter()
-
-
-async def get_db() -> AsyncSession:
-    """Dependency to get database session."""
-    async with async_session_maker() as session:
-        yield session
 
 
 @router.get(
@@ -44,7 +41,7 @@ async def check_subdomain_availability(
             description="Subdomain to check",
         ),
     ],
-    db: AsyncSession = Depends(get_db),
+    db: UnscopedDatabaseSession,
 ) -> SubdomainCheckResponse:
     """
     Check if a subdomain is available.
@@ -71,7 +68,7 @@ async def check_subdomain_availability(
 )
 async def check_subdomain_availability_post(
     request: SubdomainCheckRequest,
-    db: AsyncSession = Depends(get_db),
+    db: UnscopedDatabaseSession,
 ) -> SubdomainCheckResponse:
     """
     Check if a subdomain is available (POST method).
@@ -105,7 +102,7 @@ async def validate_tenant(
             description="Tenant subdomain to validate",
         ),
     ],
-    db: AsyncSession = Depends(get_db),
+    db: UnscopedDatabaseSession,
 ) -> TenantValidationResponse:
     """
     Validate a tenant by subdomain.
@@ -154,6 +151,7 @@ async def validate_tenant(
     description="Get the current tenant based on the X-Subdomain header.",
 )
 async def get_current_tenant(
+    db: UnscopedDatabaseSession,
     subdomain: Annotated[
         str | None,
         Query(
@@ -161,7 +159,6 @@ async def get_current_tenant(
             description="Subdomain header",
         ),
     ] = None,
-    db: AsyncSession = Depends(get_db),
 ) -> TenantValidationResponse:
     """
     Get the current tenant based on subdomain.

@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,7 +15,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -21,6 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { register } from "@/actions/auth.action";
 import { toast } from "sonner";
 import {
@@ -30,6 +41,13 @@ import {
   GraduationCap,
   Globe,
   ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  School,
+  UserCog,
+  ClipboardCheck,
+  Pencil,
 } from "lucide-react";
 
 // Reserved subdomains that cannot be used
@@ -76,36 +94,121 @@ const PLANS = {
   enterprise: { name: "Enterprise", price: "Custom", period: "" },
 };
 
+// Password requirements for live checklist
+const passwordRequirements = [
+  { regex: /.{8,}/, label: "At least 8 characters" },
+  { regex: /[A-Z]/, label: "One uppercase letter" },
+  { regex: /[a-z]/, label: "One lowercase letter" },
+  { regex: /\d/, label: "One number" },
+  { regex: /[!@#$%^&*(),.?":{}|<>]/, label: "One special character" },
+];
+
+// Wizard step definitions
+const STEPS = [
+  { number: 1, label: "School Info", icon: School },
+  { number: 2, label: "Admin Account", icon: UserCog },
+  { number: 3, label: "Review", icon: ClipboardCheck },
+] as const;
+
+// Step 1 field names
+const STEP_1_FIELDS = [
+  "school_name",
+  "subdomain",
+  "school_type",
+] as const;
+
+// Step 2 field names
+const STEP_2_FIELDS = [
+  "first_name",
+  "last_name",
+  "email",
+  "password",
+  "confirm_password",
+] as const;
+
 type SubdomainStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+
+// Zod schema for the full registration form
+const registerSchema = z
+  .object({
+    // Step 1
+    school_name: z.string().min(2, "School name is required").max(255),
+    subdomain: z
+      .string()
+      .min(4, "Subdomain must be at least 4 characters")
+      .max(63)
+      .regex(
+        /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]+$/,
+        "Only lowercase letters, numbers, and hyphens"
+      ),
+    school_type: z.string().min(1, "Please select a school type"),
+    phone: z.string().optional(),
+    // Step 2
+    first_name: z.string().min(1, "First name is required"),
+    last_name: z.string().min(1, "Last name is required"),
+    email: z.string().email("Please enter a valid email"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .regex(/[A-Z]/, "Must contain an uppercase letter")
+      .regex(/[a-z]/, "Must contain a lowercase letter")
+      .regex(/\d/, "Must contain a number")
+      .regex(/[!@#$%^&*(),.?":{}|<>]/, "Must contain a special character"),
+    confirm_password: z.string(),
+  })
+  .refine((data) => data.password === data.confirm_password, {
+    message: "Passwords do not match",
+    path: ["confirm_password"],
+  });
+
+type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedPlan = searchParams.get("plan") || "trial";
 
+  const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
-  const [schoolName, setSchoolName] = useState("");
-  const [subdomain, setSubdomain] = useState("");
   const [subdomainStatus, setSubdomainStatus] =
     useState<SubdomainStatus>("idle");
   const [subdomainError, setSubdomainError] = useState("");
-  const [schoolType, setSchoolType] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const form = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      school_name: "",
+      subdomain: "",
+      school_type: "",
+      phone: "",
+      first_name: "",
+      last_name: "",
+      email: "",
+      password: "",
+      confirm_password: "",
+    },
+    mode: "onTouched",
+  });
+
+  const watchedPassword = form.watch("password");
+  const watchedSubdomain = form.watch("subdomain");
+  const watchedSchoolName = form.watch("school_name");
 
   // Generate subdomain from school name
   const generateSubdomain = useCallback((name: string): string => {
     return name
       .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "") // Remove special characters
-      .replace(/\s+/g, "") // Remove spaces
-      .replace(/-+/g, "-") // Replace multiple hyphens with single
-      .replace(/^-|-$/g, "") // Remove leading/trailing hyphens
-      .substring(0, 20); // Limit length
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .substring(0, 20);
   }, []);
 
   // Validate subdomain format
   const validateSubdomain = useCallback((value: string): boolean => {
-    // Must be 4-63 characters, only lowercase letters, numbers, hyphens
-    // Cannot start or end with hyphen
     const regex = /^[a-z0-9][a-z0-9-]{2,61}[a-z0-9]$/;
     return regex.test(value) || (value.length >= 4 && /^[a-z0-9]+$/.test(value));
   }, []);
@@ -113,7 +216,8 @@ export default function RegisterPage() {
   // Check subdomain availability via API
   const checkSubdomainAvailability = useCallback(
     async (value: string): Promise<{ available: boolean; reason?: string }> => {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const apiUrl =
+        process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
       try {
         const response = await fetch(
@@ -137,33 +241,33 @@ export default function RegisterPage() {
         };
       } catch (error) {
         console.error("Subdomain check failed:", error);
-        // Fallback to client-side check if API fails
         if (RESERVED_SUBDOMAINS.includes(value)) {
           return { available: false, reason: "This subdomain is reserved" };
         }
-        return { available: true };
+        // Safe default: treat as unavailable when we cannot verify
+        return { available: false, reason: "Unable to verify availability. Please try again." };
       }
     },
     []
   );
 
-  // Handle school name change - auto-generate subdomain
+  // Auto-generate subdomain from school name
   useEffect(() => {
-    if (schoolName) {
-      const generated = generateSubdomain(schoolName);
-      setSubdomain(generated);
+    if (watchedSchoolName) {
+      const generated = generateSubdomain(watchedSchoolName);
+      form.setValue("subdomain", generated, { shouldValidate: true });
     }
-  }, [schoolName, generateSubdomain]);
+  }, [watchedSchoolName, generateSubdomain, form]);
 
-  // Validate and check subdomain when it changes
+  // Validate and check subdomain availability when it changes
   useEffect(() => {
-    if (!subdomain || subdomain.length < 4) {
+    if (!watchedSubdomain || watchedSubdomain.length < 4) {
       setSubdomainStatus("idle");
       setSubdomainError("");
       return;
     }
 
-    if (!validateSubdomain(subdomain)) {
+    if (!validateSubdomain(watchedSubdomain)) {
       setSubdomainStatus("invalid");
       setSubdomainError(
         "Only lowercase letters, numbers, and hyphens allowed (min 4 characters)"
@@ -171,18 +275,17 @@ export default function RegisterPage() {
       return;
     }
 
-    if (RESERVED_SUBDOMAINS.includes(subdomain)) {
+    if (RESERVED_SUBDOMAINS.includes(watchedSubdomain)) {
       setSubdomainStatus("taken");
       setSubdomainError("This subdomain is reserved");
       return;
     }
 
-    // Check availability via API
     setSubdomainStatus("checking");
     setSubdomainError("");
 
     const timeoutId = setTimeout(async () => {
-      const result = await checkSubdomainAvailability(subdomain);
+      const result = await checkSubdomainAvailability(watchedSubdomain);
       if (result.available) {
         setSubdomainStatus("available");
         setSubdomainError("");
@@ -193,32 +296,40 @@ export default function RegisterPage() {
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [subdomain, validateSubdomain, checkSubdomainAvailability]);
+  }, [watchedSubdomain, validateSubdomain, checkSubdomainAvailability]);
 
-  async function handleSubmit(formData: FormData) {
-    const password = formData.get("password") as string;
-    const confirmPassword = formData.get("confirm_password") as string;
-
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match");
-      return;
+  // Navigate to the next step after validating current step fields
+  async function handleNext() {
+    if (step === 1) {
+      const valid = await form.trigger(
+        STEP_1_FIELDS as unknown as (keyof RegisterFormValues)[]
+      );
+      if (!valid) return;
+      if (subdomainStatus !== "available") {
+        toast.error("Please choose a valid, available subdomain");
+        return;
+      }
+      setStep(2);
+    } else if (step === 2) {
+      const valid = await form.trigger(
+        STEP_2_FIELDS as unknown as (keyof RegisterFormValues)[]
+      );
+      if (!valid) return;
+      setStep(3);
     }
+  }
 
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
-      return;
+  function handleBack() {
+    if (step > 1) {
+      setStep(step - 1);
     }
+  }
 
-    if (!/[A-Z]/.test(password)) {
-      toast.error("Password must contain at least one uppercase letter");
-      return;
-    }
+  function goToStep(targetStep: number) {
+    setStep(targetStep);
+  }
 
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-      toast.error("Password must contain at least one special character");
-      return;
-    }
-
+  async function onSubmit(values: RegisterFormValues) {
     if (subdomainStatus !== "available") {
       toast.error("Please choose a valid subdomain");
       return;
@@ -227,14 +338,14 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     const result = await register({
-      school_name: schoolName,
-      subdomain: subdomain,
-      school_type: schoolType,
-      admin_first_name: formData.get("first_name") as string,
-      admin_last_name: formData.get("last_name") as string,
-      admin_email: formData.get("email") as string,
-      admin_phone: formData.get("phone") as string,
-      admin_password: password,
+      school_name: values.school_name,
+      subdomain: values.subdomain,
+      school_type: values.school_type,
+      admin_first_name: values.first_name,
+      admin_last_name: values.last_name,
+      admin_email: values.email,
+      admin_phone: values.phone || "",
+      admin_password: values.password,
       plan: selectedPlan,
     });
 
@@ -242,14 +353,26 @@ export default function RegisterPage() {
 
     if (result.success) {
       toast.success("School registered successfully!");
-      // In production, redirect to the new subdomain
-      router.push(`/register/success?school=${subdomain}`);
+      router.push(`/register/success?school=${values.subdomain}`);
     } else {
-      toast.error(result.error || "Registration failed");
+      // Handle specific error codes
+      if (result.code === 409) {
+        setSubdomainStatus("taken");
+        setSubdomainError("This subdomain is already taken");
+        setStep(1);
+        toast.error("This subdomain is already taken. Please choose another.");
+      } else {
+        toast.error(result.error || "Registration failed");
+      }
     }
   }
 
   const plan = PLANS[selectedPlan as keyof typeof PLANS] || PLANS.trial;
+
+  // Helper to get the school type label from value
+  function getSchoolTypeLabel(value: string): string {
+    return SCHOOL_TYPES.find((t) => t.value === value)?.label || value;
+  }
 
   return (
     <main className="min-h-screen bg-muted py-8">
@@ -280,259 +403,631 @@ export default function RegisterPage() {
 
             {/* Selected Plan Badge */}
             <Badge variant="secondary" className="mt-4">
-              {plan.name} Plan • {plan.price}
+              {plan.name} Plan &bull; {plan.price}
               {plan.period}
             </Badge>
           </div>
 
-          {/* Registration Form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>School Information</CardTitle>
-              <CardDescription>
-                Tell us about your school to set up your portal
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form action={handleSubmit} className="space-y-6">
-                {/* School Details Section */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="school_name">School Name *</Label>
-                    <Input
-                      id="school_name"
-                      name="school_name"
-                      type="text"
-                      placeholder="e.g., Bright Future Academy"
-                      value={schoolName}
-                      onChange={(e) => setSchoolName(e.target.value)}
-                      required
-                    />
-                  </div>
+          {/* Step Progress Indicator */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {STEPS.map((s, index) => {
+                const StepIcon = s.icon;
+                const isCompleted = step > s.number;
+                const isCurrent = step === s.number;
 
-                  <div className="space-y-2">
-                    <Label htmlFor="school_type">School Type *</Label>
-                    <Select value={schoolType} onValueChange={setSchoolType}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select school type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SCHOOL_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            {type.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Subdomain Selection */}
-                  <div className="space-y-2">
-                    <Label htmlFor="subdomain">
-                      Choose Your School&apos;s Web Address *
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <Input
-                          id="subdomain"
-                          name="subdomain"
-                          type="text"
-                          placeholder="yourschool"
-                          value={subdomain}
-                          onChange={(e) =>
-                            setSubdomain(e.target.value.toLowerCase())
-                          }
-                          className={`pr-10 ${
-                            subdomainStatus === "available"
-                              ? "border-green-500 focus-visible:ring-green-500"
-                              : subdomainStatus === "taken" ||
-                                  subdomainStatus === "invalid"
-                                ? "border-red-500 focus-visible:ring-red-500"
-                                : ""
-                          }`}
-                          required
-                        />
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          {subdomainStatus === "checking" && (
-                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          )}
-                          {subdomainStatus === "available" && (
-                            <Check className="h-4 w-4 text-green-500" />
-                          )}
-                          {(subdomainStatus === "taken" ||
-                            subdomainStatus === "invalid") && (
-                            <X className="h-4 w-4 text-red-500" />
-                          )}
-                        </div>
+                return (
+                  <div key={s.number} className="flex flex-1 items-center">
+                    {/* Step circle and label */}
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors ${
+                          isCompleted
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : isCurrent
+                              ? "border-primary bg-background text-primary"
+                              : "border-muted-foreground/30 bg-background text-muted-foreground/50"
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <Check className="h-5 w-5" />
+                        ) : (
+                          <StepIcon className="h-5 w-5" />
+                        )}
                       </div>
-                      <span className="whitespace-nowrap text-sm text-muted-foreground">
-                        .simsplus.io
+                      <span
+                        className={`mt-2 text-xs font-medium ${
+                          isCurrent
+                            ? "text-primary"
+                            : isCompleted
+                              ? "text-foreground"
+                              : "text-muted-foreground/50"
+                        }`}
+                      >
+                        {s.label}
                       </span>
                     </div>
 
-                    {/* Subdomain Status Message */}
-                    {subdomainStatus === "available" && subdomain && (
-                      <p className="flex items-center gap-2 text-sm text-green-600">
-                        <Check className="h-3 w-3" />
-                        {subdomain}.simsplus.io is available!
-                      </p>
-                    )}
-                    {subdomainError && (
-                      <p className="flex items-center gap-2 text-sm text-red-600">
-                        <X className="h-3 w-3" />
-                        {subdomainError}
-                      </p>
-                    )}
-
-                    {/* URL Preview */}
-                    {subdomain && subdomainStatus === "available" && (
-                      <div className="mt-3 rounded-lg border bg-muted/50 p-3">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Globe className="h-4 w-4 text-primary" />
-                          <span className="font-medium">
-                            Your school portal will be:
-                          </span>
-                        </div>
-                        <code className="mt-1 block text-lg font-semibold text-primary">
-                          https://{subdomain}.simsplus.io
-                        </code>
+                    {/* Connector line between steps */}
+                    {index < STEPS.length - 1 && (
+                      <div className="mx-2 mt-[-1.25rem] h-0.5 flex-1">
+                        <div
+                          className={`h-full transition-colors ${
+                            step > s.number
+                              ? "bg-primary"
+                              : "bg-muted-foreground/20"
+                          }`}
+                        />
                       </div>
                     )}
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          </div>
 
-                {/* Divider */}
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center">
-                    <span className="bg-card px-4 text-sm text-muted-foreground">
-                      Administrator Account
-                    </span>
-                  </div>
-                </div>
-
-                {/* Admin Details Section */}
-                <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="first_name">First Name *</Label>
-                      <Input
-                        id="first_name"
-                        name="first_name"
-                        type="text"
-                        placeholder="Kwame"
-                        required
+          {/* Registration Form Card */}
+          <Card>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)}>
+                {/* Step 1: School Information */}
+                {step === 1 && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>School Information</CardTitle>
+                      <CardDescription>
+                        Tell us about your school to set up your portal
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="school_name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>School Name *</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="e.g., Bright Future Academy"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="last_name">Last Name *</Label>
-                      <Input
-                        id="last_name"
-                        name="last_name"
-                        type="text"
-                        placeholder="Asante"
-                        required
+
+                      <FormField
+                        control={form.control}
+                        name="school_type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>School Type *</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select school type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {SCHOOL_TYPES.map((type) => (
+                                  <SelectItem
+                                    key={type.value}
+                                    value={type.value}
+                                  >
+                                    {type.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    </div>
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email Address *</Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="admin@school.edu.gh"
-                      required
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Login credentials will be sent to this email
-                    </p>
-                  </div>
+                      {/* Subdomain Selection */}
+                      <FormField
+                        control={form.control}
+                        name="subdomain"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Choose Your School&apos;s Web Address *
+                            </FormLabel>
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <FormControl>
+                                  <Input
+                                    placeholder="yourschool"
+                                    {...field}
+                                    onChange={(e) =>
+                                      field.onChange(
+                                        e.target.value.toLowerCase()
+                                      )
+                                    }
+                                    className={`pr-10 ${
+                                      subdomainStatus === "available"
+                                        ? "border-green-500 focus-visible:ring-green-500"
+                                        : subdomainStatus === "taken" ||
+                                            subdomainStatus === "invalid"
+                                          ? "border-red-500 focus-visible:ring-red-500"
+                                          : ""
+                                    }`}
+                                  />
+                                </FormControl>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                  {subdomainStatus === "checking" && (
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                  )}
+                                  {subdomainStatus === "available" && (
+                                    <Check className="h-4 w-4 text-green-500" />
+                                  )}
+                                  {(subdomainStatus === "taken" ||
+                                    subdomainStatus === "invalid") && (
+                                    <X className="h-4 w-4 text-red-500" />
+                                  )}
+                                </div>
+                              </div>
+                              <span className="whitespace-nowrap text-sm text-muted-foreground">
+                                .simsplus.io
+                              </span>
+                            </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number *</Label>
-                    <Input
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      placeholder="+233 24 123 4567"
-                      required
-                    />
-                  </div>
+                            {/* Subdomain Status Message */}
+                            {subdomainStatus === "available" &&
+                              watchedSubdomain && (
+                                <p className="flex items-center gap-2 text-sm text-green-600">
+                                  <Check className="h-3 w-3" />
+                                  {watchedSubdomain}.simsplus.io is available!
+                                </p>
+                              )}
+                            {subdomainError && (
+                              <p className="flex items-center gap-2 text-sm text-red-600">
+                                <X className="h-3 w-3" />
+                                {subdomainError}
+                              </p>
+                            )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Password *</Label>
-                      <Input
-                        id="password"
+                            {/* URL Preview */}
+                            {watchedSubdomain &&
+                              subdomainStatus === "available" && (
+                                <div className="mt-3 rounded-lg border bg-muted/50 p-3">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <Globe className="h-4 w-4 text-primary" />
+                                    <span className="font-medium">
+                                      Your school portal will be:
+                                    </span>
+                                  </div>
+                                  <code className="mt-1 block text-lg font-semibold text-primary">
+                                    https://{watchedSubdomain}.simsplus.io
+                                  </code>
+                                </div>
+                              )}
+
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone Number</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="tel"
+                                placeholder="+233 24 123 4567"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              School or administrator contact number
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Step 1 Navigation */}
+                      <div className="flex justify-end pt-4">
+                        <Button
+                          type="button"
+                          onClick={handleNext}
+                          className="min-w-[120px]"
+                        >
+                          Next
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </>
+                )}
+
+                {/* Step 2: Admin Account */}
+                {step === 2 && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>Administrator Account</CardTitle>
+                      <CardDescription>
+                        Set up the school admin login credentials
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <FormField
+                          control={form.control}
+                          name="first_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>First Name *</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Kwame" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="last_name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Last Name *</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Asante" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email Address *</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="email"
+                                placeholder="admin@school.edu.gh"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Login credentials will be sent to this email
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
                         name="password"
-                        type="password"
-                        placeholder="Min. 8 chars, uppercase, special"
-                        required
-                        minLength={8}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Password *</FormLabel>
+                            <div className="relative">
+                              <FormControl>
+                                <Input
+                                  type={showPassword ? "text" : "password"}
+                                  placeholder="Create a strong password"
+                                  autoComplete="new-password"
+                                  className="pr-10"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                aria-label={
+                                  showPassword
+                                    ? "Hide password"
+                                    : "Show password"
+                                }
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Must include uppercase letter and special character
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirm_password">
-                        Confirm Password *
-                      </Label>
-                      <Input
-                        id="confirm_password"
+
+                      {/* Password Requirements Checklist */}
+                      <div className="rounded-lg border bg-muted/50 p-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">
+                          Password Requirements:
+                        </p>
+                        <ul className="space-y-1">
+                          {passwordRequirements.map((req) => {
+                            const isMet = req.regex.test(watchedPassword || "");
+                            return (
+                              <li
+                                key={req.label}
+                                className={`flex items-center gap-2 text-xs ${
+                                  isMet
+                                    ? "text-green-600"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                {isMet ? (
+                                  <Check className="h-3 w-3" />
+                                ) : (
+                                  <X className="h-3 w-3" />
+                                )}
+                                {req.label}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+
+                      <FormField
+                        control={form.control}
                         name="confirm_password"
-                        type="password"
-                        placeholder="Repeat password"
-                        required
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Confirm Password *</FormLabel>
+                            <div className="relative">
+                              <FormControl>
+                                <Input
+                                  type={
+                                    showConfirmPassword ? "text" : "password"
+                                  }
+                                  placeholder="Repeat password"
+                                  autoComplete="new-password"
+                                  className="pr-10"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowConfirmPassword(!showConfirmPassword)
+                                }
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                aria-label={
+                                  showConfirmPassword
+                                    ? "Hide password"
+                                    : "Show password"
+                                }
+                              >
+                                {showConfirmPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    </div>
-                  </div>
-                </div>
 
-                {/* Terms */}
-                <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
-                  By registering, you agree to our{" "}
-                  <Link href="/terms" className="text-primary hover:underline">
-                    Terms of Service
-                  </Link>{" "}
-                  and{" "}
-                  <Link
-                    href="/privacy"
-                    className="text-primary hover:underline"
-                  >
-                    Privacy Policy
-                  </Link>
-                  .
-                </div>
+                      {/* Step 2 Navigation */}
+                      <div className="flex justify-between pt-4">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="min-w-[120px]"
+                        >
+                          <ArrowLeft className="mr-2 h-4 w-4" />
+                          Back
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={handleNext}
+                          className="min-w-[120px]"
+                        >
+                          Next
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </>
+                )}
 
-                {/* Submit Button */}
-                <Button
-                  type="submit"
-                  className="w-full"
-                  size="lg"
-                  disabled={isLoading || subdomainStatus !== "available"}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating your school...
-                    </>
-                  ) : (
-                    "Start Free Trial"
-                  )}
-                </Button>
+                {/* Step 3: Review & Submit */}
+                {step === 3 && (
+                  <>
+                    <CardHeader>
+                      <CardTitle>Review &amp; Confirm</CardTitle>
+                      <CardDescription>
+                        Please review your information before creating your
+                        school portal
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {/* School Information Summary */}
+                      <div className="rounded-lg border p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-foreground">
+                            School Information
+                          </h3>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => goToStep(1)}
+                            className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                        </div>
+                        <dl className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">
+                              School Name
+                            </dt>
+                            <dd className="font-medium text-foreground">
+                              {form.getValues("school_name")}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">
+                              School Type
+                            </dt>
+                            <dd className="font-medium text-foreground">
+                              {getSchoolTypeLabel(form.getValues("school_type"))}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">
+                              Portal URL
+                            </dt>
+                            <dd className="font-medium text-primary">
+                              {form.getValues("subdomain")}.simsplus.io
+                            </dd>
+                          </div>
+                          {form.getValues("phone") && (
+                            <div className="flex justify-between">
+                              <dt className="text-muted-foreground">Phone</dt>
+                              <dd className="font-medium text-foreground">
+                                {form.getValues("phone")}
+                              </dd>
+                            </div>
+                          )}
+                        </dl>
+                      </div>
 
-                <p className="text-center text-sm text-muted-foreground">
-                  No credit card required • 14-day free trial
-                </p>
+                      {/* Admin Account Summary */}
+                      <div className="rounded-lg border p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <h3 className="text-sm font-semibold text-foreground">
+                            Administrator Account
+                          </h3>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => goToStep(2)}
+                            className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                        </div>
+                        <dl className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Name</dt>
+                            <dd className="font-medium text-foreground">
+                              {form.getValues("first_name")}{" "}
+                              {form.getValues("last_name")}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Email</dt>
+                            <dd className="font-medium text-foreground">
+                              {form.getValues("email")}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Password</dt>
+                            <dd className="font-medium text-foreground">
+                              ••••••••
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {/* Plan Summary */}
+                      <div className="rounded-lg border p-4">
+                        <h3 className="mb-3 text-sm font-semibold text-foreground">
+                          Subscription Plan
+                        </h3>
+                        <dl className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Plan</dt>
+                            <dd className="font-medium text-foreground">
+                              {plan.name}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">Price</dt>
+                            <dd className="font-medium text-foreground">
+                              {plan.price}
+                              {plan.period}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {/* Terms */}
+                      <div className="rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
+                        By registering, you agree to our{" "}
+                        <Link
+                          href="/terms"
+                          className="text-primary hover:underline"
+                        >
+                          Terms of Service
+                        </Link>{" "}
+                        and{" "}
+                        <Link
+                          href="/privacy"
+                          className="text-primary hover:underline"
+                        >
+                          Privacy Policy
+                        </Link>
+                        .
+                      </div>
+
+                      {/* Step 3 Navigation */}
+                      <div className="flex justify-between pt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleBack}
+                          className="min-w-[120px]"
+                        >
+                          <ArrowLeft className="mr-2 h-4 w-4" />
+                          Back
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="min-w-[160px]"
+                          disabled={
+                            isLoading || subdomainStatus !== "available"
+                          }
+                        >
+                          {isLoading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Creating your school...
+                            </>
+                          ) : (
+                            "Start Free Trial"
+                          )}
+                        </Button>
+                      </div>
+
+                      <p className="text-center text-sm text-muted-foreground">
+                        No credit card required &bull; 14-day free trial
+                      </p>
+                    </CardContent>
+                  </>
+                )}
               </form>
+            </Form>
 
-              {/* Sign In Link */}
-              <p className="mt-6 text-center text-sm text-muted-foreground">
+            {/* Sign In Link (always visible) */}
+            <div className="border-t px-6 py-4">
+              <p className="text-center text-sm text-muted-foreground">
                 Already have an account?{" "}
                 <Link
                   href="/login"
@@ -541,7 +1036,7 @@ export default function RegisterPage() {
                   Sign in
                 </Link>
               </p>
-            </CardContent>
+            </div>
           </Card>
         </div>
       </div>

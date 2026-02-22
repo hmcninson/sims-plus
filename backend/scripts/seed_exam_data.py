@@ -160,7 +160,10 @@ async def seed_exam_data():
 
     async with async_session() as session:
         # Set tenant context
-        await session.execute(text(f"SET app.current_tenant_id = '{TENANT_ID}'"))
+        await session.execute(
+            text("SELECT set_tenant_context(CAST(:tid AS uuid))"),
+            {"tid": TENANT_ID},
+        )
 
         # Get existing data
         classes = await get_classes(session)

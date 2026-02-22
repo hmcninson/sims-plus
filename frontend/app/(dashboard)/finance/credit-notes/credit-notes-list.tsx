@@ -451,7 +451,7 @@ export function CreditNotesList() {
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -464,7 +464,7 @@ export function CreditNotesList() {
                 </SelectContent>
               </Select>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -486,10 +486,10 @@ export function CreditNotesList() {
                   <TableRow>
                     <TableHead>Credit Note #</TableHead>
                     <TableHead>Student</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead className="hidden sm:table-cell">Type</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className="hidden sm:table-cell">Status</TableHead>
+                    <TableHead className="hidden md:table-cell">Created</TableHead>
                     <TableHead className="w-[70px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -517,7 +517,7 @@ export function CreditNotesList() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge variant="secondary" className={`gap-1 ${typeConfig.color}`}>
                             <TypeIcon className="h-3 w-3" />
                             {typeConfig.label}
@@ -526,12 +526,12 @@ export function CreditNotesList() {
                         <TableCell className="text-right font-medium tabular-nums">
                           {formatCurrency(cn.amount)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge variant="secondary" className={statusConfig.color}>
                             {statusConfig.label}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden md:table-cell text-muted-foreground">
                           {formatDate(cn.created_at)}
                         </TableCell>
                         <TableCell>

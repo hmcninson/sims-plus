@@ -433,6 +433,27 @@ class StudentStatsResponse(BaseSchema):
     day_students: int
 
 
+class StudentPromotionRequest(BaseSchema):
+    """Bulk promote students from one class to another."""
+
+    from_class_id: UUID
+    to_class_id: UUID
+    student_ids: list[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="List of student UUIDs to promote",
+    )
+
+
+class StudentPromotionResponse(BaseSchema):
+    """Response for student promotion."""
+
+    promoted: int
+    failed: int
+    errors: list[dict] = []
+
+
 class StudentFilterParams(BaseSchema):
     """Student filter parameters."""
 

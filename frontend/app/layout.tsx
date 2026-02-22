@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { TenantProvider } from "@/components/providers/TenantProvider";
+import { SwRegister } from "@/components/pwa/sw-register";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,6 +33,15 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "Harry McNinson" }],
   creator: "SIMS Plus",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SIMS Plus",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({
@@ -40,12 +51,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="theme-color" content="#0969da" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ThemeProvider>
-          {children}
-          <Toaster position="top-right" richColors />
+          <TenantProvider>
+            {children}
+            <Toaster position="top-right" richColors />
+            <SwRegister />
+          </TenantProvider>
         </ThemeProvider>
       </body>
     </html>

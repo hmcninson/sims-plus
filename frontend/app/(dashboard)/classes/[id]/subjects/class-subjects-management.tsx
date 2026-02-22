@@ -337,9 +337,9 @@ export function ClassSubjectsManagement({
                   <TableRow>
                     <TableHead>Code</TableHead>
                     <TableHead>Subject Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Periods/Week</TableHead>
+                    <TableHead className="hidden sm:table-cell">Category</TableHead>
+                    <TableHead className="hidden md:table-cell">Type</TableHead>
+                    <TableHead className="hidden md:table-cell">Periods/Week</TableHead>
                     <TableHead className="w-[70px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -350,7 +350,7 @@ export function ClassSubjectsManagement({
                         {cs.subject_code}
                       </TableCell>
                       <TableCell className="font-medium">{cs.subject_name}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <Badge
                           className={`${
                             CATEGORY_CONFIG[cs.subject_category as SubjectCategory]?.color ||
@@ -361,12 +361,12 @@ export function ClassSubjectsManagement({
                             cs.subject_category}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <Badge variant={cs.is_compulsory ? "default" : "secondary"}>
                           {cs.is_compulsory ? "Compulsory" : "Optional"}
                         </Badge>
                       </TableCell>
-                      <TableCell>{cs.periods_per_week || "-"}</TableCell>
+                      <TableCell className="hidden md:table-cell">{cs.periods_per_week || "-"}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"

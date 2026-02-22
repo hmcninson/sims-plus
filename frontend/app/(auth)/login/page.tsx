@@ -4,41 +4,92 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { login } from "@/actions/auth.action";
 import { useTenant } from "@/components/providers/TenantProvider";
-import { toast } from "sonner";
-import { Loader2, AlertCircle, GraduationCap } from "lucide-react";
+import { Loader2, AlertCircle, GraduationCap, Lock, Clock } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
+
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+
+// ---------------------------------------------------------------------------
+// Error types
+// ---------------------------------------------------------------------------
+
+interface FormError {
+  message: string;
+  type: "error" | "locked" | "rate_limited";
+}
+
+// Whitelisted URL error codes — prevents social engineering via crafted URLs
+const URL_ERROR_MESSAGES: Record<string, { title: string; message: string; variant: "warning" | "error" }> = {
+  session_expired: {
+    title: "Session expired",
+    message: "Your session has expired. Please sign in again.",
+    variant: "warning",
+  },
+  unauthorized: {
+    title: "Access denied",
+    message: "Please sign in to continue.",
+    variant: "error",
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { tenant, isLoading: tenantLoading, error: tenantError } = useTenant();
-  const [isLoading, setIsLoading] = useState(false);
 
-  // Check for error params
+  const [formError, setFormError] = useState<FormError | null>(null);
+
+  // URL-based messaging (e.g. after password reset or session timeout)
+  // Only whitelisted error codes are rendered — arbitrary message params are ignored
   const errorParam = searchParams.get("error");
-  const messageParam = searchParams.get("message");
+  const urlError = errorParam ? URL_ERROR_MESSAGES[errorParam] : undefined;
 
-  async function handleSubmit(formData: FormData) {
-    setIsLoading(true);
+  // React Hook Form
+  const form = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
-    const result = await login({
-      email: formData.get("email") as string,
-      password: formData.get("password") as string,
-    });
-
-    setIsLoading(false);
-
-    if (result.success) {
-      router.push("/dashboard");
-    } else {
-      toast.error(result.error || "Login failed");
-    }
-  }
+  const { isSubmitting } = form.formState;
 
   // Apply tenant branding color
   useEffect(() => {
@@ -50,7 +101,53 @@ export default function LoginPage() {
     }
   }, [tenant]);
 
-  // Show loading state while checking tenant
+  // Clear form-level error when user starts typing again
+  useEffect(() => {
+    const subscription = form.watch(() => {
+      if (formError) setFormError(null);
+    });
+    return () => subscription.unsubscribe();
+  }, [form, formError]);
+
+  async function onSubmit(values: LoginFormData) {
+    setFormError(null);
+
+    const result = await login(values);
+
+    if (result.success) {
+      // Redirect parents to the parent portal, all other roles to admin dashboard
+      const redirectUrl = result.data.role === "parent" ? "/parent/dashboard" : "/dashboard";
+      router.push(redirectUrl);
+      return;
+    }
+
+    // Differentiated error handling based on HTTP status code
+    const code = result.code;
+
+    if (code === 401) {
+      setFormError({
+        message: "Invalid email or password",
+        type: "error",
+      });
+    } else if (code === 403) {
+      setFormError({
+        message: result.error,
+        type: "locked",
+      });
+    } else if (code === 429) {
+      setFormError({
+        message: result.error,
+        type: "rate_limited",
+      });
+    } else {
+      setFormError({
+        message: result.error || "Login failed. Please try again.",
+        type: "error",
+      });
+    }
+  }
+
+  // ---------- Tenant loading state ----------
   if (tenantLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-muted p-4">
@@ -62,15 +159,32 @@ export default function LoginPage() {
     );
   }
 
+  // ---------- Render ----------
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted p-4">
       <div className="w-full max-w-md">
-        {/* Error Alert */}
-        {(errorParam || tenantError) && (
-          <div className="mb-6 flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-            <p>{messageParam || tenantError || "An error occurred. Please try again."}</p>
-          </div>
+        {/* URL-based error/message alert (e.g. session expired) — whitelisted codes only */}
+        {urlError && urlError.variant === "warning" && (
+          <Alert className="mb-6 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/50 dark:text-amber-200">
+            <Clock className="h-4 w-4" />
+            <AlertTitle>{urlError.title}</AlertTitle>
+            <AlertDescription>{urlError.message}</AlertDescription>
+          </Alert>
+        )}
+
+        {urlError && urlError.variant === "error" && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{urlError.title}</AlertTitle>
+            <AlertDescription>{urlError.message}</AlertDescription>
+          </Alert>
+        )}
+
+        {!urlError && tenantError && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{tenantError}</AlertDescription>
+          </Alert>
         )}
 
         {/* Logo and School Name */}
@@ -122,7 +236,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Login Form */}
+        {/* Login Card */}
         <Card>
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
@@ -133,75 +247,114 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
+            {/* Form-level error alerts */}
+            {formError && formError.type === "error" && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Login failed</AlertTitle>
+                <AlertDescription>{formError.message}</AlertDescription>
+              </Alert>
+            )}
+
+            {formError && formError.type === "locked" && (
+              <Alert className="mb-4 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/50 dark:text-amber-200">
+                <Lock className="h-4 w-4" />
+                <AlertTitle>Account locked</AlertTitle>
+                <AlertDescription>{formError.message}</AlertDescription>
+              </Alert>
+            )}
+
+            {formError && formError.type === "rate_limited" && (
+              <Alert className="mb-4 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/50 dark:text-amber-200">
+                <Clock className="h-4 w-4" />
+                <AlertTitle>Too many attempts</AlertTitle>
+                <AlertDescription>{formError.message}</AlertDescription>
+              </Alert>
+            )}
+
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-4">
+                <FormField
+                  control={form.control}
                   name="email"
-                  type="email"
-                  placeholder="you@school.edu.gh"
-                  required
-                  autoComplete="email"
-                  disabled={isLoading}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email Address</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="email"
+                          placeholder="you@school.edu.gh"
+                          autoComplete="email"
+                          disabled={isSubmitting}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
+                <FormField
+                  control={form.control}
                   name="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  required
-                  autoComplete="current-password"
-                  disabled={isLoading}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          placeholder="Enter your password"
+                          autoComplete="current-password"
+                          disabled={isSubmitting}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="remember"
-                    className="h-4 w-4 rounded border-input"
-                    disabled={isLoading}
-                  />
-                  Remember me
-                </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-sm text-primary hover:underline"
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox disabled={isSubmitting} />
+                    Remember me
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isSubmitting}
+                  style={{
+                    backgroundColor: tenant?.branding?.primary_color || undefined,
+                  }}
                 >
-                  Forgot password?
-                </Link>
-              </div>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Sign In"
+                  )}
+                </Button>
+              </form>
+            </Form>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading}
-                style={{
-                  backgroundColor: tenant?.branding?.primary_color || undefined,
-                }}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  "Sign In"
-                )}
-              </Button>
-            </form>
-
-            {/* Registration link - only show on main site */}
+            {/* Registration link -- only show on main site */}
             {!tenant && (
               <p className="mt-6 text-center text-sm text-muted-foreground">
                 Don&apos;t have an account?{" "}
-                <Link href="/register" className="font-medium text-primary hover:underline">
+                <Link
+                  href="/register"
+                  className="font-medium text-primary hover:underline"
+                >
                   Start free trial
                 </Link>
               </p>

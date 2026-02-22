@@ -4,7 +4,7 @@
 # =========================
 # Dependencies Stage
 # =========================
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN npm ci
 # =========================
 # Development Stage
 # =========================
-FROM node:20-alpine AS development
+FROM node:22-alpine AS development
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -30,7 +30,7 @@ CMD ["npm", "run", "dev"]
 # =========================
 # Builder Stage
 # =========================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -44,7 +44,7 @@ RUN npm run build
 # =========================
 # Production Stage
 # =========================
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 
 ENV NODE_ENV=production

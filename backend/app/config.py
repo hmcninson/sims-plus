@@ -7,7 +7,7 @@ Uses Pydantic Settings for environment variable management.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn, field_validator
+from pydantic import PostgresDsn, RedisDsn, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # =========================
     APP_NAME: str = "SIMS Plus"
     APP_VERSION: str = "0.1.0"
-    ENVIRONMENT: Literal["development", "staging", "production"] = "development"
+    ENVIRONMENT: Literal["development", "staging", "production", "testing"] = "development"
     DEBUG: bool = False  # SECURITY: Default to False, explicitly enable in development
 
     # =========================
@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     DATABASE_URL: PostgresDsn
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
+
+    # Alembic uses superuser for DDL operations
+    ALEMBIC_DATABASE_URL: str | None = None
 
     # =========================
     # Redis
@@ -75,13 +78,32 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in v.split(",")]
         return v
 
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def validate_secret_key_length(cls, v: str, info: ValidationInfo) -> str:
+        """
+        Validate SECRET_KEY minimum length.
+
+        Enforces 64 characters in production for stronger security,
+        32 characters in development/staging for convenience.
+        """
+        env = info.data.get("ENVIRONMENT", "development")
+        min_length = 64 if env == "production" else 32
+        if len(v) < min_length:
+            raise ValueError(
+                f"SECRET_KEY must be at least {min_length} characters in {env} mode. "
+                "Generate with: openssl rand -base64 64"
+            )
+        return v
+
     # =========================
     # Rate Limiting
     # =========================
     RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_DEFAULT_REQUESTS: int = 500  # Increased for development
+    # Production-safe defaults per security spec; override via env vars for development
+    RATE_LIMIT_DEFAULT_REQUESTS: int = 100
     RATE_LIMIT_DEFAULT_WINDOW: int = 60  # seconds
-    RATE_LIMIT_AUTH_REQUESTS: int = 30  # Increased for development
+    RATE_LIMIT_AUTH_REQUESTS: int = 5
     RATE_LIMIT_AUTH_WINDOW: int = 60  # seconds
     RATE_LIMIT_SUBDOMAIN_CHECK_REQUESTS: int = 20
     RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW: int = 60  # seconds
@@ -104,6 +126,7 @@ class Settings(BaseSettings):
     HUBTEL_CLIENT_ID: str | None = None
     HUBTEL_CLIENT_SECRET: str | None = None
     HUBTEL_SENDER_ID: str = "SIMSPlus"
+    HUBTEL_MERCHANT_ACCOUNT: str | None = None
 
     # =========================
     # Mobile Money (MTN MoMo)
@@ -118,8 +141,25 @@ class Settings(BaseSettings):
     # =========================
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
-    AWS_REGION: str = "eu-west-1"
+    AWS_REGION: str = "us-east-1"
     AWS_S3_BUCKET: str = "sims-plus-files"
+    S3_ENDPOINT_URL: str | None = None  # Set to MinIO URL for local dev
+    USE_MINIO: bool = False  # True when using MinIO instead of S3
+
+    # =========================
+    # Web Push (VAPID)
+    # =========================
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_CONTACT_EMAIL: str = "support@simsplus.io"
+
+    # =========================
+    # Paystack (Online Payments)
+    # =========================
+    PAYSTACK_PUBLIC_KEY: str = ""
+    PAYSTACK_SECRET_KEY: str = ""
+    PAYSTACK_WEBHOOK_SECRET: str = ""  # Falls back to PAYSTACK_SECRET_KEY if empty
+    PAYMENT_CALLBACK_URL: str = ""  # URL to redirect parent after Paystack payment
 
     # =========================
     # Sentry

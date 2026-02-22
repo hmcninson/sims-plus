@@ -102,6 +102,17 @@ from app.models.finance import (
     is_valid_invoice_transition,
     get_valid_next_statuses,
 )
+from app.models.notification import (
+    Notification,
+    NotificationType,
+    NotificationCategory,
+)
+from app.models.sms import (
+    SMSLog,
+    SMSProvider,
+    SMSStatus,
+)
+from app.models.push_subscription import PushSubscription
 
 __all__ = [
     "Base",
@@ -209,4 +220,14 @@ __all__ = [
     "INVOICE_STATUS_TRANSITIONS",
     "is_valid_invoice_transition",
     "get_valid_next_statuses",
+    # Notification models
+    "Notification",
+    "NotificationType",
+    "NotificationCategory",
+    # SMS models
+    "SMSLog",
+    "SMSProvider",
+    "SMSStatus",
+    # Push subscription
+    "PushSubscription",
 ]

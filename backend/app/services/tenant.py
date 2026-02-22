@@ -1,26 +1,48 @@
 """
 SIMS Plus - Tenant Service
 
-Business logic for tenant operations.
+Business logic for tenant operations including cache invalidation.
 """
 
 import re
+from typing import Optional
 from uuid import UUID
 
+import redis.asyncio as aioredis
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.middleware.tenant import invalidate_tenant_cache
 from app.models import Tenant, ReservedSubdomain
+
+logger = structlog.get_logger()
 
 
 class TenantService:
-    """Service for tenant-related operations."""
+    """Service for tenant-related operations.
+
+    When a Redis client is provided, tenant mutations (update, deactivate)
+    automatically invalidate the middleware's lookup cache so subsequent
+    requests see the fresh data.
+    """
+
+    class Error(Exception):
+        def __init__(self, message: str, code: int = 400):
+            self.message = message
+            self.code = code
+            super().__init__(message)
 
     # Subdomain validation regex
     SUBDOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]+$")
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        redis_client: Optional[aioredis.Redis] = None,
+    ):
         self.db = db
+        self._redis = redis_client
 
     def validate_subdomain_format(self, subdomain: str) -> tuple[bool, str | None]:
         """
@@ -163,3 +185,113 @@ class TenantService:
             return False, None, "This school account no longer exists"
 
         return True, tenant, None
+
+    async def update_tenant(
+        self,
+        tenant_id: UUID,
+        *,
+        name: Optional[str] = None,
+        subdomain: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        settings: Optional[str] = None,
+    ) -> Tenant:
+        """
+        Update tenant fields and invalidate the Redis cache.
+
+        If the subdomain is changed, both old and new cache keys are deleted
+        so stale lookups don't resolve to the old record.
+
+        Args:
+            tenant_id: Tenant UUID
+            name: New tenant name (optional)
+            subdomain: New subdomain (optional)
+            is_active: New active status (optional)
+            settings: New settings JSON (optional)
+
+        Returns:
+            Updated Tenant model
+
+        Raises:
+            TenantService.Error: If tenant not found or subdomain conflict
+        """
+        tenant = await self.get_tenant_by_id(tenant_id)
+        if not tenant:
+            raise self.Error("Tenant not found", 404)
+
+        old_subdomain = tenant.subdomain
+
+        if name is not None:
+            tenant.name = name
+
+        if subdomain is not None:
+            subdomain = subdomain.lower()
+            # Validate format
+            is_valid, error = self.validate_subdomain_format(subdomain)
+            if not is_valid:
+                raise self.Error(error, 422)
+            # Check availability (only if actually changing)
+            if subdomain != old_subdomain:
+                if await self.is_subdomain_taken(subdomain):
+                    raise self.Error("This subdomain is already registered", 409)
+                if await self.is_subdomain_reserved(subdomain):
+                    raise self.Error("This subdomain is reserved for system use", 409)
+            tenant.subdomain = subdomain
+
+        if is_active is not None:
+            tenant.is_active = is_active
+
+        if settings is not None:
+            tenant.settings = settings
+
+        await self.db.flush()
+        await self.db.refresh(tenant)
+
+        # Invalidate cache so the middleware picks up the changes on next request
+        await self._invalidate_cache(
+            tenant.subdomain,
+            old_subdomain=old_subdomain if subdomain and subdomain != old_subdomain else None,
+        )
+
+        return tenant
+
+    async def deactivate_tenant(self, tenant_id: UUID) -> Tenant:
+        """
+        Deactivate a tenant (suspend their account).
+
+        Invalidates the cache so subsequent requests immediately see
+        is_active=false and return 403.
+
+        Args:
+            tenant_id: Tenant UUID
+
+        Returns:
+            Updated Tenant model
+
+        Raises:
+            TenantService.Error: If tenant not found
+        """
+        return await self.update_tenant(tenant_id, is_active=False)
+
+    async def _invalidate_cache(
+        self,
+        subdomain: str,
+        old_subdomain: Optional[str] = None,
+    ) -> None:
+        """Invalidate tenant lookup cache in Redis.
+
+        Best-effort: logs a warning if Redis is unavailable but does not
+        raise, since the cache has a short TTL and will self-heal.
+        """
+        if self._redis is None:
+            logger.debug(
+                "tenant_cache_invalidation_skipped",
+                reason="no_redis_client",
+                subdomain=subdomain,
+            )
+            return
+
+        await invalidate_tenant_cache(
+            self._redis,
+            subdomain,
+            old_subdomain=old_subdomain,
+        )

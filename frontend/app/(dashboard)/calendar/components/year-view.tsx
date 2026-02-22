@@ -114,8 +114,8 @@ export function YearView({
   };
 
   return (
-    <div className="bg-card rounded-lg border p-4">
-      <div className="grid grid-cols-4 gap-4">
+    <div className="bg-card rounded-lg border p-3 sm:p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
         {monthsData.map((monthData) => (
           <div key={monthData.month} className="space-y-2">
             {/* Month header */}
@@ -181,7 +181,7 @@ export function YearView({
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
+      <div className="flex flex-wrap gap-3 sm:gap-4 mt-4 pt-4 border-t">
         {terms.map((term, index) => (
           <div key={term.id} className="flex items-center gap-1.5 text-xs">
             <div
@@ -195,7 +195,7 @@ export function YearView({
             </span>
           </div>
         ))}
-        <div className="flex items-center gap-1.5 text-xs ml-auto">
+        <div className="flex items-center gap-1.5 text-xs sm:ml-auto">
           <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
           <span className="text-muted-foreground">Holiday</span>
         </div>

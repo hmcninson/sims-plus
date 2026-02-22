@@ -23,7 +23,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set database URL from environment
-config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
+# IMPORTANT: Alembic migrations MUST run as sims_admin (superuser) for DDL.
+# Use ALEMBIC_DATABASE_URL when set, falling back to DATABASE_URL.
+# The ALEMBIC_DATABASE_URL may use sync driver (postgresql://); convert to
+# async driver (postgresql+asyncpg://) since we use async_engine_from_config.
+_alembic_url = str(settings.ALEMBIC_DATABASE_URL or settings.DATABASE_URL)
+if _alembic_url.startswith("postgresql://"):
+    _alembic_url = _alembic_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+config.set_main_option("sqlalchemy.url", _alembic_url)
 
 # Model metadata for autogenerate support
 target_metadata = Base.metadata

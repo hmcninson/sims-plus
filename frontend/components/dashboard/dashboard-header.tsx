@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, HelpCircle, Search, Settings } from "lucide-react";
+import { HelpCircle, Search, Settings } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { NotificationBell } from "@/components/notifications/notification-bell";
+import { SyncStatusIndicator } from "@/components/offline/sync-status-indicator";
 
 interface User {
   first_name: string;
@@ -73,6 +75,7 @@ const pathNames: Record<string, string> = {
   school: "School",
   communication: "Communication",
   data: "Data Management",
+  "audit-log": "Audit Log",
 };
 
 // Map parent paths to detail page names (for dynamic routes like /students/[id])
@@ -153,6 +156,7 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
 
       {/* Right side */}
       <div className="ml-auto flex items-center gap-2">
+        <SyncStatusIndicator />
         {/* Search - hidden on mobile */}
         <div className="relative hidden lg:block">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -170,13 +174,7 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
         </Button>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="h-9 w-9 relative">
-          <Bell className="h-4 w-4" />
-          <span className="sr-only">Notifications</span>
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-            3
-          </span>
-        </Button>
+        <NotificationBell />
 
         {/* Help */}
         <Button variant="ghost" size="icon" className="h-9 w-9">

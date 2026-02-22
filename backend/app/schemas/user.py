@@ -128,3 +128,24 @@ class ResetUserPasswordRequest(BaseSchema):
         if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v):
             raise ValueError("Password must contain at least one special character")
         return v
+
+
+class UserInviteRequest(BaseSchema):
+    """Invite a new user by email."""
+
+    email: EmailStr
+    role: UserRole
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+
+
+class UserInviteResponse(BaseSchema):
+    """Response after inviting a user."""
+
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    role: UserRole
+    status: UserStatus
+    created_at: datetime

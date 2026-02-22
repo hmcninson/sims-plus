@@ -306,7 +306,7 @@ export function SubjectsManagement({ initialSubjects }: SubjectsManagementProps)
               value={categoryFilter}
               onValueChange={(value) => setCategoryFilter(value as SubjectCategory | "all")}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Filter by category" />
               </SelectTrigger>
               <SelectContent>
@@ -343,9 +343,9 @@ export function SubjectsManagement({ initialSubjects }: SubjectsManagementProps)
                   <TableRow>
                     <TableHead>Code</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden sm:table-cell">Category</TableHead>
+                    <TableHead className="hidden sm:table-cell">Description</TableHead>
+                    <TableHead className="hidden md:table-cell">Status</TableHead>
                     <TableHead className="w-[70px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -356,17 +356,17 @@ export function SubjectsManagement({ initialSubjects }: SubjectsManagementProps)
                         {subject.code}
                       </TableCell>
                       <TableCell className="font-medium">{subject.name}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <Badge
                           className={`${CATEGORY_CONFIG[subject.category].color} text-white`}
                         >
                           {CATEGORY_CONFIG[subject.category].label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell max-w-[200px] truncate text-muted-foreground">
                         {subject.description || "-"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         <Badge variant={subject.is_active ? "default" : "secondary"}>
                           {subject.is_active ? "Active" : "Inactive"}
                         </Badge>

@@ -172,15 +172,17 @@ class School(Base, TenantMixin, SoftDeleteMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use joinedload() or selectinload() explicitly in queries that need these.
     students: Mapped[list["Student"]] = relationship(
         "Student",
         back_populates="school",
-        lazy="selectin",
+        lazy="raise",
     )
     staff_members: Mapped[list["Staff"]] = relationship(
         "Staff",
         back_populates="school",
-        lazy="selectin",
+        lazy="raise",
     )
 
     @property

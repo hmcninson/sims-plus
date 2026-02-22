@@ -22,7 +22,6 @@ async function getAuthContext() {
   const cookieStore = await cookies();
   const token = await getValidAccessToken();
   const subdomain = cookieStore.get("x-subdomain")?.value;
-  console.log("[Staff.action] getAuthContext:", { hasToken: !!token, tokenLength: token?.length, subdomain });
   return {
     token: token || undefined,
     subdomain,
@@ -98,12 +97,10 @@ export async function getStaffMember(
 export async function generateStaffId(): Promise<ActionResult<string>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    console.log("[Staff.action] generateStaffId called:", { hasToken: !!token, subdomain });
     const response = await apiGet<{ staff_id: string }>("/staff/generate-id", {
       token,
       subdomain,
     });
-    console.log("[Staff.action] generateStaffId response:", response);
     return { success: true, data: response.staff_id };
   } catch (error) {
     console.error("[Staff.action] generateStaffId error:", error);
@@ -155,7 +152,7 @@ export async function deleteStaff(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/staff/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -301,7 +298,7 @@ export async function removeStaffFromSection(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -345,13 +342,11 @@ export async function getDepartments(
 ): Promise<ActionResult<Department[]>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    console.log("[Departments] Fetching departments:", { subdomain, hasToken: !!token });
     const params = search ? `?search=${encodeURIComponent(search)}` : "";
     const response = await apiGet<Department[]>(`/staff/departments${params}`, {
       token,
       subdomain,
     });
-    console.log("[Departments] Fetch response:", response);
     return { success: true, data: response };
   } catch (error) {
     console.error("[Departments] Fetch error:", error);
@@ -426,7 +421,7 @@ export async function deleteDepartment(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

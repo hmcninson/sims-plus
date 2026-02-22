@@ -69,6 +69,7 @@ import type {
   Class,
   StudentStatus,
 } from "@/types";
+import { CollapsibleFilters } from "@/components/filters/collapsible-filters";
 import { ImportStudentsDialog } from "./import-students-dialog";
 
 // Status configuration
@@ -447,12 +448,17 @@ export function StudentsManagement({
               </Button>
             </form>
 
-            <div className="flex gap-2">
+            <CollapsibleFilters
+              activeFilterCount={
+                (statusFilter !== "all" ? 1 : 0) +
+                (classFilter !== "all" ? 1 : 0)
+              }
+            >
               <Select
                 value={statusFilter}
                 onValueChange={handleStatusChange}
               >
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full md:w-[150px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -470,7 +476,7 @@ export function StudentsManagement({
                 value={classFilter}
                 onValueChange={handleClassChange}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full md:w-[180px]">
                   <SelectValue placeholder="Class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -494,7 +500,7 @@ export function StudentsManagement({
                   Clear
                 </Button>
               )}
-            </div>
+            </CollapsibleFilters>
           </div>
 
           {/* Students Table */}
@@ -503,10 +509,10 @@ export function StudentsManagement({
               <TableHeader>
                 <TableRow>
                   <TableHead>Student</TableHead>
-                  <TableHead>Student ID</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Gender</TableHead>
-                  <TableHead>Age</TableHead>
+                  <TableHead className="hidden sm:table-cell">Student ID</TableHead>
+                  <TableHead className="hidden md:table-cell">Class</TableHead>
+                  <TableHead className="hidden lg:table-cell">Gender</TableHead>
+                  <TableHead className="hidden lg:table-cell">Age</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -550,10 +556,10 @@ export function StudentsManagement({
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="hidden sm:table-cell font-mono text-sm">
                         {student.student_id}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {student.class_name || "-"}
                         {student.section_name && (
                           <span className="text-muted-foreground">
@@ -562,8 +568,8 @@ export function StudentsManagement({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="capitalize">{student.gender}</TableCell>
-                      <TableCell>{calculateAge(student.date_of_birth)} yrs</TableCell>
+                      <TableCell className="hidden lg:table-cell capitalize">{student.gender}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{calculateAge(student.date_of_birth)} yrs</TableCell>
                       <TableCell>
                         <Badge
                           variant="secondary"

@@ -160,7 +160,7 @@ export async function deleteStudent(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/students/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -297,7 +297,7 @@ export async function unlinkGuardian(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -394,7 +394,7 @@ export async function deleteGuardian(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/guardians/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

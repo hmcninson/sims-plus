@@ -4,11 +4,13 @@ SIMS Plus - Attendance Endpoints
 API endpoints for student and staff attendance management.
 """
 
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
     DatabaseSession,
@@ -30,7 +32,12 @@ from app.schemas.attendance import (
     StaffAttendanceResponse,
     StaffAttendanceSummary,
 )
+from app.schemas.reports import AttendanceReportRequest
 from app.services.attendance import AttendanceService
+
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -135,6 +142,7 @@ async def bulk_mark_student_attendance(
 async def get_students_for_attendance(
     section_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     attendance_date: date = Query(..., description="Date to get attendance for"),
 ) -> list[StudentAttendanceListItem]:
@@ -159,6 +167,7 @@ async def get_students_for_attendance(
 async def get_section_attendance_summary(
     section_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     attendance_date: date = Query(..., description="Date to get summary for"),
 ) -> SectionAttendanceSummary:
@@ -183,6 +192,7 @@ async def get_section_attendance_summary(
 async def get_student_attendance_summary(
     student_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     term_id: Optional[UUID] = Query(None, description="Filter by term"),
     start_date: Optional[date] = Query(None, description="Start date"),
@@ -210,6 +220,7 @@ async def get_student_attendance_summary(
 )
 async def list_student_attendance(
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     student_id: Optional[UUID] = Query(None, description="Filter by student"),
     section_id: Optional[UUID] = Query(None, description="Filter by section"),
@@ -277,6 +288,7 @@ async def list_student_attendance(
 async def delete_student_attendance(
     attendance_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
 ) -> None:
     """Delete a student attendance record."""
@@ -307,6 +319,7 @@ async def delete_student_attendance(
 )
 async def get_daily_attendance_report(
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     attendance_date: date = Query(..., description="Date for report"),
     school_id: Optional[UUID] = Query(None, description="Filter by school"),
@@ -321,6 +334,130 @@ async def get_daily_attendance_report(
     )
 
     return DailyAttendanceReport(**report)
+
+
+# =========================
+# Attendance Report PDF
+# =========================
+
+
+@router.post(
+    "/reports/pdf",
+    summary="Generate attendance report PDF",
+    dependencies=[Depends(require_permissions("attendance.reports"))],
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def generate_attendance_report_pdf(
+    request: AttendanceReportRequest,
+    tenant: RequestTenant,
+    user: ValidatedUser,
+    db: DatabaseSession,
+) -> StreamingResponse:
+    """
+    Generate an attendance report as a downloadable PDF.
+
+    Covers a date range for a specific class and optional section.
+    Requires `attendance.reports` permission.
+
+    NOTE: Depends on AttendanceService.get_attendance_report_data() which
+    aggregates per-student attendance stats over the requested date range.
+    If that method is not yet available, this endpoint will return 501.
+    """
+    from weasyprint import HTML
+
+    service = AttendanceService(db)
+
+    # Validate date range
+    if request.date_from > request.date_to:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_from must be before or equal to date_to",
+        )
+
+    # Check if the service method exists; graceful fallback if not yet implemented
+    if not hasattr(service, "get_attendance_report_data"):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Attendance report data aggregation is not yet implemented",
+        )
+
+    report_data = await service.get_attendance_report_data(
+        tenant_id=tenant.tenant_id,
+        class_id=request.class_id,
+        section_id=request.section_id,
+        date_from=request.date_from,
+        date_to=request.date_to,
+    )
+
+    # Build PDF from report data
+    students = report_data.get("students", [])
+
+    header_html = (
+        "<th>Student ID</th><th>Name</th><th>Present</th>"
+        "<th>Absent</th><th>Late</th><th>Excused</th><th>Rate</th>"
+    )
+    rows_html = ""
+    for s in students:
+        rows_html += (
+            f"<tr>"
+            f"<td>{s.get('student_number', 'N/A')}</td>"
+            f"<td>{s.get('name', '')}</td>"
+            f"<td>{s.get('present', 0)}</td>"
+            f"<td>{s.get('absent', 0)}</td>"
+            f"<td>{s.get('late', 0)}</td>"
+            f"<td>{s.get('excused', 0)}</td>"
+            f"<td>{s.get('attendance_rate', 0):.1f}%</td>"
+            f"</tr>"
+        )
+
+    summary_data = report_data.get("summary", {})
+    summary_html = ""
+    if summary_data:
+        for key, value in summary_data.items():
+            label = key.replace("_", " ").title()
+            summary_html += f"<p><strong>{label}:</strong> {value}</p>"
+
+    date_range = f"{request.date_from.strftime('%d/%m/%Y')} - {request.date_to.strftime('%d/%m/%Y')}"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; color: #333; }}
+            h1 {{ color: #1B4F72; border-bottom: 2px solid #1B4F72; padding-bottom: 10px; }}
+            h2 {{ color: #555; font-size: 14px; margin-bottom: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th {{ background-color: #1B4F72; color: white; padding: 10px; text-align: left; }}
+            td {{ padding: 8px 10px; border-bottom: 1px solid #ddd; }}
+            tr:nth-child(even) {{ background-color: #f9fafb; }}
+            .summary {{ background-color: #f0f4f8; padding: 15px; border-radius: 8px; margin-top: 20px; }}
+            .generated {{ color: #666; font-size: 12px; margin-top: 30px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Attendance Report</h1>
+        <h2>Period: {date_range}</h2>
+        <table>
+            <thead><tr>{header_html}</tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        <div class="summary">{summary_html}</div>
+        <p class="generated">Generated by SIMS Plus on {datetime.now().strftime("%d/%m/%Y %H:%M")}</p>
+    </body>
+    </html>
+    """
+
+    pdf_bytes = HTML(string=html_content).write_pdf()
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename=attendance-report.pdf",
+        },
+    )
 
 
 # =========================
@@ -420,6 +557,7 @@ async def bulk_mark_staff_attendance(
 async def get_staff_attendance_summary(
     staff_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     term_id: Optional[UUID] = Query(None, description="Filter by term"),
     start_date: Optional[date] = Query(None, description="Start date"),
@@ -447,6 +585,7 @@ async def get_staff_attendance_summary(
 )
 async def list_staff_attendance(
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
     staff_id: Optional[UUID] = Query(None, description="Filter by staff"),
     term_id: Optional[UUID] = Query(None, description="Filter by term"),
@@ -510,6 +649,7 @@ async def list_staff_attendance(
 async def delete_staff_attendance(
     attendance_id: UUID,
     tenant: RequestTenant,
+    user: ValidatedUser,
     db: DatabaseSession,
 ) -> None:
     """Delete a staff attendance record."""

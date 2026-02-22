@@ -256,6 +256,8 @@ export default function NewCreditNotePage() {
               first_name: student.first_name,
               middle_name: student.middle_name,
               last_name: student.last_name,
+              gender: student.gender,
+              date_of_birth: student.date_of_birth,
               class_name: student.class_name,
               section_name: student.section_name,
               status: student.status,
@@ -652,7 +654,7 @@ export default function NewCreditNotePage() {
                             <span className="font-semibold">{selectedInvoice.invoice_number}</span>
                             <Badge variant="secondary">{selectedInvoice.status}</Badge>
                           </div>
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Total:</span>
                               <span className="font-medium">

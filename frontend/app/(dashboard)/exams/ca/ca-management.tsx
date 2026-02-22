@@ -777,9 +777,9 @@ export function CAManagement({
                     <TableRow>
                       <TableHead>Assessment</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Max Score</TableHead>
-                      <TableHead>Entries</TableHead>
+                      <TableHead className="hidden sm:table-cell">Date</TableHead>
+                      <TableHead className="hidden md:table-cell">Max Score</TableHead>
+                      <TableHead className="hidden md:table-cell">Entries</TableHead>
                       <TableHead className="w-[70px]"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -802,9 +802,9 @@ export function CAManagement({
                                 firstCA.assessment_type}
                             </Badge>
                           </TableCell>
-                          <TableCell suppressHydrationWarning>{format(new Date(firstCA.assessment_date), "MMM d, yyyy")}</TableCell>
-                          <TableCell>{firstCA.max_score}</TableCell>
-                          <TableCell>{assessments.length} students</TableCell>
+                          <TableCell className="hidden sm:table-cell" suppressHydrationWarning>{format(new Date(firstCA.assessment_date), "MMM d, yyyy")}</TableCell>
+                          <TableCell className="hidden md:table-cell">{firstCA.max_score}</TableCell>
+                          <TableCell className="hidden md:table-cell">{assessments.length} students</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Button
@@ -848,7 +848,7 @@ export function CAManagement({
 
           <div className="flex-1 overflow-hidden flex flex-col gap-4 py-4">
             {/* Assessment Details */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Assessment Type</Label>
                 <Select
@@ -879,7 +879,7 @@ export function CAManagement({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date</Label>
                 <Input
@@ -1028,7 +1028,7 @@ export function CAManagement({
 
           <div className="flex-1 overflow-hidden flex flex-col gap-4 py-4">
             {/* Assessment Details */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Type</Label>
                 <Select
@@ -1058,7 +1058,7 @@ export function CAManagement({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Date</Label>
                 <Input

@@ -529,7 +529,7 @@ export function ReportCardsManagement({
                 placeholder="Search students..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 w-[250px]"
+                className="pl-9 w-full sm:w-[250px]"
               />
             </div>
             {stats.draft > 0 && (
@@ -570,10 +570,10 @@ export function ReportCardsManagement({
                       />
                     </TableHead>
                     <TableHead>Student</TableHead>
-                    <TableHead>Class</TableHead>
+                    <TableHead className="hidden sm:table-cell">Class</TableHead>
                     <TableHead className="text-center">Average</TableHead>
-                    <TableHead className="text-center">Position</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="hidden md:table-cell text-center">Position</TableHead>
+                    <TableHead className="hidden md:table-cell text-center">Status</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -594,7 +594,7 @@ export function ReportCardsManagement({
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <div>
                           <p>{report.class_name}</p>
                           {report.section_name && (
@@ -617,7 +617,7 @@ export function ReportCardsManagement({
                           {Number(report.average_score || 0).toFixed(1)}%
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="hidden md:table-cell text-center">
                         <div className="flex flex-col items-center">
                           <span className="font-semibold">
                             {report.class_position || "-"}
@@ -629,7 +629,7 @@ export function ReportCardsManagement({
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="hidden md:table-cell text-center">
                         <Badge
                           className={`${
                             report.is_published ? STATUS_CONFIG.published.color : STATUS_CONFIG.draft.color

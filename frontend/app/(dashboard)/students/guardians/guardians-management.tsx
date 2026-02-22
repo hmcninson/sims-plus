@@ -272,9 +272,9 @@ export function GuardiansManagement({ initialData }: GuardiansManagementProps) {
                 <TableRow>
                   <TableHead>Guardian</TableHead>
                   <TableHead>Contact</TableHead>
-                  <TableHead>Occupation</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead className="text-center">Students</TableHead>
+                  <TableHead className="hidden md:table-cell">Occupation</TableHead>
+                  <TableHead className="hidden lg:table-cell">Location</TableHead>
+                  <TableHead className="hidden sm:table-cell text-center">Students</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -337,7 +337,7 @@ export function GuardiansManagement({ initialData }: GuardiansManagementProps) {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {guardian.occupation ? (
                           <div className="flex items-center gap-1.5 text-sm">
                             <Briefcase className="h-3.5 w-3.5 text-muted-foreground" />
@@ -347,7 +347,7 @@ export function GuardiansManagement({ initialData }: GuardiansManagementProps) {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         {guardian.city || guardian.region ? (
                           <span className="text-sm">
                             {guardian.city}
@@ -358,7 +358,7 @@ export function GuardiansManagement({ initialData }: GuardiansManagementProps) {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="hidden sm:table-cell text-center">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>

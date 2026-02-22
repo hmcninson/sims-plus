@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   List,
   ExternalLink,
+  PanelRightOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +31,14 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { getTerms } from "@/actions/academic.action";
 import { getSchoolHolidays } from "@/actions/timetable.action";
@@ -76,6 +85,9 @@ export function CalendarView({
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<SchoolHoliday | null>(null);
   const [defaultEventDate, setDefaultEventDate] = useState<Date | null>(null);
+
+  // Mobile sidebar sheet state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Get current academic year
   const currentAcademicYear = useMemo(
@@ -253,105 +265,154 @@ export function CalendarView({
     return `${MONTHS[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
   }, [currentMonth, viewMode]);
 
+  // Sidebar content (shared between desktop and mobile sheet)
+  const sidebarContent = (
+    <div className="space-y-4">
+      <SchoolDaysCounter
+        terms={terms}
+        holidays={holidays}
+        currentTerm={currentTerm}
+      />
+      <UpcomingEvents
+        holidays={holidays}
+        onEventClick={handleEventClick}
+      />
+      <EventSidebar
+        selectedDate={selectedDate}
+        events={selectedDateEvents}
+        term={selectedDate ? getTermForDate(selectedDate) : undefined}
+        onEventClick={handleEventClick}
+        onAddEvent={handleAddEvent}
+      />
+    </div>
+  );
+
   return (
-    <div className="flex gap-6">
+    <div className="flex flex-col lg:flex-row gap-6">
       {/* Main Calendar Area */}
-      <div className="flex-1 space-y-4">
+      <div className="flex-1 min-w-0 space-y-4">
         {/* Controls */}
         <Card>
           <CardContent className="py-4">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              {/* Academic Year Selector */}
-              <div className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                <Select
-                  value={selectedAcademicYearId}
-                  onValueChange={setSelectedAcademicYearId}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Academic Year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {academicYears.map((year) => (
-                      <SelectItem key={year.id} value={year.id}>
-                        {year.name}
-                        {year.is_current && (
-                          <Badge variant="secondary" className="ml-2 text-xs">
-                            Current
-                          </Badge>
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* View Mode Toggle */}
-              <Tabs
-                value={viewMode}
-                onValueChange={(v) => setViewMode(v as ViewMode)}
-              >
-                <TabsList>
-                  <TabsTrigger value="month" className="gap-1.5">
-                    <LayoutGrid className="h-3.5 w-3.5" />
-                    Month
-                  </TabsTrigger>
-                  <TabsTrigger value="week" className="gap-1.5">
-                    <List className="h-3.5 w-3.5" />
-                    Week
-                  </TabsTrigger>
-                  <TabsTrigger value="year" className="gap-1.5">
-                    <CalendarIcon className="h-3.5 w-3.5" />
-                    Year
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-
-              {/* Navigation */}
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={goToPrevious}>
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="min-w-[180px] text-center font-medium">
-                  {navigationTitle}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
+              {/* Row 1: Academic Year + View Mode */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Academic Year Selector */}
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Select
+                    value={selectedAcademicYearId}
+                    onValueChange={setSelectedAcademicYearId}
+                  >
+                    <SelectTrigger className="w-[160px] sm:w-[180px]">
+                      <SelectValue placeholder="Academic Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {academicYears.map((year) => (
+                        <SelectItem key={year.id} value={year.id}>
+                          {year.name}
+                          {year.is_current && (
+                            <Badge variant="secondary" className="ml-2 text-xs">
+                              Current
+                            </Badge>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button variant="outline" size="icon" onClick={goToNext}>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="sm" onClick={goToToday}>
-                  Today
-                </Button>
+
+                {/* View Mode Toggle */}
+                <Tabs
+                  value={viewMode}
+                  onValueChange={(v) => setViewMode(v as ViewMode)}
+                >
+                  <TabsList>
+                    <TabsTrigger value="month" className="gap-1.5">
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Month</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="week" className="gap-1.5">
+                      <List className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Week</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="year" className="gap-1.5">
+                      <CalendarIcon className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Year</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <Button variant="default" size="sm" onClick={handleAddEvent}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Event
-                </Button>
+              {/* Row 2: Navigation + Actions */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Navigation */}
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={goToPrevious}
+                    aria-label="Previous"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="min-w-[140px] sm:min-w-[180px] text-center font-medium text-sm sm:text-base truncate">
+                    {navigationTitle}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={goToNext}
+                    aria-label="Next"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={goToToday}>
+                    Today
+                  </Button>
+                </div>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleExportICal}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download iCal (.ics)
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={handleExportSelectedToGoogle}
-                      disabled={selectedDateEvents.length === 0}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Add to Google Calendar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Actions */}
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button variant="default" size="sm" onClick={handleAddEvent}>
+                    <Plus className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Add Event</span>
+                  </Button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Export</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleExportICal}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download iCal (.ics)
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={handleExportSelectedToGoogle}
+                        disabled={selectedDateEvents.length === 0}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Add to Google Calendar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  {/* Mobile sidebar toggle */}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="lg:hidden"
+                    onClick={() => setSidebarOpen(true)}
+                    aria-label="Show sidebar"
+                  >
+                    <PanelRightOpen className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -359,7 +420,7 @@ export function CalendarView({
 
         {/* Term Legend (only for month/week views) */}
         {viewMode !== "year" && terms.length > 0 && (
-          <div className="flex flex-wrap gap-4 px-1">
+          <div className="flex flex-wrap gap-3 sm:gap-4 px-1">
             {terms.map((term, index) => (
               <div key={term.id} className="flex items-center gap-2 text-sm">
                 <div
@@ -378,7 +439,7 @@ export function CalendarView({
                 </span>
               </div>
             ))}
-            <div className="flex items-center gap-2 text-sm ml-4">
+            <div className="flex items-center gap-2 text-sm sm:ml-4">
               <div className="w-2 h-2 rounded-full bg-red-500" />
               <span className="text-muted-foreground">Holiday</span>
             </div>
@@ -397,78 +458,98 @@ export function CalendarView({
           </div>
         )}
 
+        {/* Empty State - No Academic Year */}
+        {academicYears.length === 0 && (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <CalendarDays className="h-12 w-12 text-muted-foreground/50 mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No academic years found</h3>
+              <p className="text-sm text-muted-foreground text-center max-w-sm">
+                Create an academic year in Settings to start using the school calendar.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Calendar Views */}
-        {viewMode === "month" && (
-          <CalendarGrid
-            currentMonth={currentMonth}
-            selectedDate={selectedDate}
-            holidaysByDate={holidaysByDate}
-            terms={terms}
-            onDateClick={handleDateClick}
-            onDateDoubleClick={handleDateDoubleClick}
-            onEventClick={handleEventClick}
-            onEventMoved={refreshData}
-            getTermForDate={getTermForDate}
-          />
-        )}
+        {academicYears.length > 0 && (
+          <>
+            {viewMode === "month" && (
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="min-w-[640px]">
+                  <CalendarGrid
+                    currentMonth={currentMonth}
+                    selectedDate={selectedDate}
+                    holidaysByDate={holidaysByDate}
+                    terms={terms}
+                    onDateClick={handleDateClick}
+                    onDateDoubleClick={handleDateDoubleClick}
+                    onEventClick={handleEventClick}
+                    onEventMoved={refreshData}
+                    getTermForDate={getTermForDate}
+                  />
+                </div>
+              </div>
+            )}
 
-        {viewMode === "week" && (
-          <WeekView
-            currentDate={currentMonth}
-            selectedDate={selectedDate}
-            holidaysByDate={holidaysByDate}
-            terms={terms}
-            onDateClick={handleDateClick}
-            onDateDoubleClick={handleDateDoubleClick}
-            onEventClick={handleEventClick}
-            onEventMoved={refreshData}
-            getTermForDate={getTermForDate}
-          />
-        )}
+            {viewMode === "week" && (
+              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="min-w-[640px]">
+                  <WeekView
+                    currentDate={currentMonth}
+                    selectedDate={selectedDate}
+                    holidaysByDate={holidaysByDate}
+                    terms={terms}
+                    onDateClick={handleDateClick}
+                    onDateDoubleClick={handleDateDoubleClick}
+                    onEventClick={handleEventClick}
+                    onEventMoved={refreshData}
+                    getTermForDate={getTermForDate}
+                  />
+                </div>
+              </div>
+            )}
 
-        {viewMode === "year" && (
-          <YearView
-            year={currentMonth.getFullYear()}
-            selectedDate={selectedDate}
-            holidaysByDate={holidaysByDate}
-            terms={terms}
-            onDateClick={handleDateClick}
-            onDateDoubleClick={handleDateDoubleClick}
-            onMonthClick={handleMonthClick}
-            getTermForDate={getTermForDate}
-          />
-        )}
+            {viewMode === "year" && (
+              <YearView
+                year={currentMonth.getFullYear()}
+                selectedDate={selectedDate}
+                holidaysByDate={holidaysByDate}
+                terms={terms}
+                onDateClick={handleDateClick}
+                onDateDoubleClick={handleDateDoubleClick}
+                onMonthClick={handleMonthClick}
+                getTermForDate={getTermForDate}
+              />
+            )}
 
-        {/* Hint text */}
-        <p className="text-xs text-muted-foreground text-center">
-          Click on a date to view events. Double-click to add a new event.
-        </p>
+            {/* Hint text */}
+            <p className="text-xs text-muted-foreground text-center">
+              Click on a date to view events. Double-click to add a new event. Drag events to reschedule.
+            </p>
+          </>
+        )}
       </div>
 
-      {/* Right Sidebar */}
-      <div className="w-80 space-y-4">
-        {/* School Days Counter */}
-        <SchoolDaysCounter
-          terms={terms}
-          holidays={holidays}
-          currentTerm={currentTerm}
-        />
-
-        {/* Upcoming Events */}
-        <UpcomingEvents
-          holidays={holidays}
-          onEventClick={handleEventClick}
-        />
-
-        {/* Event Sidebar */}
-        <EventSidebar
-          selectedDate={selectedDate}
-          events={selectedDateEvents}
-          term={selectedDate ? getTermForDate(selectedDate) : undefined}
-          onEventClick={handleEventClick}
-          onAddEvent={handleAddEvent}
-        />
+      {/* Desktop Right Sidebar */}
+      <div className="hidden lg:block w-80 shrink-0 space-y-4">
+        {sidebarContent}
       </div>
+
+      {/* Mobile Sidebar Sheet */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="right" className="w-[340px] sm:w-[380px] p-0">
+          <SheetHeader className="px-4 pt-4 pb-2">
+            <SheetTitle>Calendar Details</SheetTitle>
+            <SheetDescription>
+              School days, upcoming events, and selected date info
+            </SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="h-[calc(100vh-80px)] px-4 pb-4">
+            {sidebarContent}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
 
       {/* Event Form Dialog */}
       <EventForm

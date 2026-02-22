@@ -291,7 +291,7 @@ export default function FeeTypesPage() {
               />
             </div>
             <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
@@ -304,7 +304,7 @@ export default function FeeTypesPage() {
               </SelectContent>
             </Select>
             <Select value={filterActive} onValueChange={setFilterActive}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>

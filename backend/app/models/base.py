@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, String, text
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
@@ -71,11 +71,14 @@ class TenantMixin:
     """
     Mixin for multi-tenant models.
 
-    Adds tenant_id column for Row-Level Security (RLS).
+    Adds tenant_id column with FK to tenants.id for referential integrity
+    and Row-Level Security (RLS). CASCADE delete ensures cleanup if a tenant
+    is removed.
     """
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

@@ -229,7 +229,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
           <span className="text-sm font-medium">Class:</span>
         </div>
         <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue placeholder="Select a class" />
           </SelectTrigger>
           <SelectContent>
@@ -248,7 +248,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
               <span className="text-sm font-medium">Section:</span>
             </div>
             <Select value={selectedSectionId} onValueChange={setSelectedSectionId}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="All sections" />
               </SelectTrigger>
               <SelectContent>
@@ -567,7 +567,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                   </CardDescription>
                 </div>
                 <Select value={selectedSubjectId} onValueChange={setSelectedSubjectId}>
-                  <SelectTrigger className="w-[250px]">
+                  <SelectTrigger className="w-full sm:w-[250px]">
                     <SelectValue placeholder="Select a subject" />
                   </SelectTrigger>
                   <SelectContent>

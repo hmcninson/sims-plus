@@ -4,7 +4,6 @@ SIMS Plus - Onboarding Service
 Business logic for school registration and onboarding.
 """
 
-import logging
 from datetime import UTC, datetime, timedelta
 from typing import Optional, Tuple
 from uuid import UUID
@@ -13,14 +12,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.middleware.tenant import set_db_tenant_context
 from app.models.tenant import Tenant, TenantType, SubscriptionTier
 from app.models.school import School, SchoolType, SchoolStatus
 from app.models.user import User, UserRole, UserStatus
 from app.models.reserved_subdomain import ReservedSubdomain
+import structlog
+
 from app.services.tenant import TenantService
 from app.services.email import email_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class OnboardingError(Exception):
@@ -131,6 +133,11 @@ class OnboardingService:
         self.db.add(tenant)
         await self.db.flush()
 
+        # CRITICAL: Set tenant context for RLS before inserting into tenant-scoped tables.
+        # Without this, the hardened RLS WITH CHECK clause rejects the inserts
+        # because tenant_id != get_current_tenant_id() (which would be NULL).
+        await set_db_tenant_context(self.db, tenant.id)
+
         # Create school
         school = School(
             tenant_id=tenant.id,
@@ -180,10 +187,10 @@ class OnboardingService:
                 subdomain=subdomain,
                 trial_ends_at=trial_ends_at,
             )
-            logger.info(f"Welcome email sent to {admin_email}")
-        except Exception as e:
+            logger.info("welcome_email_sent", to=admin_email)
+        except Exception:
             # Log error but don't fail registration
-            logger.error(f"Failed to send welcome email to {admin_email}: {e}")
+            logger.error("welcome_email_failed", to=admin_email, exc_info=True)
 
         return tenant, school, admin_user
 

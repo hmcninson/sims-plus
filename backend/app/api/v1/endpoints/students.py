@@ -7,18 +7,20 @@ API endpoints for student management.
 from typing import Optional
 from uuid import UUID
 
+import csv
+import io
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from sqlalchemy import select
 
 from app.api.deps import (
-    CurrentUserId,
     DatabaseSession,
     RequestTenant,
     require_permissions,
 )
 from app.models.school import School
-from app.schemas import PaginatedResponse
 from app.schemas.student import (
     # Guardian
     GuardianCreate,
@@ -40,6 +42,9 @@ from app.schemas.student import (
     StudentBulkResponse,
     StudentStatsResponse,
     StudentImportResponse,
+    # Promotion
+    StudentPromotionRequest,
+    StudentPromotionResponse,
 )
 from app.services.student import StudentService, StudentServiceError
 
@@ -75,8 +80,12 @@ async def create_student(
     # Get school's student_id_prefix for auto-generation
     prefix = "STU"  # Default
     if data.school_id:
+        # Defense-in-depth: scope school lookup to tenant
         school_result = await db.execute(
-            select(School.student_id_prefix).where(School.id == data.school_id)
+            select(School.student_id_prefix).where(
+                School.id == data.school_id,
+                School.tenant_id == tenant.tenant_id,
+            )
         )
         school_prefix = school_result.scalar_one_or_none()
         if school_prefix:
@@ -145,13 +154,13 @@ async def create_student(
 
         except StudentServiceError as e:
             last_error = e
-            # Only retry on duplicate ID errors when auto-generating
-            if auto_generate_id and e.code == "duplicate_student_id":
+            # Retry on duplicate ID errors (student IDs are always auto-generated)
+            if e.code == "duplicate_student_id":
                 # Wait a tiny bit to reduce collision chance on retry
                 import asyncio
                 await asyncio.sleep(0.01 * (attempt + 1))
                 continue
-            # For other errors or manual IDs, don't retry
+            # For other errors, don't retry
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
     # All retries exhausted
@@ -179,9 +188,12 @@ async def generate_student_id(
     prefix = "STU"  # Default fallback
 
     if school_id:
-        # Fetch prefix from specific school
+        # Defense-in-depth: scope school lookup to tenant
         result = await db.execute(
-            select(School.student_id_prefix).where(School.id == school_id)
+            select(School.student_id_prefix).where(
+                School.id == school_id,
+                School.tenant_id == tenant.tenant_id,
+            )
         )
         school_prefix = result.scalar_one_or_none()
         if school_prefix:
@@ -284,6 +296,73 @@ async def get_student_stats(
 
 
 @router.get(
+    "/export",
+    summary="Export students as CSV",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def export_students_csv(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    class_id: Optional[UUID] = Query(None),
+    section_id: Optional[UUID] = Query(None),
+) -> StreamingResponse:
+    """Export students as CSV file."""
+    service = StudentService(db)
+    rows = await service.export_students_csv(
+        tenant_id=tenant.tenant_id,
+        class_id=class_id,
+        section_id=section_id,
+    )
+
+    output = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    else:
+        # Write just headers for empty export
+        writer = csv.DictWriter(
+            output,
+            fieldnames=["student_id", "first_name", "middle_name", "last_name",
+                        "date_of_birth", "gender", "email", "phone", "address",
+                        "city", "region", "class_name", "section_name", "status"],
+        )
+        writer.writeheader()
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="students_export.csv"'},
+    )
+
+
+@router.post(
+    "/bulk/promote",
+    response_model=StudentPromotionResponse,
+    summary="Promote students between classes",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def promote_students(
+    data: StudentPromotionRequest,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> StudentPromotionResponse:
+    """Bulk promote students from one class to another."""
+    service = StudentService(db)
+    try:
+        result = await service.promote_students(
+            tenant_id=tenant.tenant_id,
+            from_class_id=data.from_class_id,
+            to_class_id=data.to_class_id,
+            student_ids=data.student_ids,
+        )
+        return StudentPromotionResponse(**result)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
     "/{student_id}",
     response_model=StudentWithGuardiansResponse,
     summary="Get student details",
@@ -297,7 +376,7 @@ async def get_student(
 ) -> StudentWithGuardiansResponse:
     """Get student by ID with optional guardians."""
     service = StudentService(db)
-    student = await service.get_student(student_id, include_guardians=include_guardians)
+    student = await service.get_student(tenant.tenant_id, student_id, include_guardians=include_guardians)
 
     if not student:
         raise HTTPException(
@@ -374,6 +453,7 @@ async def update_student(
     """Update a student."""
     service = StudentService(db)
     student = await service.update_student(
+        tenant_id=tenant.tenant_id,
         student_id=student_id,
         **data.model_dump(exclude_unset=True),
     )
@@ -400,7 +480,7 @@ async def delete_student(
 ) -> None:
     """Soft delete a student."""
     service = StudentService(db)
-    deleted = await service.delete_student(student_id)
+    deleted = await service.delete_student(tenant.tenant_id, student_id)
 
     if not deleted:
         raise HTTPException(
@@ -663,7 +743,7 @@ async def link_existing_guardian(
             can_pickup=data.can_pickup,
         )
 
-        guardian = await service.get_guardian(data.guardian_id)
+        guardian = await service.get_guardian(tenant.tenant_id, data.guardian_id)
 
         return StudentGuardianResponse(
             id=link.id,
@@ -746,7 +826,7 @@ async def update_guardian_link(
         **data.model_dump(exclude_unset=True),
     )
 
-    guardian = await service.get_guardian(guardian_id)
+    guardian = await service.get_guardian(tenant.tenant_id, guardian_id)
 
     return StudentGuardianResponse(
         id=updated_link.id,
@@ -776,7 +856,7 @@ async def unlink_guardian(
 ) -> None:
     """Remove a guardian link from a student."""
     service = StudentService(db)
-    unlinked = await service.unlink_guardian_from_student(student_id, guardian_id)
+    unlinked = await service.unlink_guardian_from_student(tenant.tenant_id, student_id, guardian_id)
 
     if not unlinked:
         raise HTTPException(
@@ -865,7 +945,7 @@ async def get_guardian(
 ) -> GuardianResponse:
     """Get guardian by ID."""
     service = StudentService(db)
-    guardian = await service.get_guardian(guardian_id)
+    guardian = await service.get_guardian(tenant.tenant_id, guardian_id)
 
     if not guardian:
         raise HTTPException(
@@ -891,6 +971,7 @@ async def update_guardian(
     """Update a guardian."""
     service = StudentService(db)
     guardian = await service.update_guardian(
+        tenant_id=tenant.tenant_id,
         guardian_id=guardian_id,
         **data.model_dump(exclude_unset=True),
     )
@@ -918,7 +999,7 @@ async def delete_guardian(
     """Soft delete a guardian."""
     service = StudentService(db)
     try:
-        deleted = await service.delete_guardian(guardian_id)
+        deleted = await service.delete_guardian(tenant.tenant_id, guardian_id)
 
         if not deleted:
             raise HTTPException(
@@ -964,9 +1045,9 @@ async def get_guardian_students(
             date_of_birth=link.student_rel.date_of_birth,
             status=link.student_rel.status.value,
             class_id=link.student_rel.class_id,
-            class_name=None,  # Would need to load class relationship
+            class_name=link.student_rel.class_.name if link.student_rel.class_ else None,
             section_id=link.student_rel.section_id,
-            section_name=None,  # Would need to load section relationship
+            section_name=link.student_rel.section.name if link.student_rel.section else None,
             photo_url=link.student_rel.photo_url,
         )
         for link in links

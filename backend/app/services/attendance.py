@@ -8,7 +8,8 @@ from datetime import date, time, datetime, UTC
 from typing import Optional, Sequence
 from uuid import UUID
 
-from sqlalchemy import select, and_, func, case
+import structlog
+from sqlalchemy import case, select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,9 +18,10 @@ from app.models.attendance import (
     StaffAttendance,
     AttendanceStatus,
 )
+from app.models.notification import NotificationCategory, NotificationType
 from app.models.student import Student
-from app.models.staff import Staff
-from app.models.academic import ClassSection, Term
+
+logger = structlog.get_logger()
 
 
 class AttendanceServiceError(Exception):
@@ -56,13 +58,15 @@ class AttendanceService:
         marked_by: Optional[UUID] = None,
     ) -> StudentAttendance:
         """Mark or update attendance for a single student."""
-        # Check for existing attendance record
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        # Also exclude soft-deleted records so we don't resurrect them
         existing = await self.db.execute(
             select(StudentAttendance).where(
                 and_(
                     StudentAttendance.tenant_id == tenant_id,
                     StudentAttendance.student_id == student_id,
                     StudentAttendance.date == attendance_date,
+                    StudentAttendance.deleted_at.is_(None),
                 )
             )
         )
@@ -96,9 +100,36 @@ class AttendanceService:
             )
             self.db.add(attendance)
 
-        await self.db.commit()
-        await self.db.refresh(attendance)
-        return attendance
+        await self.db.flush()
+
+        # Best-effort notification when a student is marked absent
+        if AttendanceStatus(status) == AttendanceStatus.ABSENT and marked_by:
+            try:
+                from app.services.notification import NotificationService
+                notification_svc = NotificationService(self.db)
+                await notification_svc.create(
+                    tenant_id=tenant_id,
+                    user_id=marked_by,
+                    title="Absence Recorded",
+                    message=f"Student marked absent on {attendance_date.isoformat()}.",
+                    type=NotificationType.WARNING,
+                    category=NotificationCategory.ATTENDANCE,
+                    reference_id=attendance.id,
+                    reference_type="attendance",
+                )
+            except Exception:
+                logger.warning("notification_create_failed", attendance_id=str(attendance.id), exc_info=True)
+
+        # Re-query with eager loading so endpoint can safely access relationships
+        result = await self.db.execute(
+            select(StudentAttendance)
+            .where(StudentAttendance.id == attendance.id)
+            .options(
+                selectinload(StudentAttendance.student),
+                selectinload(StudentAttendance.section),
+            )
+        )
+        return result.scalar_one()
 
     async def bulk_mark_student_attendance(
         self,
@@ -114,6 +145,7 @@ class AttendanceService:
         updated = 0
         failed = 0
         errors = []
+        absent_count = 0
 
         for record in attendance_records:
             try:
@@ -125,13 +157,14 @@ class AttendanceService:
                     errors.append({"error": "student_id is required"})
                     continue
 
-                # Check for existing
+                # Defense-in-depth: always filter by tenant_id and exclude soft-deleted
                 existing = await self.db.execute(
                     select(StudentAttendance).where(
                         and_(
                             StudentAttendance.tenant_id == tenant_id,
                             StudentAttendance.student_id == UUID(student_id) if isinstance(student_id, str) else student_id,
                             StudentAttendance.date == attendance_date,
+                            StudentAttendance.deleted_at.is_(None),
                         )
                     )
                 )
@@ -163,6 +196,10 @@ class AttendanceService:
                     self.db.add(attendance)
                     created += 1
 
+                # Track absent students for summary notification
+                if AttendanceStatus(status) == AttendanceStatus.ABSENT:
+                    absent_count += 1
+
             except Exception as e:
                 failed += 1
                 errors.append({
@@ -170,7 +207,25 @@ class AttendanceService:
                     "error": str(e),
                 })
 
-        await self.db.commit()
+        await self.db.flush()
+
+        # Best-effort summary notification when absences were recorded in bulk
+        if absent_count > 0 and marked_by:
+            try:
+                from app.services.notification import NotificationService
+                notification_svc = NotificationService(self.db)
+                student_word = "student" if absent_count == 1 else "students"
+                await notification_svc.create(
+                    tenant_id=tenant_id,
+                    user_id=marked_by,
+                    title="Absences Recorded",
+                    message=f"{absent_count} {student_word} marked absent on {attendance_date.isoformat()}.",
+                    type=NotificationType.WARNING,
+                    category=NotificationCategory.ATTENDANCE,
+                    reference_type="attendance",
+                )
+            except Exception:
+                logger.warning("notification_create_failed", exc_info=True)
 
         return {
             "created": created,
@@ -193,6 +248,8 @@ class AttendanceService:
                     StudentAttendance.tenant_id == tenant_id,
                     StudentAttendance.student_id == student_id,
                     StudentAttendance.date == attendance_date,
+                    # Exclude soft-deleted records
+                    StudentAttendance.deleted_at.is_(None),
                 )
             )
             .options(
@@ -216,6 +273,8 @@ class AttendanceService:
                     StudentAttendance.tenant_id == tenant_id,
                     StudentAttendance.section_id == section_id,
                     StudentAttendance.date == attendance_date,
+                    # Exclude soft-deleted records
+                    StudentAttendance.deleted_at.is_(None),
                 )
             )
             .options(selectinload(StudentAttendance.student))
@@ -233,7 +292,7 @@ class AttendanceService:
         Get all students in a section with their attendance status for a date.
         Returns students even if they don't have attendance marked.
         """
-        # Get all active students in the section
+        # Get all active students in the section (soft delete filter on Student)
         students_result = await self.db.execute(
             select(Student)
             .where(
@@ -247,7 +306,7 @@ class AttendanceService:
         )
         students = students_result.scalars().all()
 
-        # Get existing attendance records
+        # Get existing attendance records, excluding soft-deleted ones
         attendance_result = await self.db.execute(
             select(StudentAttendance)
             .where(
@@ -255,6 +314,7 @@ class AttendanceService:
                     StudentAttendance.tenant_id == tenant_id,
                     StudentAttendance.section_id == section_id,
                     StudentAttendance.date == attendance_date,
+                    StudentAttendance.deleted_at.is_(None),
                 )
             )
         )
@@ -293,7 +353,11 @@ class AttendanceService:
         page_size: int = 50,
     ) -> tuple[Sequence[StudentAttendance], int]:
         """List student attendance records with filters."""
-        conditions = [StudentAttendance.tenant_id == tenant_id]
+        # Defense-in-depth: always scope by tenant_id and exclude soft-deleted
+        conditions = [
+            StudentAttendance.tenant_id == tenant_id,
+            StudentAttendance.deleted_at.is_(None),
+        ]
 
         if student_id:
             conditions.append(StudentAttendance.student_id == student_id)
@@ -334,12 +398,15 @@ class AttendanceService:
         tenant_id: UUID,
         attendance_id: UUID,
     ) -> bool:
-        """Delete a student attendance record."""
+        """Soft-delete a student attendance record."""
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
         result = await self.db.execute(
             select(StudentAttendance).where(
                 and_(
                     StudentAttendance.id == attendance_id,
                     StudentAttendance.tenant_id == tenant_id,
+                    # Only find non-deleted records
+                    StudentAttendance.deleted_at.is_(None),
                 )
             )
         )
@@ -347,8 +414,9 @@ class AttendanceService:
         if not attendance:
             return False
 
-        await self.db.delete(attendance)
-        await self.db.commit()
+        # Soft delete: set deleted_at timestamp instead of physical deletion
+        attendance.deleted_at = func.now()
+        await self.db.flush()
         return True
 
     # =========================
@@ -364,9 +432,11 @@ class AttendanceService:
         end_date: Optional[date] = None,
     ) -> dict:
         """Get attendance summary for a student."""
+        # Defense-in-depth: always scope by tenant_id and exclude soft-deleted
         conditions = [
             StudentAttendance.tenant_id == tenant_id,
             StudentAttendance.student_id == student_id,
+            StudentAttendance.deleted_at.is_(None),
         ]
         if term_id:
             conditions.append(StudentAttendance.term_id == term_id)
@@ -406,7 +476,7 @@ class AttendanceService:
         attendance_date: date,
     ) -> dict:
         """Get attendance summary for a section on a specific date."""
-        # Get total students in section
+        # Get total active students in section (soft delete filter on Student)
         student_count_query = select(func.count(Student.id)).where(
             and_(
                 Student.tenant_id == tenant_id,
@@ -416,7 +486,7 @@ class AttendanceService:
         )
         total_students = (await self.db.execute(student_count_query)).scalar_one()
 
-        # Count by status
+        # Count by status, excluding soft-deleted attendance records
         status_query = select(
             StudentAttendance.status,
             func.count(StudentAttendance.id).label("count"),
@@ -425,6 +495,7 @@ class AttendanceService:
                 StudentAttendance.tenant_id == tenant_id,
                 StudentAttendance.section_id == section_id,
                 StudentAttendance.date == attendance_date,
+                StudentAttendance.deleted_at.is_(None),
             )
         ).group_by(StudentAttendance.status)
 
@@ -455,7 +526,7 @@ class AttendanceService:
         school_id: Optional[UUID] = None,
     ) -> dict:
         """Get school-wide attendance report for a date."""
-        # Base conditions for students
+        # Base conditions for students (soft delete filter on Student)
         student_conditions = [
             Student.tenant_id == tenant_id,
             Student.deleted_at.is_(None),
@@ -468,10 +539,11 @@ class AttendanceService:
             select(func.count(Student.id)).where(and_(*student_conditions))
         )).scalar_one()
 
-        # Attendance counts
+        # Attendance counts, excluding soft-deleted attendance records
         attendance_conditions = [
             StudentAttendance.tenant_id == tenant_id,
             StudentAttendance.date == attendance_date,
+            StudentAttendance.deleted_at.is_(None),
         ]
 
         status_query = select(
@@ -518,13 +590,14 @@ class AttendanceService:
         marked_by: Optional[UUID] = None,
     ) -> StaffAttendance:
         """Mark or update attendance for a staff member."""
-        # Check for existing
+        # Defense-in-depth: filter by tenant_id and exclude soft-deleted
         existing = await self.db.execute(
             select(StaffAttendance).where(
                 and_(
                     StaffAttendance.tenant_id == tenant_id,
                     StaffAttendance.staff_id == staff_id,
                     StaffAttendance.date == attendance_date,
+                    StaffAttendance.deleted_at.is_(None),
                 )
             )
         )
@@ -554,9 +627,15 @@ class AttendanceService:
             )
             self.db.add(attendance)
 
-        await self.db.commit()
-        await self.db.refresh(attendance)
-        return attendance
+        await self.db.flush()
+
+        # Re-query with eager loading so endpoint can safely access relationships
+        result = await self.db.execute(
+            select(StaffAttendance)
+            .where(StaffAttendance.id == attendance.id)
+            .options(selectinload(StaffAttendance.staff))
+        )
+        return result.scalar_one()
 
     async def bulk_mark_staff_attendance(
         self,
@@ -582,12 +661,14 @@ class AttendanceService:
                     errors.append({"error": "staff_id is required"})
                     continue
 
+                # Defense-in-depth: always filter by tenant_id and exclude soft-deleted
                 existing = await self.db.execute(
                     select(StaffAttendance).where(
                         and_(
                             StaffAttendance.tenant_id == tenant_id,
                             StaffAttendance.staff_id == UUID(staff_id) if isinstance(staff_id, str) else staff_id,
                             StaffAttendance.date == attendance_date,
+                            StaffAttendance.deleted_at.is_(None),
                         )
                     )
                 )
@@ -626,7 +707,7 @@ class AttendanceService:
                     "error": str(e),
                 })
 
-        await self.db.commit()
+        await self.db.flush()
 
         return {
             "created": created,
@@ -649,6 +730,8 @@ class AttendanceService:
                     StaffAttendance.tenant_id == tenant_id,
                     StaffAttendance.staff_id == staff_id,
                     StaffAttendance.date == attendance_date,
+                    # Exclude soft-deleted records
+                    StaffAttendance.deleted_at.is_(None),
                 )
             )
             .options(selectinload(StaffAttendance.staff))
@@ -667,7 +750,11 @@ class AttendanceService:
         page_size: int = 50,
     ) -> tuple[Sequence[StaffAttendance], int]:
         """List staff attendance records with filters."""
-        conditions = [StaffAttendance.tenant_id == tenant_id]
+        # Defense-in-depth: always scope by tenant_id and exclude soft-deleted
+        conditions = [
+            StaffAttendance.tenant_id == tenant_id,
+            StaffAttendance.deleted_at.is_(None),
+        ]
 
         if staff_id:
             conditions.append(StaffAttendance.staff_id == staff_id)
@@ -707,9 +794,11 @@ class AttendanceService:
         end_date: Optional[date] = None,
     ) -> dict:
         """Get attendance summary for a staff member."""
+        # Defense-in-depth: always scope by tenant_id and exclude soft-deleted
         conditions = [
             StaffAttendance.tenant_id == tenant_id,
             StaffAttendance.staff_id == staff_id,
+            StaffAttendance.deleted_at.is_(None),
         ]
         if term_id:
             conditions.append(StaffAttendance.term_id == term_id)
@@ -746,12 +835,15 @@ class AttendanceService:
         tenant_id: UUID,
         attendance_id: UUID,
     ) -> bool:
-        """Delete a staff attendance record."""
+        """Soft-delete a staff attendance record."""
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
         result = await self.db.execute(
             select(StaffAttendance).where(
                 and_(
                     StaffAttendance.id == attendance_id,
                     StaffAttendance.tenant_id == tenant_id,
+                    # Only find non-deleted records
+                    StaffAttendance.deleted_at.is_(None),
                 )
             )
         )
@@ -759,6 +851,94 @@ class AttendanceService:
         if not attendance:
             return False
 
-        await self.db.delete(attendance)
-        await self.db.commit()
+        # Soft delete: set deleted_at timestamp instead of physical deletion
+        attendance.deleted_at = func.now()
+        await self.db.flush()
         return True
+
+    # =========================
+    # Attendance Report Data
+    # =========================
+
+    async def get_attendance_report_data(
+        self,
+        tenant_id: UUID,
+        class_id: UUID,
+        section_id: Optional[UUID] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ) -> dict:
+        """
+        Get attendance report data aggregated by student.
+
+        Returns per-student attendance counts and percentages for the
+        specified class, with optional section and date range filters.
+        """
+        # Defense-in-depth: always scope by tenant_id
+        stmt = (
+            select(
+                Student.id.label("student_id"),
+                Student.student_id.label("student_number"),
+                Student.first_name,
+                Student.last_name,
+                func.count(StudentAttendance.id).label("total_days"),
+                func.count(case(
+                    (StudentAttendance.status == AttendanceStatus.PRESENT, 1),
+                )).label("present"),
+                func.count(case(
+                    (StudentAttendance.status == AttendanceStatus.ABSENT, 1),
+                )).label("absent"),
+                func.count(case(
+                    (StudentAttendance.status == AttendanceStatus.LATE, 1),
+                )).label("late"),
+                func.count(case(
+                    (StudentAttendance.status == AttendanceStatus.EXCUSED, 1),
+                )).label("excused"),
+                func.count(case(
+                    (StudentAttendance.status == AttendanceStatus.SICK, 1),
+                )).label("sick"),
+            )
+            .select_from(StudentAttendance)
+            .join(Student, StudentAttendance.student_id == Student.id)
+            .where(
+                StudentAttendance.tenant_id == tenant_id,
+                StudentAttendance.deleted_at.is_(None),
+                Student.class_id == class_id,
+            )
+        )
+
+        if section_id:
+            stmt = stmt.where(StudentAttendance.section_id == section_id)
+        if date_from:
+            stmt = stmt.where(StudentAttendance.date >= date_from)
+        if date_to:
+            stmt = stmt.where(StudentAttendance.date <= date_to)
+
+        stmt = stmt.group_by(
+            Student.id, Student.student_id, Student.first_name, Student.last_name,
+        ).order_by(Student.last_name, Student.first_name)
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        students = []
+        for row in rows:
+            total = row.total_days or 0
+            present = row.present or 0
+            rate = round((present / total * 100), 1) if total > 0 else 0
+            students.append({
+                "student_number": row.student_number,
+                "name": f"{row.first_name} {row.last_name}",
+                "total_days": total,
+                "present": present,
+                "absent": row.absent or 0,
+                "late": row.late or 0,
+                "excused": row.excused or 0,
+                "sick": row.sick or 0,
+                "attendance_rate": rate,
+            })
+
+        return {
+            "students": students,
+            "total_students": len(students),
+        }

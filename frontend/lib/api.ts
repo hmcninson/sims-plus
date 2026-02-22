@@ -1,14 +1,54 @@
 /**
  * SIMS Plus - API Configuration
  *
- * Server-side API client for use with Server Actions
+ * Server-side API client for use with Server Actions.
+ * Uses process.env.API_URL which is only available server-side.
  */
+import "server-only";
 
 const API_BASE_URL = process.env.API_URL || "http://localhost:8000/api/v1";
+
+/**
+ * Typed API error that preserves HTTP status code and request ID
+ * for structured error handling in callers (e.g., distinguishing
+ * 401 unauthorized from 429 rate limited).
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly requestId?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Parse FastAPI error response body into a human-readable message. */
+function parseErrorDetail(
+  body: Record<string, unknown>,
+  fallbackMessage: string,
+): string {
+  if (body.detail) {
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail
+        .map((e: { msg?: string; message?: string }) => e.msg || e.message || JSON.stringify(e))
+        .join(", ");
+    }
+    if (typeof body.detail === "object") {
+      const d = body.detail as Record<string, string>;
+      return d.message || d.msg || JSON.stringify(body.detail);
+    }
+  }
+  if (typeof body.message === "string") return body.message;
+  return fallbackMessage;
+}
 
 interface FetchOptions extends RequestInit {
   token?: string;
   subdomain?: string;
+  activeSchoolId?: string;
 }
 
 /**
@@ -18,12 +58,17 @@ export async function apiFetch<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { token, subdomain, ...fetchOptions } = options;
+  const { token, subdomain, activeSchoolId, ...fetchOptions } = options;
+
+  // Correlate client requests with backend structured logs
+  const requestId = crypto.randomUUID();
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
+    "X-Request-ID": requestId,
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(subdomain && { "X-Subdomain": subdomain }),
+    ...(activeSchoolId && { "X-Active-School": activeSchoolId }),
     ...options.headers,
   };
 
@@ -37,20 +82,11 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    let errorMessage = `API Error: ${response.status}`;
-    if (error.detail) {
-      if (typeof error.detail === 'string') {
-        errorMessage = error.detail;
-      } else if (Array.isArray(error.detail)) {
-        // FastAPI validation errors come as array
-        errorMessage = error.detail.map((e: { msg?: string; message?: string }) => e.msg || e.message || JSON.stringify(e)).join(', ');
-      } else if (typeof error.detail === 'object') {
-        errorMessage = error.detail.message || error.detail.msg || JSON.stringify(error.detail);
-      }
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    throw new Error(errorMessage);
+    throw new ApiError(
+      parseErrorDetail(error, `API Error: ${response.status}`),
+      response.status,
+      requestId,
+    );
   }
 
   // Handle 204 No Content responses
@@ -64,6 +100,7 @@ export async function apiFetch<T>(
 interface ApiOptions {
   token?: string;
   subdomain?: string;
+  activeSchoolId?: string;
 }
 
 /**
@@ -140,12 +177,16 @@ export async function apiUpload<T>(
   formData: FormData,
   options?: ApiOptions
 ): Promise<T> {
-  const { token, subdomain } = options || {};
+  const { token, subdomain, activeSchoolId } = options || {};
+
+  const requestId = crypto.randomUUID();
 
   const headers: HeadersInit = {
     // Don't set Content-Type - let browser set it with boundary for multipart
+    "X-Request-ID": requestId,
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(subdomain && { "X-Subdomain": subdomain }),
+    ...(activeSchoolId && { "X-Active-School": activeSchoolId }),
   };
 
   const url = `${API_BASE_URL}${endpoint}`;
@@ -159,7 +200,16 @@ export async function apiUpload<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Upload Error: ${response.status}`);
+    throw new ApiError(
+      parseErrorDetail(error, `Upload Error: ${response.status}`),
+      response.status,
+      requestId,
+    );
+  }
+
+  // Handle 204 No Content responses
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return undefined as T;
   }
 
   return response.json();

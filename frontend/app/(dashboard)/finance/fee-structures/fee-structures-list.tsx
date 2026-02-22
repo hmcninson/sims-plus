@@ -298,7 +298,7 @@ export function FeeStructuresList() {
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             )}
             <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Academic Year" />
               </SelectTrigger>
               <SelectContent>
@@ -311,7 +311,7 @@ export function FeeStructuresList() {
               </SelectContent>
             </Select>
             <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Term" />
               </SelectTrigger>
               <SelectContent>
@@ -330,11 +330,11 @@ export function FeeStructuresList() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Class/Level</TableHead>
-                  <TableHead>Term</TableHead>
-                  <TableHead className="text-right">Items</TableHead>
+                  <TableHead className="hidden sm:table-cell">Class/Level</TableHead>
+                  <TableHead className="hidden sm:table-cell">Term</TableHead>
+                  <TableHead className="hidden md:table-cell text-right">Items</TableHead>
                   <TableHead className="text-right">Total Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">Status</TableHead>
                   <TableHead className="w-[70px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -349,20 +349,20 @@ export function FeeStructuresList() {
                         {fs.name}
                       </Link>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       {fs.class_name ||
                        (fs.level_category && LEVEL_CATEGORIES[fs.level_category]) ||
                        (fs.level && LEVEL_CATEGORIES[fs.level]) ||
                        "All"}
                     </TableCell>
-                    <TableCell>{fs.term_name || "All Terms"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="hidden sm:table-cell">{fs.term_name || "All Terms"}</TableCell>
+                    <TableCell className="hidden md:table-cell text-right">
                       {fs.items?.length || 0}
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(fs.total_amount || 0)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <Badge variant={fs.is_active ? "default" : "secondary"}>
                         {fs.is_active ? "Active" : "Inactive"}
                       </Badge>

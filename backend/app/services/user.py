@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.user import User, UserRole, UserStatus
+from app.utils.sanitize import escape_ilike
 
 
 class UserServiceError(Exception):
@@ -52,7 +53,8 @@ class UserService:
 
         # Apply filters
         if search:
-            search_pattern = f"%{search}%"
+            # Escape ILIKE wildcards to prevent wildcard injection
+            search_pattern = f"%{escape_ilike(search)}%"
             query = query.where(
                 (User.first_name.ilike(search_pattern))
                 | (User.last_name.ilike(search_pattern))
@@ -161,7 +163,7 @@ class UserService:
         )
 
         self.db.add(user)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         return user
@@ -200,7 +202,7 @@ class UserService:
         if school_id is not None:
             user.school_id = school_id
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         return user
@@ -217,7 +219,7 @@ class UserService:
             return None
 
         user.role = role
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         return user
@@ -234,7 +236,7 @@ class UserService:
             return None
 
         user.status = status
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         return user
@@ -259,7 +261,7 @@ class UserService:
         user.failed_login_attempts = 0
         user.locked_until = None
 
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(user)
 
         return user
@@ -280,7 +282,7 @@ class UserService:
         user.deleted_at = datetime.now(UTC)
         user.status = UserStatus.DEACTIVATED
 
-        await self.db.commit()
+        await self.db.flush()
 
         return True
 

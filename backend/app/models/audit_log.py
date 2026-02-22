@@ -102,7 +102,8 @@ class AuditLog(Base):
         comment="JSON details of the event",
     )
 
-    # Audit logs are immutable - no updated_at needed
+    # Audit logs are immutable - exclude the inherited updated_at column
+    updated_at = None
 
     def __repr__(self) -> str:
         return f"<AuditLog(id={self.id}, action={self.action}, user_id={self.user_id})>"

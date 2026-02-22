@@ -23,6 +23,12 @@ addopts = [
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+markers = [
+    "rls: RLS isolation tests (critical)",
+    "integration: Integration tests (requires database)",
+    "slow: Slow-running tests",
+    "xdist_group: Group tests for serial execution under pytest-xdist",
+]
 
 [tool.coverage.run]
 source = ["app"]

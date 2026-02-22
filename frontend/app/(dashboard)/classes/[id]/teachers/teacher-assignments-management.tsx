@@ -355,7 +355,7 @@ export function TeacherAssignmentsManagement({
                           <TableHeader>
                             <TableRow>
                               <TableHead>Teacher</TableHead>
-                              <TableHead>Subject</TableHead>
+                              <TableHead className="hidden sm:table-cell">Subject</TableHead>
                               <TableHead>Class Teacher</TableHead>
                               <TableHead className="w-[70px]"></TableHead>
                             </TableRow>
@@ -388,7 +388,7 @@ export function TeacherAssignmentsManagement({
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="hidden sm:table-cell">
                                   {assignment.subject_name ? (
                                     <Badge variant="outline">
                                       <BookOpen className="mr-1 h-3 w-3" />

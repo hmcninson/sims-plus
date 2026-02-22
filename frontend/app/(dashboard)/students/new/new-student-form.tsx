@@ -270,9 +270,52 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
   return (
     <Card>
       <CardContent className="p-6">
+        {/* Mobile: Horizontal step indicator */}
+        <div className="md:hidden mb-6">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => {
+              const isActive = currentStep === step.id;
+              const isCompleted = currentStep > step.id;
+              return (
+                <div key={step.id} className="flex flex-1 items-center">
+                  <button
+                    type="button"
+                    onClick={() => { if (isCompleted) setCurrentStep(step.id); }}
+                    disabled={!isCompleted && !isActive}
+                    className="flex flex-col items-center gap-1"
+                  >
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-medium ${
+                        isCompleted
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : isActive
+                          ? "border-primary text-primary"
+                          : "border-muted-foreground/30 text-muted-foreground"
+                      }`}
+                    >
+                      {isCompleted ? <Check className="h-3 w-3" /> : step.id}
+                    </span>
+                    <span className={`text-[10px] font-medium text-center leading-tight max-w-[60px] ${
+                      isActive ? "text-foreground" : "text-muted-foreground"
+                    }`}>
+                      {step.title}
+                    </span>
+                  </button>
+                  {index < steps.length - 1 && (
+                    <div className={`flex-1 h-0.5 mx-1 ${isCompleted ? "bg-primary" : "bg-muted"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground text-center">
+            Step {currentStep} of {steps.length}: {steps[currentStep - 1]?.title}
+          </p>
+        </div>
+
         <div className="flex gap-8">
-          {/* Left Side - Step Indicator */}
-          <div className="w-48 shrink-0">
+          {/* Left Side - Step Indicator (Desktop only) */}
+          <div className="hidden md:block w-48 shrink-0">
             <div className="sticky top-6 space-y-2">
               {steps.map((step, index) => {
                 const StepIcon = step.icon;
@@ -847,7 +890,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                     <User className="h-4 w-4" />
                     Personal Information
                   </h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-muted-foreground">Student ID:</span>{" "}
                       <span className="font-mono font-medium">{formValues.student_id}</span>
@@ -875,7 +918,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                     <Phone className="h-4 w-4" />
                     Contact Information
                   </h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     {formValues.email && (
                       <div>
                         <span className="text-muted-foreground">Email:</span>{" "}
@@ -889,7 +932,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                       </div>
                     )}
                     {(formValues.address || formValues.city || formValues.region) && (
-                      <div className="col-span-2">
+                      <div className="md:col-span-2">
                         <span className="text-muted-foreground">Address:</span>{" "}
                         <span className="font-medium">
                           {[formValues.address, formValues.city, formValues.region]
@@ -899,7 +942,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                       </div>
                     )}
                     {!formValues.email && !formValues.phone && !formValues.address && (
-                      <div className="col-span-2 text-muted-foreground italic">
+                      <div className="md:col-span-2 text-muted-foreground italic">
                         No contact information provided
                       </div>
                     )}
@@ -912,7 +955,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                     <GraduationCap className="h-4 w-4" />
                     Academic Information
                   </h4>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-muted-foreground">Class:</span>{" "}
                       <span className="font-medium">
@@ -939,7 +982,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                         <span className="font-medium">{formValues.admission_number}</span>
                       </div>
                     )}
-                    <div className="col-span-2">
+                    <div className="md:col-span-2">
                       <Badge variant={formValues.is_boarder ? "default" : "secondary"}>
                         {formValues.is_boarder ? "Boarding Student" : "Day Student"}
                       </Badge>
@@ -958,7 +1001,7 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                       <Heart className="h-4 w-4" />
                       Health & Identification
                     </h4>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       {formValues.ghana_card_number && (
                         <div>
                           <span className="text-muted-foreground">Ghana Card:</span>{" "}
@@ -978,13 +1021,13 @@ export function NewStudentForm({ classes }: NewStudentFormProps) {
                         </div>
                       )}
                       {formValues.medical_conditions && (
-                        <div className="col-span-2">
+                        <div className="md:col-span-2">
                           <span className="text-muted-foreground">Medical Conditions:</span>{" "}
                           <span className="font-medium">{formValues.medical_conditions}</span>
                         </div>
                       )}
                       {formValues.allergies && (
-                        <div className="col-span-2">
+                        <div className="md:col-span-2">
                           <span className="text-muted-foreground">Allergies:</span>{" "}
                           <span className="font-medium">{formValues.allergies}</span>
                         </div>

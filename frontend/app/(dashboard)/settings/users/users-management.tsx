@@ -397,7 +397,7 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="first_name">First Name</Label>
                         <Input
@@ -514,7 +514,7 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                 setTimeout(refreshUsers, 0);
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All roles" />
               </SelectTrigger>
               <SelectContent>
@@ -534,7 +534,7 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                 setTimeout(refreshUsers, 0);
               }}
             >
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
@@ -731,7 +731,7 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit_first_name">First Name</Label>
                   <Input

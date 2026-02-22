@@ -759,7 +759,7 @@ export default function AwardScholarshipPage() {
               )}
             </div>
             <Select value={selectedClass} onValueChange={setSelectedClass}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="Filter by class" />
               </SelectTrigger>
               <SelectContent>

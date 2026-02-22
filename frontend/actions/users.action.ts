@@ -110,7 +110,7 @@ export async function deleteUser(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/users/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

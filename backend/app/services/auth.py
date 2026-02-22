@@ -4,10 +4,13 @@ SIMS Plus - Authentication Service
 Business logic for user authentication and authorization.
 """
 
+import secrets
+import string
 from datetime import UTC, datetime, timedelta
 from typing import Optional, Tuple
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +25,9 @@ from app.core.security import (
 from app.models.user import User, UserRole, UserStatus
 from app.models.tenant import Tenant
 from app.services.audit import AuditService, AuditEventType
+from app.services.email import email_service
+
+logger = structlog.get_logger()
 
 
 class AuthenticationError(Exception):
@@ -52,6 +58,9 @@ class AuthService:
             "subjects.*",
             "grading.*",
             "finance.*",
+            "preschool.*",
+            "boarding.*",
+            "transport.*",
             "reports.*",
         ],
         "school_admin": [
@@ -67,6 +76,9 @@ class AuthService:
             "attendance.*",
             "exams.*",
             "finance.*",
+            "preschool.*",
+            "boarding.*",
+            "transport.*",
             "reports.*",
         ],
         "academic_head": [
@@ -78,11 +90,13 @@ class AuthService:
             "grading.*",
             "attendance.*",
             "exams.*",
+            "preschool.*",
             "reports.academic",
         ],
         "finance_officer": [
             "students.read",
             "finance.*",
+            "transport.read",
             "reports.financial",
         ],
         "teacher": [
@@ -91,15 +105,33 @@ class AuthService:
             "subjects.read",
             "grading.read",
             "attendance.mark",
-            "exams.scores",
+            "exams.scores.enter",
+            "exams.scores.read",
+            "exams.scores.submit",
+            "exams.ca.enter",
+            "exams.ca.read",
+            "preschool.read",
+            "preschool.create",
+            "preschool.update",
+            "boarding.read",
+            "boarding.write",
+            "transport.read",
         ],
         "house_parent": [
             "students.read",
-            "boarding.*",
+            "boarding.read",
+            "boarding.write",
+            "boarding.exeat.approve",
         ],
         "parent": [
             "children.read",
             "finance.invoices.read",
+            "preschool.read",
+            "parent.children.read",
+            "parent.grades.read",
+            "parent.finance.read",
+            "parent.attendance.read",
+            "parent.communication.read",
         ],
         "student": [
             "self.read",
@@ -463,6 +495,108 @@ class AuthService:
         await self.db.flush()
 
         return True
+
+    # =========================
+    # User Invitation
+    # =========================
+
+    async def invite_user(
+        self,
+        tenant_id: UUID,
+        inviter_user_id: UUID,
+        email: str,
+        role: UserRole,
+        first_name: str,
+        last_name: str,
+        school_id: Optional[UUID] = None,
+    ) -> User:
+        """
+        Invite a new user by creating their account with a temporary password
+        and sending them an invitation email.
+
+        Args:
+            tenant_id: Tenant UUID for multi-tenant context
+            inviter_user_id: UUID of the user sending the invitation
+            email: New user's email address
+            role: Role to assign to the new user
+            first_name: New user's first name
+            last_name: New user's last name
+            school_id: Optional school UUID for school-scoped users
+
+        Returns:
+            The newly created User
+
+        Raises:
+            AuthenticationError: If the email already exists for this tenant
+        """
+        # Defense-in-depth: check email uniqueness within tenant
+        existing = await self._get_user_by_email(email, tenant_id)
+        if existing:
+            raise AuthenticationError(
+                "A user with this email already exists in this school",
+                code="email_exists",
+            )
+
+        # Generate a cryptographically secure temporary password (16 chars)
+        alphabet = string.ascii_letters + string.digits + "!@#$%&*"
+        temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
+
+        # Create the user account as active (invite flow skips email verification)
+        user = User(
+            email=email.lower(),
+            password_hash=hash_password(temp_password),
+            first_name=first_name,
+            last_name=last_name,
+            tenant_id=tenant_id,
+            school_id=school_id,
+            role=role,
+            status=UserStatus.ACTIVE,
+            email_verified=True,
+            email_verified_at=datetime.now(UTC),
+        )
+        self.db.add(user)
+        await self.db.flush()
+        await self.db.refresh(user)
+
+        # Look up inviter name and tenant subdomain for the email
+        inviter = await self._get_user_by_id(inviter_user_id)
+        inviter_name = inviter.full_name if inviter else "An administrator"
+        subdomain = await self._get_tenant_subdomain(tenant_id)
+        school_name = subdomain or "your school"
+
+        # Build portal URL
+        if settings.is_production:
+            portal_url = f"https://{subdomain}.simsplus.io"
+        else:
+            portal_url = "http://localhost:3000"
+
+        # Send invitation email (best-effort -- do not fail if email fails)
+        try:
+            await email_service.send_user_invite(
+                to_email=email.lower(),
+                inviter_name=inviter_name,
+                school_name=school_name,
+                temp_password=temp_password,
+                role=role.value.replace("_", " ").title(),
+                portal_url=portal_url,
+            )
+        except Exception:
+            logger.warning(
+                "invite_email_failed",
+                user_id=str(user.id),
+                email=email.lower(),
+                exc_info=True,
+            )
+
+        logger.info(
+            "user_invited",
+            user_id=str(user.id),
+            email=email.lower(),
+            role=role.value,
+            invited_by=str(inviter_user_id),
+        )
+
+        return user
 
     # =========================
     # Private Helper Methods

@@ -327,7 +327,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
 
   const examFormFields = (
     <div className="grid gap-4 py-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Academic Year *</Label>
           <Select
@@ -369,7 +369,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Exam Type</Label>
           <Select
@@ -400,7 +400,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Start Date</Label>
           <Input
@@ -496,7 +496,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
               value={yearFilter}
               onValueChange={(value) => setYearFilter(value)}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Filter by year" />
               </SelectTrigger>
               <SelectContent>
@@ -512,7 +512,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
               value={typeFilter}
               onValueChange={(value) => setTypeFilter(value as ExamType | "all")}
             >
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
               <SelectContent>
@@ -528,7 +528,7 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as ExamStatus | "all")}
             >
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-full sm:w-[150px]">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -565,9 +565,9 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
                 <TableHeader>
                   <TableRow>
                     <TableHead>Exam Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Term</TableHead>
-                    <TableHead>Dates</TableHead>
+                    <TableHead className="hidden sm:table-cell">Type</TableHead>
+                    <TableHead className="hidden md:table-cell">Term</TableHead>
+                    <TableHead className="hidden lg:table-cell">Dates</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[70px]"></TableHead>
                   </TableRow>
@@ -590,15 +590,15 @@ export function ExamsManagement({ initialExams, academicYears }: ExamsManagement
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge
                             className={`${EXAM_TYPE_CONFIG[exam.exam_type]?.color || "bg-gray-500"} text-white`}
                           >
                             {EXAM_TYPE_CONFIG[exam.exam_type]?.label || exam.exam_type}
                           </Badge>
                         </TableCell>
-                        <TableCell>{exam.term_name || "-"}</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">{exam.term_name || "-"}</TableCell>
+                        <TableCell className="hidden lg:table-cell">
                           {exam.start_date ? (
                             <span className="text-sm" suppressHydrationWarning>
                               {format(new Date(exam.start_date), "MMM d")}

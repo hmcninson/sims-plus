@@ -2,8 +2,8 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiPost, apiGet } from "@/lib/api";
-import type { ActionResult, User, LoginCredentials, RegisterData, RegistrationResponse } from "@/types";
+import { apiPost, apiGet, ApiError } from "@/lib/api";
+import type { ActionResult, User, SessionContext, LoginCredentials, RegisterData, RegistrationResponse } from "@/types";
 
 interface AuthResponse {
   user: User;
@@ -15,6 +15,45 @@ interface RefreshResponse {
   access_token: string;
   refresh_token: string;
 }
+
+// =========================
+// Cookie Helpers
+// =========================
+
+/**
+ * Set both auth cookies with secure defaults.
+ * Extracted to avoid duplicating cookie config across login and refresh.
+ */
+async function setAuthCookies(accessToken: string, refreshToken: string) {
+  const cookieStore = await cookies();
+  cookieStore.set("access_token", accessToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 900, // 15 minutes
+  });
+  cookieStore.set("refresh_token", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 604800, // 7 days
+  });
+}
+
+/**
+ * Clear both auth cookies on logout or session invalidation.
+ */
+async function clearAuthCookies() {
+  const cookieStore = await cookies();
+  cookieStore.delete("access_token");
+  cookieStore.delete("refresh_token");
+}
+
+// =========================
+// Token Management
+// =========================
 
 /**
  * Get subdomain from cookies (set by proxy.ts)
@@ -43,19 +82,7 @@ export async function refreshAccessToken(): Promise<string | null> {
       { subdomain }
     );
 
-    // Update cookies with new tokens
-    cookieStore.set("access_token", response.access_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 15, // 15 minutes
-    });
-    cookieStore.set("refresh_token", response.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
+    await setAuthCookies(response.access_token, response.refresh_token);
 
     return response.access_token;
   } catch {
@@ -65,26 +92,25 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 /**
- * Get valid access token (refreshing if needed)
+ * Get valid access token (refreshing if needed).
+ *
+ * Returns the current access_token cookie value if it exists, otherwise
+ * attempts a refresh. We intentionally do NOT validate the token against
+ * /auth/me here -- that would double every API request. Instead, callers
+ * should handle 401 errors at the fetch level (server-api.ts does this
+ * automatically; individual Server Actions catch ApiError in their own
+ * try/catch blocks).
  */
 export async function getValidAccessToken(): Promise<string | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("access_token")?.value;
-  const subdomain = cookieStore.get("x-subdomain")?.value;
 
   if (!token) {
-    // No token - try to refresh
+    // No access_token cookie - attempt refresh from refresh_token
     return refreshAccessToken();
   }
 
-  // Check if token is still valid by calling /auth/me
-  try {
-    await apiGet("/auth/me", { token, subdomain });
-    return token; // Token is valid
-  } catch {
-    // Token invalid/expired - try to refresh
-    return refreshAccessToken();
-  }
+  return token;
 }
 
 /**
@@ -97,26 +123,14 @@ export async function login(
     const subdomain = await getSubdomainFromCookies();
     const response = await apiPost<AuthResponse>("/auth/login", credentials, { subdomain });
 
-    // Set cookies
-    const cookieStore = await cookies();
-    cookieStore.set("access_token", response.access_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 15, // 15 minutes
-    });
-    cookieStore.set("refresh_token", response.refresh_token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
+    await setAuthCookies(response.access_token, response.refresh_token);
 
     return { success: true, data: response.user };
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : "Login failed",
+      code: error instanceof ApiError ? error.status : undefined,
     };
   }
 }
@@ -132,48 +146,47 @@ export async function register(data: RegisterData): Promise<ActionResult<Registr
     return {
       success: false,
       error: error instanceof Error ? error.message : "Registration failed",
+      code: error instanceof ApiError ? error.status : undefined,
     };
   }
 }
 
 /**
- * Logout action
+ * Logout action.
+ * Sends the refresh_token to the backend so it can be blacklisted,
+ * preventing reuse after logout.
  */
 export async function logout(): Promise<void> {
   const cookieStore = await cookies();
+  const token = cookieStore.get("access_token")?.value;
+  const refreshToken = cookieStore.get("refresh_token")?.value;
   const subdomain = cookieStore.get("x-subdomain")?.value;
 
   try {
-    const token = cookieStore.get("access_token")?.value;
     if (token) {
-      await apiPost("/auth/logout", {}, { token, subdomain });
+      // Send refresh_token in body so backend can blacklist it
+      await apiPost("/auth/logout",
+        { refresh_token: refreshToken },
+        { token, subdomain }
+      );
     }
   } catch {
-    // Ignore logout errors
+    // Ignore logout errors - we clear cookies regardless
   }
 
-  // Clear cookies
-  cookieStore.delete("access_token");
-  cookieStore.delete("refresh_token");
+  await clearAuthCookies();
 
   redirect("/login");
 }
 
-interface MeResponse {
-  user: User;
-  tenant: {
-    id: string;
-    name: string;
-    subdomain: string;
-    subscription_tier: string;
-    logo_url?: string;
-    primary_color?: string;
-  };
-  permissions: string[];
-}
-
 /**
- * Get current user from token
+ * Get current user from token.
+ * If the access token is missing or returns 401, attempts a single
+ * token refresh before giving up.
+ *
+ * IMPORTANT: A 429 (rate limited) response does NOT mean the session
+ * is invalid. We throw instead of returning null so the dashboard
+ * layout can distinguish "rate limited" from "session expired".
  */
 export async function getCurrentUser(): Promise<User | null> {
   const cookieStore = await cookies();
@@ -181,33 +194,101 @@ export async function getCurrentUser(): Promise<User | null> {
   const subdomain = cookieStore.get("x-subdomain")?.value;
 
   if (!token) {
-    return null;
+    // No access token - try to refresh and retry
+    const newToken = await refreshAccessToken();
+    if (!newToken) return null;
+
+    try {
+      const response = await apiGet<SessionContext>("/auth/me", { token: newToken, subdomain });
+      return response.user;
+    } catch (error) {
+      // Propagate rate limit errors so callers know the session may still be valid
+      if (error instanceof ApiError && error.status === 429) {
+        throw error;
+      }
+      return null;
+    }
   }
 
   try {
-    const response = await apiGet<MeResponse>("/auth/me", { token, subdomain });
+    const response = await apiGet<SessionContext>("/auth/me", { token, subdomain });
     return response.user;
-  } catch {
-    // Token invalid or expired - try refresh
+  } catch (error) {
+    // If 401 (expired/invalid token), try refresh once then retry
+    if (error instanceof ApiError && error.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (!newToken) return null;
+
+      try {
+        const response = await apiGet<SessionContext>("/auth/me", { token: newToken, subdomain });
+        return response.user;
+      } catch (retryError) {
+        // Propagate rate limit errors
+        if (retryError instanceof ApiError && retryError.status === 429) {
+          throw retryError;
+        }
+        return null;
+      }
+    }
+    // Propagate rate limit errors so callers know the session may still be valid
+    if (error instanceof ApiError && error.status === 429) {
+      throw error;
+    }
     return null;
   }
 }
 
 /**
- * Get current user with full context (user, tenant, permissions)
+ * Get current user with full context (user, tenant, permissions).
+ * Same refresh-on-401 logic as getCurrentUser.
+ *
+ * IMPORTANT: A 429 (rate limited) response does NOT mean the session
+ * is invalid. We throw instead of returning null so the dashboard
+ * layout can distinguish "rate limited" from "session expired".
  */
-export async function getCurrentUserContext(): Promise<MeResponse | null> {
+export async function getCurrentUserContext(): Promise<SessionContext | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("access_token")?.value;
   const subdomain = cookieStore.get("x-subdomain")?.value;
 
   if (!token) {
-    return null;
+    // No access token - try to refresh and retry
+    const newToken = await refreshAccessToken();
+    if (!newToken) return null;
+
+    try {
+      return await apiGet<SessionContext>("/auth/me", { token: newToken, subdomain });
+    } catch (error) {
+      // Propagate rate limit errors so callers know the session may still be valid
+      if (error instanceof ApiError && error.status === 429) {
+        throw error;
+      }
+      return null;
+    }
   }
 
   try {
-    return await apiGet<MeResponse>("/auth/me", { token, subdomain });
-  } catch {
+    return await apiGet<SessionContext>("/auth/me", { token, subdomain });
+  } catch (error) {
+    // If 401 (expired/invalid token), try refresh once then retry
+    if (error instanceof ApiError && error.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (!newToken) return null;
+
+      try {
+        return await apiGet<SessionContext>("/auth/me", { token: newToken, subdomain });
+      } catch (retryError) {
+        // Propagate rate limit errors
+        if (retryError instanceof ApiError && retryError.status === 429) {
+          throw retryError;
+        }
+        return null;
+      }
+    }
+    // Propagate rate limit errors so callers know the session may still be valid
+    if (error instanceof ApiError && error.status === 429) {
+      throw error;
+    }
     return null;
   }
 }

@@ -117,12 +117,15 @@ class TokenBlacklistService:
             token: JWT token to check
 
         Returns:
-            True if blacklisted, False otherwise (including Redis unavailable)
+            True if blacklisted or Redis unavailable in production, False otherwise
         """
         redis_client = await self._get_redis()
         if redis_client is None:
-            # If Redis is unavailable, allow token (fail open)
-            # In production, you might want to fail closed
+            # Fail closed in production: treat as blacklisted when Redis is down,
+            # so logged-out tokens cannot be reused during outages
+            if settings.ENVIRONMENT == "production":
+                return True
+            # Fail open in development/staging for developer convenience
             return False
 
         try:
@@ -132,6 +135,9 @@ class TokenBlacklistService:
             return result > 0
 
         except Exception:
+            # Fail closed in production if Redis command fails
+            if settings.ENVIRONMENT == "production":
+                return True
             return False
 
     async def blacklist_user_tokens(self, user_id: str) -> bool:
@@ -189,6 +195,9 @@ class TokenBlacklistService:
             return token_issued_at < int(revoked_at)
 
         except Exception:
+            # Fail closed in production if Redis command fails
+            if settings.ENVIRONMENT == "production":
+                return True
             return False
 
     async def close(self) -> None:

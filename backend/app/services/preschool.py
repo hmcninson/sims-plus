@@ -260,16 +260,27 @@ DEFAULT_RATING_SCALE = {
 }
 
 
+class PreschoolServiceError(Exception):
+    """Base exception for preschool service errors."""
+
+    def __init__(self, message: str, code: str = "preschool_error"):
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+
 class PreschoolService:
     """Service for preschool functionality."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
 
     # =========================
     # Learning Areas
     # =========================
 
-    @staticmethod
     async def create_learning_area(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: LearningAreaCreate,
     ) -> LearningArea:
@@ -284,34 +295,39 @@ class PreschoolService:
             display_order=data.display_order,
             is_active=data.is_active,
         )
-        db.add(learning_area)
-        await db.commit()
-        await db.refresh(learning_area)
+        self.db.add(learning_area)
+        await self.db.flush()
+        await self.db.refresh(learning_area)
         return learning_area
 
-    @staticmethod
     async def get_learning_area(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         area_id: UUID,
-    ) -> LearningArea | None:
-        """Get a learning area by ID."""
-        result = await db.execute(
+    ) -> LearningArea:
+        """Get a learning area by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(LearningArea)
             .options(selectinload(LearningArea.skills))
             .where(
                 and_(
                     LearningArea.id == area_id,
+                    # Defense-in-depth: filter by tenant_id even though RLS handles isolation
                     LearningArea.tenant_id == tenant_id,
                     LearningArea.deleted_at.is_(None),
                 )
             )
         )
-        return result.scalar_one_or_none()
+        area = result.scalar_one_or_none()
+        if not area:
+            raise PreschoolServiceError("Learning area not found", "not_found")
+        return area
 
-    @staticmethod
     async def list_learning_areas(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         include_inactive: bool = False,
     ) -> Sequence[LearningArea]:
@@ -323,14 +339,13 @@ class PreschoolService:
             )
         )
         if not include_inactive:
-            query = query.where(LearningArea.is_active == True)
+            query = query.where(LearningArea.is_active == True)  # noqa: E712
         query = query.order_by(LearningArea.display_order)
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         return result.scalars().all()
 
-    @staticmethod
     async def update_learning_area(
-        db: AsyncSession,
+        self,
         learning_area: LearningArea,
         data: LearningAreaUpdate,
     ) -> LearningArea:
@@ -338,26 +353,24 @@ class PreschoolService:
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(learning_area, field, value)
-        await db.commit()
-        await db.refresh(learning_area)
+        await self.db.flush()
+        await self.db.refresh(learning_area)
         return learning_area
 
-    @staticmethod
     async def delete_learning_area(
-        db: AsyncSession,
+        self,
         learning_area: LearningArea,
     ) -> None:
         """Soft delete a learning area."""
         learning_area.deleted_at = datetime.utcnow()
-        await db.commit()
+        await self.db.flush()
 
     # =========================
     # Developmental Skills
     # =========================
 
-    @staticmethod
     async def create_skill(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: DevelopmentalSkillCreate,
     ) -> DevelopmentalSkill:
@@ -373,14 +386,13 @@ class PreschoolService:
             is_active=data.is_active,
             applicable_levels=data.applicable_levels,
         )
-        db.add(skill)
-        await db.commit()
-        await db.refresh(skill)
+        self.db.add(skill)
+        await self.db.flush()
+        await self.db.refresh(skill)
         return skill
 
-    @staticmethod
     async def bulk_create_skills(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: DevelopmentalSkillBulkCreate,
     ) -> list[DevelopmentalSkill]:
@@ -398,21 +410,23 @@ class PreschoolService:
                 is_active=skill_data.is_active,
                 applicable_levels=skill_data.applicable_levels,
             )
-            db.add(skill)
+            self.db.add(skill)
             skills.append(skill)
-        await db.commit()
+        await self.db.flush()
         for skill in skills:
-            await db.refresh(skill)
+            await self.db.refresh(skill)
         return skills
 
-    @staticmethod
     async def get_skill(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         skill_id: UUID,
-    ) -> DevelopmentalSkill | None:
-        """Get a skill by ID."""
-        result = await db.execute(
+    ) -> DevelopmentalSkill:
+        """Get a skill by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(DevelopmentalSkill)
             .options(joinedload(DevelopmentalSkill.learning_area))
             .where(
@@ -423,11 +437,13 @@ class PreschoolService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        skill = result.scalar_one_or_none()
+        if not skill:
+            raise PreschoolServiceError("Skill not found", "not_found")
+        return skill
 
-    @staticmethod
     async def list_skills(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         learning_area_id: UUID | None = None,
         class_level: str | None = None,
@@ -443,15 +459,15 @@ class PreschoolService:
         if learning_area_id:
             query = query.where(DevelopmentalSkill.learning_area_id == learning_area_id)
         if not include_inactive:
-            query = query.where(DevelopmentalSkill.is_active == True)
+            query = query.where(DevelopmentalSkill.is_active == True)  # noqa: E712
         query = query.order_by(
             DevelopmentalSkill.learning_area_id,
             DevelopmentalSkill.display_order,
         )
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         skills = result.scalars().all()
 
-        # Filter by class level if provided
+        # Filter by class level if provided (in-memory since applicable_levels is JSONB)
         if class_level:
             skills = [
                 s for s in skills
@@ -459,9 +475,8 @@ class PreschoolService:
             ]
         return skills
 
-    @staticmethod
     async def update_skill(
-        db: AsyncSession,
+        self,
         skill: DevelopmentalSkill,
         data: DevelopmentalSkillUpdate,
     ) -> DevelopmentalSkill:
@@ -469,48 +484,37 @@ class PreschoolService:
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(skill, field, value)
-        await db.commit()
-        await db.refresh(skill)
+        await self.db.flush()
+        await self.db.refresh(skill)
         return skill
 
-    @staticmethod
     async def delete_skill(
-        db: AsyncSession,
+        self,
         skill: DevelopmentalSkill,
     ) -> None:
         """Soft delete a skill."""
         skill.deleted_at = datetime.utcnow()
-        await db.commit()
+        await self.db.flush()
 
     # =========================
     # Rating Scales
     # =========================
 
-    @staticmethod
     async def create_rating_scale(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: PreschoolRatingScaleCreate,
     ) -> PreschoolRatingScale:
         """Create a rating scale with ratings."""
-        # If setting as default, unset other defaults
+        # If setting as default, unset other active defaults first
         if data.is_default:
-            await db.execute(
+            result = await self.db.execute(
                 select(PreschoolRatingScale)
                 .where(
                     and_(
                         PreschoolRatingScale.tenant_id == tenant_id,
-                        PreschoolRatingScale.is_default == True,
-                    )
-                )
-            )
-            # Update existing defaults to false
-            result = await db.execute(
-                select(PreschoolRatingScale)
-                .where(
-                    and_(
-                        PreschoolRatingScale.tenant_id == tenant_id,
-                        PreschoolRatingScale.is_default == True,
+                        PreschoolRatingScale.is_default == True,  # noqa: E712
+                        PreschoolRatingScale.deleted_at.is_(None),
                     )
                 )
             )
@@ -523,12 +527,13 @@ class PreschoolService:
             description=data.description,
             is_default=data.is_default,
         )
-        db.add(scale)
-        await db.flush()  # Get the ID
+        self.db.add(scale)
+        await self.db.flush()  # Get the ID for child ratings
 
-        # Add ratings
+        # Add ratings -- tenant_id required for RLS isolation
         for rating_data in data.ratings:
             rating = PreschoolRating(
+                tenant_id=tenant_id,
                 scale_id=scale.id,
                 name=rating_data.name,
                 short_code=rating_data.short_code,
@@ -538,20 +543,22 @@ class PreschoolService:
                 icon=rating_data.icon,
                 display_order=rating_data.display_order,
             )
-            db.add(rating)
+            self.db.add(rating)
 
-        await db.commit()
-        await db.refresh(scale)
+        await self.db.flush()
+        await self.db.refresh(scale)
         return scale
 
-    @staticmethod
     async def get_rating_scale(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         scale_id: UUID,
-    ) -> PreschoolRatingScale | None:
-        """Get a rating scale by ID."""
-        result = await db.execute(
+    ) -> PreschoolRatingScale:
+        """Get a rating scale by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(PreschoolRatingScale)
             .options(selectinload(PreschoolRatingScale.ratings))
             .where(
@@ -562,34 +569,44 @@ class PreschoolService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        scale = result.scalar_one_or_none()
+        if not scale:
+            raise PreschoolServiceError("Rating scale not found", "not_found")
+        return scale
 
-    @staticmethod
     async def get_default_rating_scale(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
-    ) -> PreschoolRatingScale | None:
-        """Get the default rating scale for a tenant."""
-        result = await db.execute(
+    ) -> PreschoolRatingScale:
+        """Get the default rating scale for a tenant.
+
+        Raises PreschoolServiceError if no default scale exists.
+        """
+        result = await self.db.execute(
             select(PreschoolRatingScale)
             .options(selectinload(PreschoolRatingScale.ratings))
             .where(
                 and_(
                     PreschoolRatingScale.tenant_id == tenant_id,
-                    PreschoolRatingScale.is_default == True,
+                    PreschoolRatingScale.is_default == True,  # noqa: E712
                     PreschoolRatingScale.deleted_at.is_(None),
                 )
             )
         )
-        return result.scalar_one_or_none()
+        scale = result.scalar_one_or_none()
+        if not scale:
+            raise PreschoolServiceError(
+                "No default rating scale found. Please seed the default scale first.",
+                "not_found",
+            )
+        return scale
 
-    @staticmethod
     async def list_rating_scales(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
     ) -> Sequence[PreschoolRatingScale]:
         """List all rating scales for a tenant."""
-        result = await db.execute(
+        result = await self.db.execute(
             select(PreschoolRatingScale)
             .options(selectinload(PreschoolRatingScale.ratings))
             .where(
@@ -602,22 +619,22 @@ class PreschoolService:
         )
         return result.scalars().all()
 
-    @staticmethod
     async def update_rating_scale(
-        db: AsyncSession,
+        self,
         scale: PreschoolRatingScale,
         data: PreschoolRatingScaleUpdate,
         tenant_id: UUID,
     ) -> PreschoolRatingScale:
         """Update a rating scale."""
-        # Handle default flag
+        # If promoting to default, demote any existing active defaults first
         if data.is_default and not scale.is_default:
-            result = await db.execute(
+            result = await self.db.execute(
                 select(PreschoolRatingScale)
                 .where(
                     and_(
                         PreschoolRatingScale.tenant_id == tenant_id,
-                        PreschoolRatingScale.is_default == True,
+                        PreschoolRatingScale.is_default == True,  # noqa: E712
+                        PreschoolRatingScale.deleted_at.is_(None),
                     )
                 )
             )
@@ -627,38 +644,35 @@ class PreschoolService:
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(scale, field, value)
-        await db.commit()
-        await db.refresh(scale)
+        await self.db.flush()
+        await self.db.refresh(scale)
         return scale
 
-    @staticmethod
     async def delete_rating_scale(
-        db: AsyncSession,
+        self,
         scale: PreschoolRatingScale,
     ) -> None:
         """Delete a rating scale and its ratings (soft delete)."""
-        # Delete associated ratings first
+        # Soft-delete associated ratings first
         if scale.ratings:
             for rating in scale.ratings:
                 rating.deleted_at = datetime.utcnow()
-        # Soft delete the scale
         scale.deleted_at = datetime.utcnow()
-        await db.commit()
+        await self.db.flush()
 
     # =========================
     # Student Skill Assessments
     # =========================
 
-    @staticmethod
     async def create_or_update_assessment(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: StudentSkillAssessmentCreate,
         user_id: UUID,
     ) -> StudentSkillAssessment:
-        """Create or update a skill assessment."""
-        # Check if assessment exists
-        result = await db.execute(
+        """Create or update a skill assessment (upsert by student+skill+term)."""
+        # Check if assessment already exists for this student+skill+term combination
+        result = await self.db.execute(
             select(StudentSkillAssessment)
             .where(
                 and_(
@@ -672,14 +686,14 @@ class PreschoolService:
         assessment = result.scalar_one_or_none()
 
         if assessment:
-            # Update existing
+            # Update existing assessment
             assessment.rating_id = data.rating_id
             assessment.observation_notes = data.observation_notes
             assessment.evidence_url = data.evidence_url
             assessment.assessed_by = user_id
             assessment.assessed_at = datetime.utcnow()
         else:
-            # Create new
+            # Create new assessment
             assessment = StudentSkillAssessment(
                 tenant_id=tenant_id,
                 student_id=data.student_id,
@@ -692,15 +706,14 @@ class PreschoolService:
                 assessed_by=user_id,
                 assessed_at=datetime.utcnow(),
             )
-            db.add(assessment)
+            self.db.add(assessment)
 
-        await db.commit()
-        await db.refresh(assessment)
+        await self.db.flush()
+        await self.db.refresh(assessment)
         return assessment
 
-    @staticmethod
     async def bulk_assess(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: StudentSkillAssessmentBulk,
         user_id: UUID,
@@ -713,8 +726,8 @@ class PreschoolService:
         updated_count = 0
 
         for entry in data.assessments:
-            # Check if assessment exists
-            result = await db.execute(
+            # Check if assessment already exists
+            result = await self.db.execute(
                 select(StudentSkillAssessment)
                 .where(
                     and_(
@@ -728,14 +741,12 @@ class PreschoolService:
             existing = result.scalar_one_or_none()
 
             if existing:
-                # Update existing
                 existing.rating_id = entry.rating_id
                 existing.observation_notes = entry.observation_notes
                 existing.assessed_by = user_id
                 existing.assessed_at = datetime.utcnow()
                 updated_count += 1
             else:
-                # Create new
                 assessment = StudentSkillAssessment(
                     tenant_id=tenant_id,
                     student_id=data.student_id,
@@ -747,15 +758,14 @@ class PreschoolService:
                     assessed_by=user_id,
                     assessed_at=datetime.utcnow(),
                 )
-                db.add(assessment)
+                self.db.add(assessment)
                 created_count += 1
 
-        await db.commit()
+        await self.db.flush()
         return {"created": created_count, "updated": updated_count}
 
-    @staticmethod
     async def list_assessments(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         student_id: UUID | None = None,
         term_id: UUID | None = None,
@@ -772,10 +782,10 @@ class PreschoolService:
         if term_id:
             query = query.where(StudentSkillAssessment.term_id == term_id)
 
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         assessments = result.scalars().all()
 
-        # Filter by learning area if provided
+        # Filter by learning area if provided (in-memory since it requires join through skill)
         if learning_area_id:
             assessments = [
                 a for a in assessments
@@ -788,9 +798,8 @@ class PreschoolService:
     # Progress Observations
     # =========================
 
-    @staticmethod
     async def create_observation(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: ProgressObservationCreate,
         user_id: UUID,
@@ -809,19 +818,21 @@ class PreschoolService:
             is_highlight=data.is_highlight,
             recorded_by=user_id,
         )
-        db.add(observation)
-        await db.commit()
-        await db.refresh(observation)
+        self.db.add(observation)
+        await self.db.flush()
+        await self.db.refresh(observation)
         return observation
 
-    @staticmethod
     async def get_observation(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         observation_id: UUID,
-    ) -> ProgressObservation | None:
-        """Get an observation by ID."""
-        result = await db.execute(
+    ) -> ProgressObservation:
+        """Get an observation by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(ProgressObservation)
             .where(
                 and_(
@@ -831,11 +842,13 @@ class PreschoolService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        observation = result.scalar_one_or_none()
+        if not observation:
+            raise PreschoolServiceError("Observation not found", "not_found")
+        return observation
 
-    @staticmethod
     async def list_observations(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         student_id: UUID | None = None,
         observation_type: str | None = None,
@@ -861,12 +874,11 @@ class PreschoolService:
             query = query.where(ProgressObservation.observation_date <= end_date)
 
         query = query.order_by(desc(ProgressObservation.observation_date)).limit(limit)
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         return result.scalars().all()
 
-    @staticmethod
     async def update_observation(
-        db: AsyncSession,
+        self,
         observation: ProgressObservation,
         data: ProgressObservationUpdate,
     ) -> ProgressObservation:
@@ -876,33 +888,31 @@ class PreschoolService:
             update_data["attachments"] = [a.model_dump() if hasattr(a, "model_dump") else a for a in update_data["attachments"]]
         for field, value in update_data.items():
             setattr(observation, field, value)
-        await db.commit()
-        await db.refresh(observation)
+        await self.db.flush()
+        await self.db.refresh(observation)
         return observation
 
-    @staticmethod
     async def delete_observation(
-        db: AsyncSession,
+        self,
         observation: ProgressObservation,
     ) -> None:
         """Soft delete an observation."""
         observation.deleted_at = datetime.utcnow()
-        await db.commit()
+        await self.db.flush()
 
     # =========================
     # Daily Activity Logs
     # =========================
 
-    @staticmethod
     async def create_or_update_daily_log(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: DailyActivityLogCreate,
         user_id: UUID,
     ) -> DailyActivityLog:
-        """Create or update a daily activity log."""
-        # Check if log exists
-        result = await db.execute(
+        """Create or update a daily activity log (upsert by student+date)."""
+        # Check if log already exists for this student on this date
+        result = await self.db.execute(
             select(DailyActivityLog)
             .where(
                 and_(
@@ -918,7 +928,7 @@ class PreschoolService:
         meals_data = [m.model_dump() for m in data.meals] if data.meals else None
 
         if log:
-            # Update existing
+            # Update existing log
             log.arrival_time = data.arrival_time
             log.arrival_mood = data.arrival_mood
             log.departure_time = data.departure_time
@@ -935,7 +945,7 @@ class PreschoolService:
             log.highlights = data.highlights
             log.logged_by = user_id
         else:
-            # Create new
+            # Create new log
             log = DailyActivityLog(
                 tenant_id=tenant_id,
                 student_id=data.student_id,
@@ -956,20 +966,22 @@ class PreschoolService:
                 highlights=data.highlights,
                 logged_by=user_id,
             )
-            db.add(log)
+            self.db.add(log)
 
-        await db.commit()
-        await db.refresh(log)
+        await self.db.flush()
+        await self.db.refresh(log)
         return log
 
-    @staticmethod
     async def get_daily_log(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         log_id: UUID,
-    ) -> DailyActivityLog | None:
-        """Get a daily log by ID."""
-        result = await db.execute(
+    ) -> DailyActivityLog:
+        """Get a daily log by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(DailyActivityLog)
             .where(
                 and_(
@@ -979,11 +991,13 @@ class PreschoolService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        log = result.scalar_one_or_none()
+        if not log:
+            raise PreschoolServiceError("Daily log not found", "not_found")
+        return log
 
-    @staticmethod
     async def list_daily_logs(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         student_id: UUID | None = None,
         log_date: date | None = None,
@@ -1012,12 +1026,12 @@ class PreschoolService:
             query = query.where(DailyActivityLog.log_date <= end_date)
 
         query = query.order_by(desc(DailyActivityLog.log_date)).limit(limit)
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         logs = result.scalars().all()
 
-        # Filter by class if provided
+        # Filter by class if provided (in-memory since it requires join through student)
         if class_id:
-            logs = [l for l in logs if l.student and l.student.class_id == class_id]
+            logs = [log for log in logs if log.student and log.student.class_id == class_id]
 
         return logs
 
@@ -1025,9 +1039,8 @@ class PreschoolService:
     # Preschool Reports
     # =========================
 
-    @staticmethod
     async def create_report(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         data: PreschoolReportCreate,
     ) -> PreschoolReport:
@@ -1041,7 +1054,8 @@ class PreschoolService:
             days_present=data.days_present,
             days_absent=data.days_absent,
             total_school_days=data.total_school_days,
-            learning_area_summaries=[s.model_dump() for s in data.learning_area_summaries] if data.learning_area_summaries else None,
+            # mode='json' ensures UUIDs are serialized as strings for JSONB storage
+            learning_area_summaries=[s.model_dump(mode='json') for s in data.learning_area_summaries] if data.learning_area_summaries else None,
             overall_progress=data.overall_progress,
             strengths=data.strengths,
             areas_for_growth=data.areas_for_growth,
@@ -1051,19 +1065,21 @@ class PreschoolService:
             class_teacher_remark=data.class_teacher_remark,
             head_teacher_remark=data.head_teacher_remark,
         )
-        db.add(report)
-        await db.commit()
-        await db.refresh(report)
+        self.db.add(report)
+        await self.db.flush()
+        await self.db.refresh(report)
         return report
 
-    @staticmethod
     async def get_report(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         report_id: UUID,
-    ) -> PreschoolReport | None:
-        """Get a report by ID."""
-        result = await db.execute(
+    ) -> PreschoolReport:
+        """Get a report by ID.
+
+        Raises PreschoolServiceError if not found.
+        """
+        result = await self.db.execute(
             select(PreschoolReport)
             .where(
                 and_(
@@ -1073,11 +1089,13 @@ class PreschoolService:
                 )
             )
         )
-        return result.scalar_one_or_none()
+        report = result.scalar_one_or_none()
+        if not report:
+            raise PreschoolServiceError("Report not found", "not_found")
+        return report
 
-    @staticmethod
     async def list_reports(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         student_id: UUID | None = None,
         term_id: UUID | None = None,
@@ -1101,12 +1119,11 @@ class PreschoolService:
         if is_published is not None:
             query = query.where(PreschoolReport.is_published == is_published)
 
-        result = await db.execute(query)
+        result = await self.db.execute(query)
         return result.scalars().all()
 
-    @staticmethod
     async def update_report(
-        db: AsyncSession,
+        self,
         report: PreschoolReport,
         data: PreschoolReportUpdate,
     ) -> PreschoolReport:
@@ -1119,18 +1136,17 @@ class PreschoolService:
             ]
         for field, value in update_data.items():
             setattr(report, field, value)
-        await db.commit()
-        await db.refresh(report)
+        await self.db.flush()
+        await self.db.refresh(report)
         return report
 
-    @staticmethod
     async def publish_reports(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         report_ids: list[UUID],
     ) -> list[PreschoolReport]:
         """Publish multiple reports."""
-        result = await db.execute(
+        result = await self.db.execute(
             select(PreschoolReport)
             .where(
                 and_(
@@ -1141,16 +1157,17 @@ class PreschoolService:
             )
         )
         reports = list(result.scalars().all())
+        if not reports:
+            raise PreschoolServiceError("No matching reports found to publish", "not_found")
         now = datetime.utcnow()
         for report in reports:
             report.is_published = True
             report.published_at = now
-        await db.commit()
+        await self.db.flush()
         return reports
 
-    @staticmethod
     async def generate_reports(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         class_id: UUID,
         academic_year_id: UUID,
@@ -1158,7 +1175,7 @@ class PreschoolService:
     ) -> dict:
         """Generate reports for all students in a class for a given term."""
         # Get all active students in the class
-        students_result = await db.execute(
+        students_result = await self.db.execute(
             select(Student).where(
                 and_(
                     Student.tenant_id == tenant_id,
@@ -1170,8 +1187,8 @@ class PreschoolService:
         )
         students = students_result.scalars().all()
 
-        # Check which students already have reports for this term
-        existing_reports_result = await db.execute(
+        # Determine which students already have reports for this term
+        existing_reports_result = await self.db.execute(
             select(PreschoolReport.student_id).where(
                 and_(
                     PreschoolReport.tenant_id == tenant_id,
@@ -1184,7 +1201,7 @@ class PreschoolService:
         )
         existing_student_ids = set(existing_reports_result.scalars().all())
 
-        # Create reports for students who don't have one
+        # Create blank reports for students who don't have one yet
         generated_count = 0
         for student in students:
             if student.id not in existing_student_ids:
@@ -1195,11 +1212,11 @@ class PreschoolService:
                     term_id=term_id,
                     class_id=class_id,
                 )
-                db.add(report)
+                self.db.add(report)
                 generated_count += 1
 
         if generated_count > 0:
-            await db.commit()
+            await self.db.flush()
 
         return {"generated": generated_count, "total_students": len(students)}
 
@@ -1207,15 +1224,17 @@ class PreschoolService:
     # Seed Data
     # =========================
 
-    @staticmethod
     async def seed_learning_areas(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         include_skills: bool = True,
     ) -> list[LearningArea]:
-        """Seed default learning areas and optionally skills."""
+        """Seed default learning areas and optionally skills.
+
+        Returns existing areas if they already exist (idempotent).
+        """
         # Check if learning areas already exist for this tenant
-        existing_result = await db.execute(
+        existing_result = await self.db.execute(
             select(LearningArea).where(
                 and_(
                     LearningArea.tenant_id == tenant_id,
@@ -1226,7 +1245,7 @@ class PreschoolService:
         existing_areas = existing_result.scalars().all()
 
         if existing_areas:
-            # Return existing areas instead of creating duplicates
+            # Idempotent: return existing areas instead of creating duplicates
             return list(existing_areas)
 
         areas = []
@@ -1235,10 +1254,10 @@ class PreschoolService:
                 tenant_id=tenant_id,
                 **area_data,
             )
-            db.add(area)
+            self.db.add(area)
             areas.append(area)
 
-        await db.flush()
+        await self.db.flush()
 
         # Add skills if requested
         if include_skills:
@@ -1251,20 +1270,22 @@ class PreschoolService:
                         display_order=i,
                         **skill_data,
                     )
-                    db.add(skill)
+                    self.db.add(skill)
 
-        await db.commit()
+        await self.db.flush()
         return areas
 
-    @staticmethod
     async def seed_rating_scale(
-        db: AsyncSession,
+        self,
         tenant_id: UUID,
         set_as_default: bool = True,
     ) -> PreschoolRatingScale:
-        """Seed the default rating scale."""
+        """Seed the default rating scale.
+
+        Returns existing scale if one already exists (idempotent).
+        """
         # Check if a rating scale already exists for this tenant
-        existing_result = await db.execute(
+        existing_result = await self.db.execute(
             select(PreschoolRatingScale).where(
                 and_(
                     PreschoolRatingScale.tenant_id == tenant_id,
@@ -1275,7 +1296,7 @@ class PreschoolService:
         existing_scale = existing_result.scalars().first()
 
         if existing_scale:
-            # Return existing scale instead of creating duplicate
+            # Idempotent: return existing scale instead of creating duplicate
             return existing_scale
 
         scale = PreschoolRatingScale(
@@ -1284,16 +1305,17 @@ class PreschoolService:
             description=DEFAULT_RATING_SCALE["description"],
             is_default=set_as_default,
         )
-        db.add(scale)
-        await db.flush()
+        self.db.add(scale)
+        await self.db.flush()
 
         for rating_data in DEFAULT_RATING_SCALE["ratings"]:
             rating = PreschoolRating(
+                tenant_id=tenant_id,
                 scale_id=scale.id,
                 **rating_data,
             )
-            db.add(rating)
+            self.db.add(rating)
 
-        await db.commit()
-        await db.refresh(scale)
+        await self.db.flush()
+        await self.db.refresh(scale)
         return scale

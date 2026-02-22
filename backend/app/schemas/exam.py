@@ -60,6 +60,15 @@ class ExamUpdate(BaseSchema):
     )
 
 
+class ExamStatusUpdate(BaseSchema):
+    """Update exam status request."""
+
+    status: str = Field(
+        ...,
+        pattern="^(draft|scheduled|ongoing|completed|results_published|cancelled)$"
+    )
+
+
 class ExamResponse(BaseSchema):
     """Exam response."""
 

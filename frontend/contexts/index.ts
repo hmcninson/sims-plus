@@ -8,7 +8,6 @@ export {
   useTenantData,
   useSubdomain,
   useHasTenant,
-  useTenantBranding,
-  type Tenant,
+  type TenantInfo,
   type TenantBranding,
 } from "./tenant-context";

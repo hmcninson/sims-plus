@@ -11,12 +11,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.deps import (
-    CurrentUserId,
     DatabaseSession,
     RequestTenant,
+    ValidatedUser,
+    require_permissions,
 )
-from app.middleware.tenant import TenantContext
-from app.services.preschool import PreschoolService
+from app.services.preschool import PreschoolService, PreschoolServiceError
 from app.services.pdf import PDFService
 from app.schemas.preschool import (
     LearningAreaCreate,
@@ -61,16 +61,22 @@ router = APIRouter(prefix="/preschool", tags=["Preschool"])
 # =========================
 
 
-@router.get("/learning-areas", response_model=list[LearningAreaResponse])
+@router.get(
+    "/learning-areas",
+    response_model=list[LearningAreaResponse],
+    summary="List learning areas",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_learning_areas(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     include_inactive: bool = Query(False),
 ):
     """List all learning areas for the current tenant."""
-    areas = await PreschoolService.list_learning_areas(
-        db, convert_uuid(tenant.tenant_id), include_inactive
+    service = PreschoolService(db)
+    areas = await service.list_learning_areas(
+        convert_uuid(tenant.tenant_id), include_inactive
     )
     return [
         LearningAreaResponse(
@@ -94,49 +100,63 @@ async def list_learning_areas(
     "/learning-areas",
     response_model=LearningAreaResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create learning area",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_learning_area(
     data: LearningAreaCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create a new learning area."""
-    return await PreschoolService.create_learning_area(db, convert_uuid(tenant.tenant_id), data)
+    service = PreschoolService(db)
+    try:
+        return await service.create_learning_area(convert_uuid(tenant.tenant_id), data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
-@router.get("/learning-areas/{area_id}", response_model=LearningAreaWithSkills)
+@router.get(
+    "/learning-areas/{area_id}",
+    response_model=LearningAreaWithSkills,
+    summary="Get learning area",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_learning_area(
     area_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a learning area with its skills."""
-    area = await PreschoolService.get_learning_area(db, convert_uuid(tenant.tenant_id), area_id)
-    if not area:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Learning area not found",
-        )
+    service = PreschoolService(db)
+    try:
+        area = await service.get_learning_area(convert_uuid(tenant.tenant_id), area_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     return area
 
 
-@router.get("/learning-areas/{area_id}/skills", response_model=LearningAreaWithSkills)
+@router.get(
+    "/learning-areas/{area_id}/skills",
+    response_model=LearningAreaWithSkills,
+    summary="Get learning area with skills",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_learning_area_with_skills(
     area_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a learning area with its skills (explicit skills endpoint)."""
-    area = await PreschoolService.get_learning_area(db, convert_uuid(tenant.tenant_id), area_id)
-    if not area:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Learning area not found",
-        )
-    # Construct response with skills
+    service = PreschoolService(db)
+    try:
+        area = await service.get_learning_area(convert_uuid(tenant.tenant_id), area_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
+    # Construct response with skills, filtering out soft-deleted ones
     return LearningAreaWithSkills(
         id=convert_uuid(area.id),
         tenant_id=convert_uuid(area.tenant_id),
@@ -170,39 +190,47 @@ async def get_learning_area_with_skills(
     )
 
 
-@router.put("/learning-areas/{area_id}", response_model=LearningAreaResponse)
+@router.put(
+    "/learning-areas/{area_id}",
+    response_model=LearningAreaResponse,
+    summary="Update learning area",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def update_learning_area(
     area_id: UUID,
     data: LearningAreaUpdate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Update a learning area."""
-    area = await PreschoolService.get_learning_area(db, convert_uuid(tenant.tenant_id), area_id)
-    if not area:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Learning area not found",
-        )
-    return await PreschoolService.update_learning_area(db, area, data)
+    service = PreschoolService(db)
+    try:
+        area = await service.get_learning_area(convert_uuid(tenant.tenant_id), area_id)
+        return await service.update_learning_area(area, data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.delete("/learning-areas/{area_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/learning-areas/{area_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete learning area",
+    dependencies=[Depends(require_permissions("preschool.delete"))],
+)
 async def delete_learning_area(
     area_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Delete a learning area (soft delete)."""
-    area = await PreschoolService.get_learning_area(db, convert_uuid(tenant.tenant_id), area_id)
-    if not area:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Learning area not found",
-        )
-    await PreschoolService.delete_learning_area(db, area)
+    service = PreschoolService(db)
+    try:
+        area = await service.get_learning_area(convert_uuid(tenant.tenant_id), area_id)
+        await service.delete_learning_area(area)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
 # =========================
@@ -210,18 +238,24 @@ async def delete_learning_area(
 # =========================
 
 
-@router.get("/skills", response_model=list[DevelopmentalSkillResponse])
+@router.get(
+    "/skills",
+    response_model=list[DevelopmentalSkillResponse],
+    summary="List skills",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_skills(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     learning_area_id: UUID | None = Query(None),
     class_level: str | None = Query(None),
     include_inactive: bool = Query(False),
 ):
     """List developmental skills with optional filters."""
-    return await PreschoolService.list_skills(
-        db, convert_uuid(tenant.tenant_id), learning_area_id, class_level, include_inactive
+    service = PreschoolService(db)
+    return await service.list_skills(
+        convert_uuid(tenant.tenant_id), learning_area_id, class_level, include_inactive
     )
 
 
@@ -229,82 +263,105 @@ async def list_skills(
     "/skills",
     response_model=DevelopmentalSkillResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create skill",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_skill(
     data: DevelopmentalSkillCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create a new developmental skill."""
-    return await PreschoolService.create_skill(db, convert_uuid(tenant.tenant_id), data)
+    service = PreschoolService(db)
+    try:
+        return await service.create_skill(convert_uuid(tenant.tenant_id), data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
 @router.post(
     "/skills/bulk",
     response_model=list[DevelopmentalSkillResponse],
     status_code=status.HTTP_201_CREATED,
+    summary="Bulk create skills",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def bulk_create_skills(
     data: DevelopmentalSkillBulkCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Bulk create skills for a learning area."""
-    return await PreschoolService.bulk_create_skills(db, convert_uuid(tenant.tenant_id), data)
+    service = PreschoolService(db)
+    try:
+        return await service.bulk_create_skills(convert_uuid(tenant.tenant_id), data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
-@router.get("/skills/{skill_id}", response_model=DevelopmentalSkillResponse)
+@router.get(
+    "/skills/{skill_id}",
+    response_model=DevelopmentalSkillResponse,
+    summary="Get skill",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_skill(
     skill_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a skill by ID."""
-    skill = await PreschoolService.get_skill(db, convert_uuid(tenant.tenant_id), skill_id)
-    if not skill:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Skill not found",
-        )
-    return skill
+    service = PreschoolService(db)
+    try:
+        return await service.get_skill(convert_uuid(tenant.tenant_id), skill_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.put("/skills/{skill_id}", response_model=DevelopmentalSkillResponse)
+@router.put(
+    "/skills/{skill_id}",
+    response_model=DevelopmentalSkillResponse,
+    summary="Update skill",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def update_skill(
     skill_id: UUID,
     data: DevelopmentalSkillUpdate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Update a skill."""
-    skill = await PreschoolService.get_skill(db, convert_uuid(tenant.tenant_id), skill_id)
-    if not skill:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Skill not found",
-        )
-    return await PreschoolService.update_skill(db, skill, data)
+    service = PreschoolService(db)
+    try:
+        skill = await service.get_skill(convert_uuid(tenant.tenant_id), skill_id)
+        return await service.update_skill(skill, data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/skills/{skill_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete skill",
+    dependencies=[Depends(require_permissions("preschool.delete"))],
+)
 async def delete_skill(
     skill_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Delete a skill (soft delete)."""
-    skill = await PreschoolService.get_skill(db, convert_uuid(tenant.tenant_id), skill_id)
-    if not skill:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Skill not found",
-        )
-    await PreschoolService.delete_skill(db, skill)
+    service = PreschoolService(db)
+    try:
+        skill = await service.get_skill(convert_uuid(tenant.tenant_id), skill_id)
+        await service.delete_skill(skill)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
 # =========================
@@ -312,14 +369,20 @@ async def delete_skill(
 # =========================
 
 
-@router.get("/rating-scales", response_model=list[PreschoolRatingScaleWithRatings])
+@router.get(
+    "/rating-scales",
+    response_model=list[PreschoolRatingScaleWithRatings],
+    summary="List rating scales",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_rating_scales(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """List all rating scales."""
-    scales = await PreschoolService.list_rating_scales(db, convert_uuid(tenant.tenant_id))
+    service = PreschoolService(db)
+    scales = await service.list_rating_scales(convert_uuid(tenant.tenant_id))
     return [
         PreschoolRatingScaleWithRatings(
             id=convert_uuid(s.id),
@@ -332,6 +395,7 @@ async def list_rating_scales(
             ratings=[
                 PreschoolRatingResponse(
                     id=convert_uuid(r.id),
+                    tenant_id=convert_uuid(r.tenant_id),
                     scale_id=convert_uuid(r.scale_id),
                     name=r.name,
                     short_code=r.short_code,
@@ -344,6 +408,7 @@ async def list_rating_scales(
                     updated_at=r.updated_at,
                 )
                 for r in (s.ratings or [])
+                if r.deleted_at is None
             ],
         )
         for s in scales
@@ -354,15 +419,21 @@ async def list_rating_scales(
     "/rating-scales",
     response_model=PreschoolRatingScaleResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create rating scale",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_rating_scale(
     data: PreschoolRatingScaleCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create a rating scale with ratings."""
-    scale = await PreschoolService.create_rating_scale(db, convert_uuid(tenant.tenant_id), data)
+    service = PreschoolService(db)
+    try:
+        scale = await service.create_rating_scale(convert_uuid(tenant.tenant_id), data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     return PreschoolRatingScaleResponse(
         id=convert_uuid(scale.id),
         tenant_id=convert_uuid(scale.tenant_id),
@@ -374,55 +445,65 @@ async def create_rating_scale(
     )
 
 
-@router.get("/rating-scales/default", response_model=PreschoolRatingScaleWithRatings)
+@router.get(
+    "/rating-scales/default",
+    response_model=PreschoolRatingScaleWithRatings,
+    summary="Get default rating scale",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_default_rating_scale(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get the default rating scale for the tenant."""
-    scale = await PreschoolService.get_default_rating_scale(db, convert_uuid(tenant.tenant_id))
-    if not scale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No default rating scale found. Please seed the default scale first.",
-        )
-    return scale
+    service = PreschoolService(db)
+    try:
+        return await service.get_default_rating_scale(convert_uuid(tenant.tenant_id))
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.get("/rating-scales/{scale_id}", response_model=PreschoolRatingScaleWithRatings)
+@router.get(
+    "/rating-scales/{scale_id}",
+    response_model=PreschoolRatingScaleWithRatings,
+    summary="Get rating scale",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_rating_scale(
     scale_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a rating scale by ID."""
-    scale = await PreschoolService.get_rating_scale(db, convert_uuid(tenant.tenant_id), scale_id)
-    if not scale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rating scale not found",
-        )
-    return scale
+    service = PreschoolService(db)
+    try:
+        return await service.get_rating_scale(convert_uuid(tenant.tenant_id), scale_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.put("/rating-scales/{scale_id}", response_model=PreschoolRatingScaleResponse)
+@router.put(
+    "/rating-scales/{scale_id}",
+    response_model=PreschoolRatingScaleResponse,
+    summary="Update rating scale",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def update_rating_scale(
     scale_id: UUID,
     data: PreschoolRatingScaleUpdate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Update a rating scale."""
-    scale = await PreschoolService.get_rating_scale(db, convert_uuid(tenant.tenant_id), scale_id)
-    if not scale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rating scale not found",
-        )
-    updated = await PreschoolService.update_rating_scale(db, scale, data, convert_uuid(tenant.tenant_id))
+    service = PreschoolService(db)
+    try:
+        scale = await service.get_rating_scale(convert_uuid(tenant.tenant_id), scale_id)
+        updated = await service.update_rating_scale(scale, data, convert_uuid(tenant.tenant_id))
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
     return PreschoolRatingScaleResponse(
         id=convert_uuid(updated.id),
         tenant_id=convert_uuid(updated.tenant_id),
@@ -434,22 +515,25 @@ async def update_rating_scale(
     )
 
 
-@router.delete("/rating-scales/{scale_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/rating-scales/{scale_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete rating scale",
+    dependencies=[Depends(require_permissions("preschool.delete"))],
+)
 async def delete_rating_scale(
     scale_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Delete a rating scale."""
-    scale = await PreschoolService.get_rating_scale(db, convert_uuid(tenant.tenant_id), scale_id)
-    if not scale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Rating scale not found",
-        )
-    await PreschoolService.delete_rating_scale(db, scale)
-    return None
+    service = PreschoolService(db)
+    try:
+        scale = await service.get_rating_scale(convert_uuid(tenant.tenant_id), scale_id)
+        await service.delete_rating_scale(scale)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
 # =========================
@@ -457,18 +541,24 @@ async def delete_rating_scale(
 # =========================
 
 
-@router.get("/assessments", response_model=list[StudentSkillAssessmentResponse])
+@router.get(
+    "/assessments",
+    response_model=list[StudentSkillAssessmentResponse],
+    summary="List assessments",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_assessments(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     student_id: UUID | None = Query(None),
     term_id: UUID | None = Query(None),
     learning_area_id: UUID | None = Query(None),
 ):
     """List assessments with optional filters."""
-    return await PreschoolService.list_assessments(
-        db, convert_uuid(tenant.tenant_id), student_id, term_id, learning_area_id
+    service = PreschoolService(db)
+    return await service.list_assessments(
+        convert_uuid(tenant.tenant_id), student_id, term_id, learning_area_id
     )
 
 
@@ -476,48 +566,66 @@ async def list_assessments(
     "/assessments",
     response_model=StudentSkillAssessmentResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create or update assessment",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_or_update_assessment(
     data: StudentSkillAssessmentCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create or update a skill assessment."""
-    return await PreschoolService.create_or_update_assessment(
-        db, convert_uuid(tenant.tenant_id), data, convert_uuid(current_user)
-    )
+    service = PreschoolService(db)
+    try:
+        return await service.create_or_update_assessment(
+            convert_uuid(tenant.tenant_id), data, convert_uuid(current_user["user_id"])
+        )
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
 @router.post(
     "/assessments/bulk",
     response_model=BulkAssessmentResult,
     status_code=status.HTTP_201_CREATED,
+    summary="Bulk assess",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def bulk_assess(
     data: StudentSkillAssessmentBulk,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Bulk create/update assessments for a student."""
-    result = await PreschoolService.bulk_assess(
-        db, convert_uuid(tenant.tenant_id), data, convert_uuid(current_user)
-    )
+    service = PreschoolService(db)
+    try:
+        result = await service.bulk_assess(
+            convert_uuid(tenant.tenant_id), data, convert_uuid(current_user["user_id"])
+        )
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     return BulkAssessmentResult(**result)
 
 
-@router.get("/assessments/student/{student_id}", response_model=list[StudentSkillAssessmentResponse])
+@router.get(
+    "/assessments/student/{student_id}",
+    response_model=list[StudentSkillAssessmentResponse],
+    summary="Get student assessments",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_student_assessments(
     student_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     term_id: UUID | None = Query(None),
 ):
     """Get all assessments for a student."""
-    return await PreschoolService.list_assessments(
-        db, convert_uuid(tenant.tenant_id), student_id, term_id
+    service = PreschoolService(db)
+    return await service.list_assessments(
+        convert_uuid(tenant.tenant_id), student_id, term_id
     )
 
 
@@ -526,10 +634,15 @@ async def get_student_assessments(
 # =========================
 
 
-@router.get("/observations", response_model=list[ProgressObservationResponse])
+@router.get(
+    "/observations",
+    response_model=list[ProgressObservationResponse],
+    summary="List observations",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_observations(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     student_id: UUID | None = Query(None),
     observation_type: str | None = Query(None),
@@ -538,8 +651,9 @@ async def list_observations(
     limit: int = Query(50, le=100),
 ):
     """List observations with filters."""
-    return await PreschoolService.list_observations(
-        db, convert_uuid(tenant.tenant_id), student_id, observation_type, start_date, end_date, limit
+    service = PreschoolService(db)
+    return await service.list_observations(
+        convert_uuid(tenant.tenant_id), student_id, observation_type, start_date, end_date, limit
     )
 
 
@@ -547,82 +661,105 @@ async def list_observations(
     "/observations",
     response_model=ProgressObservationResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create observation",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_observation(
     data: ProgressObservationCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create a progress observation."""
-    return await PreschoolService.create_observation(
-        db, convert_uuid(tenant.tenant_id), data, convert_uuid(current_user)
-    )
+    service = PreschoolService(db)
+    try:
+        return await service.create_observation(
+            convert_uuid(tenant.tenant_id), data, convert_uuid(current_user["user_id"])
+        )
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
-@router.get("/observations/{observation_id}", response_model=ProgressObservationResponse)
+@router.get(
+    "/observations/{observation_id}",
+    response_model=ProgressObservationResponse,
+    summary="Get observation",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_observation(
     observation_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get an observation by ID."""
-    observation = await PreschoolService.get_observation(db, convert_uuid(tenant.tenant_id), observation_id)
-    if not observation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Observation not found",
-        )
-    return observation
+    service = PreschoolService(db)
+    try:
+        return await service.get_observation(convert_uuid(tenant.tenant_id), observation_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.put("/observations/{observation_id}", response_model=ProgressObservationResponse)
+@router.put(
+    "/observations/{observation_id}",
+    response_model=ProgressObservationResponse,
+    summary="Update observation",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def update_observation(
     observation_id: UUID,
     data: ProgressObservationUpdate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Update an observation."""
-    observation = await PreschoolService.get_observation(db, convert_uuid(tenant.tenant_id), observation_id)
-    if not observation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Observation not found",
-        )
-    return await PreschoolService.update_observation(db, observation, data)
+    service = PreschoolService(db)
+    try:
+        observation = await service.get_observation(convert_uuid(tenant.tenant_id), observation_id)
+        return await service.update_observation(observation, data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.delete("/observations/{observation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/observations/{observation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete observation",
+    dependencies=[Depends(require_permissions("preschool.delete"))],
+)
 async def delete_observation(
     observation_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Delete an observation (soft delete)."""
-    observation = await PreschoolService.get_observation(db, convert_uuid(tenant.tenant_id), observation_id)
-    if not observation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Observation not found",
-        )
-    await PreschoolService.delete_observation(db, observation)
+    service = PreschoolService(db)
+    try:
+        observation = await service.get_observation(convert_uuid(tenant.tenant_id), observation_id)
+        await service.delete_observation(observation)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.get("/observations/student/{student_id}", response_model=list[ProgressObservationResponse])
+@router.get(
+    "/observations/student/{student_id}",
+    response_model=list[ProgressObservationResponse],
+    summary="Get student observations",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_student_observations(
     student_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     limit: int = Query(50, le=100),
 ):
     """Get all observations for a student."""
-    return await PreschoolService.list_observations(
-        db, convert_uuid(tenant.tenant_id), student_id, limit=limit
+    service = PreschoolService(db)
+    return await service.list_observations(
+        convert_uuid(tenant.tenant_id), student_id, limit=limit
     )
 
 
@@ -631,10 +768,15 @@ async def get_student_observations(
 # =========================
 
 
-@router.get("/daily-logs", response_model=list[DailyActivityLogResponse])
+@router.get(
+    "/daily-logs",
+    response_model=list[DailyActivityLogResponse],
+    summary="List daily logs",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_daily_logs(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     student_id: UUID | None = Query(None),
     log_date: date | None = Query(None),
@@ -644,8 +786,9 @@ async def list_daily_logs(
     limit: int = Query(50, le=100),
 ):
     """List daily logs with filters."""
-    return await PreschoolService.list_daily_logs(
-        db, convert_uuid(tenant.tenant_id), student_id, log_date, start_date, end_date, class_id, limit
+    service = PreschoolService(db)
+    return await service.list_daily_logs(
+        convert_uuid(tenant.tenant_id), student_id, log_date, start_date, end_date, class_id, limit
     )
 
 
@@ -653,47 +796,62 @@ async def list_daily_logs(
     "/daily-logs",
     response_model=DailyActivityLogResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create or update daily log",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_or_update_daily_log(
     data: DailyActivityLogCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create or update a daily activity log."""
-    return await PreschoolService.create_or_update_daily_log(
-        db, convert_uuid(tenant.tenant_id), data, convert_uuid(current_user)
-    )
+    service = PreschoolService(db)
+    try:
+        return await service.create_or_update_daily_log(
+            convert_uuid(tenant.tenant_id), data, convert_uuid(current_user["user_id"])
+        )
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
-@router.get("/daily-logs/{log_id}", response_model=DailyActivityLogResponse)
+@router.get(
+    "/daily-logs/{log_id}",
+    response_model=DailyActivityLogResponse,
+    summary="Get daily log",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_daily_log(
     log_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a daily log by ID."""
-    log = await PreschoolService.get_daily_log(db, convert_uuid(tenant.tenant_id), log_id)
-    if not log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Daily log not found",
-        )
-    return log
+    service = PreschoolService(db)
+    try:
+        return await service.get_daily_log(convert_uuid(tenant.tenant_id), log_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.get("/daily-logs/student/{student_id}", response_model=list[DailyActivityLogResponse])
+@router.get(
+    "/daily-logs/student/{student_id}",
+    response_model=list[DailyActivityLogResponse],
+    summary="Get student daily logs",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_student_daily_logs(
     student_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     limit: int = Query(30, le=100),
 ):
     """Get daily logs for a student."""
-    return await PreschoolService.list_daily_logs(
-        db, convert_uuid(tenant.tenant_id), student_id, limit=limit
+    service = PreschoolService(db)
+    return await service.list_daily_logs(
+        convert_uuid(tenant.tenant_id), student_id, limit=limit
     )
 
 
@@ -702,10 +860,15 @@ async def get_student_daily_logs(
 # =========================
 
 
-@router.get("/reports", response_model=list[PreschoolReportResponse])
+@router.get(
+    "/reports",
+    response_model=list[PreschoolReportResponse],
+    summary="List reports",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def list_reports(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     student_id: UUID | None = Query(None),
     term_id: UUID | None = Query(None),
@@ -713,8 +876,9 @@ async def list_reports(
     is_published: bool | None = Query(None),
 ):
     """List preschool reports with filters."""
-    return await PreschoolService.list_reports(
-        db, convert_uuid(tenant.tenant_id), student_id, term_id, class_id, is_published
+    service = PreschoolService(db)
+    return await service.list_reports(
+        convert_uuid(tenant.tenant_id), student_id, term_id, class_id, is_published
     )
 
 
@@ -722,86 +886,119 @@ async def list_reports(
     "/reports",
     response_model=PreschoolReportResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create report",
+    dependencies=[Depends(require_permissions("preschool.create"))],
 )
 async def create_report(
     data: PreschoolReportCreate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Create a preschool report."""
-    return await PreschoolService.create_report(db, convert_uuid(tenant.tenant_id), data)
+    service = PreschoolService(db)
+    try:
+        return await service.create_report(convert_uuid(tenant.tenant_id), data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
-@router.get("/reports/{report_id}", response_model=PreschoolReportResponse)
+@router.get(
+    "/reports/{report_id}",
+    response_model=PreschoolReportResponse,
+    summary="Get report",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def get_report(
     report_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Get a report by ID."""
-    report = await PreschoolService.get_report(db, convert_uuid(tenant.tenant_id), report_id)
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Report not found",
-        )
-    return report
+    service = PreschoolService(db)
+    try:
+        return await service.get_report(convert_uuid(tenant.tenant_id), report_id)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.put("/reports/{report_id}", response_model=PreschoolReportResponse)
+@router.put(
+    "/reports/{report_id}",
+    response_model=PreschoolReportResponse,
+    summary="Update report",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def update_report(
     report_id: UUID,
     data: PreschoolReportUpdate,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Update a report."""
-    report = await PreschoolService.get_report(db, convert_uuid(tenant.tenant_id), report_id)
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Report not found",
-        )
-    return await PreschoolService.update_report(db, report, data)
+    service = PreschoolService(db)
+    try:
+        report = await service.get_report(convert_uuid(tenant.tenant_id), report_id)
+        return await service.update_report(report, data)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.post("/reports/generate")
+@router.post(
+    "/reports/generate",
+    summary="Generate reports",
+    dependencies=[Depends(require_permissions("preschool.create"))],
+)
 async def generate_reports(
     data: PreschoolReportGenerateRequest,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Generate reports for all students in a class for a given term."""
-    result = await PreschoolService.generate_reports(
-        db,
-        convert_uuid(tenant.tenant_id),
-        data.class_id,
-        data.academic_year_id,
-        data.term_id,
-    )
+    service = PreschoolService(db)
+    try:
+        result = await service.generate_reports(
+            convert_uuid(tenant.tenant_id),
+            data.class_id,
+            data.academic_year_id,
+            data.term_id,
+        )
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     return result
 
 
-@router.post("/reports/publish", response_model=list[PreschoolReportResponse])
+@router.post(
+    "/reports/publish",
+    response_model=list[PreschoolReportResponse],
+    summary="Publish reports",
+    dependencies=[Depends(require_permissions("preschool.update"))],
+)
 async def publish_reports(
     data: PreschoolReportPublishRequest,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Publish multiple reports."""
-    return await PreschoolService.publish_reports(db, convert_uuid(tenant.tenant_id), data.report_ids)
+    service = PreschoolService(db)
+    try:
+        return await service.publish_reports(convert_uuid(tenant.tenant_id), data.report_ids)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=e.message)
 
 
-@router.get("/reports/{report_id}/pdf")
+@router.get(
+    "/reports/{report_id}/pdf",
+    summary="Download report PDF",
+    dependencies=[Depends(require_permissions("preschool.read"))],
+)
 async def download_report_pdf(
     report_id: UUID,
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
 ):
     """Download a preschool report as PDF. Only published reports can be downloaded."""
@@ -830,16 +1027,25 @@ async def download_report_pdf(
 # =========================
 
 
-@router.post("/seed/learning-areas", response_model=list[LearningAreaResponse])
+@router.post(
+    "/seed/learning-areas",
+    response_model=list[LearningAreaResponse],
+    summary="Seed learning areas",
+    dependencies=[Depends(require_permissions("preschool.create"))],
+)
 async def seed_learning_areas(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     data: SeedLearningAreasRequest | None = None,
 ):
     """Seed default learning areas and skills for the tenant."""
+    service = PreschoolService(db)
     include_skills = data.include_skills if data else True
-    areas = await PreschoolService.seed_learning_areas(db, convert_uuid(tenant.tenant_id), include_skills)
+    try:
+        areas = await service.seed_learning_areas(convert_uuid(tenant.tenant_id), include_skills)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     return [
         LearningAreaResponse(
             id=convert_uuid(a.id),
@@ -858,16 +1064,25 @@ async def seed_learning_areas(
     ]
 
 
-@router.post("/seed/rating-scale", response_model=PreschoolRatingScaleWithRatings)
+@router.post(
+    "/seed/rating-scale",
+    response_model=PreschoolRatingScaleWithRatings,
+    summary="Seed rating scale",
+    dependencies=[Depends(require_permissions("preschool.create"))],
+)
 async def seed_rating_scale(
     db: DatabaseSession,
-    current_user: CurrentUserId,
+    current_user: ValidatedUser,
     tenant: RequestTenant,
     data: SeedRatingScaleRequest | None = None,
 ):
     """Seed the default rating scale for the tenant."""
+    service = PreschoolService(db)
     set_as_default = data.set_as_default if data else True
-    scale = await PreschoolService.seed_rating_scale(db, convert_uuid(tenant.tenant_id), set_as_default)
+    try:
+        scale = await service.seed_rating_scale(convert_uuid(tenant.tenant_id), set_as_default)
+    except PreschoolServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
     return PreschoolRatingScaleWithRatings(
         id=convert_uuid(scale.id),
         tenant_id=convert_uuid(scale.tenant_id),
@@ -879,6 +1094,7 @@ async def seed_rating_scale(
         ratings=[
             PreschoolRatingResponse(
                 id=convert_uuid(r.id),
+                tenant_id=convert_uuid(r.tenant_id),
                 scale_id=convert_uuid(r.scale_id),
                 name=r.name,
                 short_code=r.short_code,
@@ -891,5 +1107,6 @@ async def seed_rating_scale(
                 updated_at=r.updated_at,
             )
             for r in (scale.ratings or [])
+            if r.deleted_at is None
         ],
     )

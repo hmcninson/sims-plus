@@ -130,7 +130,7 @@ export async function deleteExam(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/exams/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -260,7 +260,7 @@ export async function removeExamSubject(
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/exams/${examId}/subjects/${examSubjectId}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -483,7 +483,7 @@ export async function deleteCA(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/exams/ca/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

@@ -396,7 +396,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="w-[180px] justify-start gap-2">
+                <Button variant="outline" className="w-full sm:w-[180px] justify-start gap-2">
                   <Calendar className="h-4 w-4" />
                   {format(selectedDate, "MMM d, yyyy")}
                 </Button>
@@ -466,7 +466,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Arrival Time</Label>
                       <Input
@@ -501,7 +501,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
                       </Select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Departure Time</Label>
                       <Input
@@ -548,7 +548,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Start Time</Label>
                       <Input
@@ -642,7 +642,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label>Diaper Changes</Label>
                       <Input

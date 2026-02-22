@@ -164,23 +164,26 @@ class Exam(Base, TenantMixin, SoftDeleteMixin):
     )
 
     # Relationships
+    # lazy="raise" prevents accidental lazy loading in async context.
+    # Use selectinload()/joinedload() explicitly in queries that need these.
     academic_year: Mapped["AcademicYear"] = relationship(
         "AcademicYear",
-        lazy="joined",
+        lazy="raise",
     )
     term: Mapped["Term"] = relationship(
         "Term",
-        lazy="joined",
+        lazy="raise",
     )
     creator: Mapped["User"] = relationship(
         "User",
         foreign_keys=[created_by],
-        lazy="joined",
+        lazy="raise",
     )
     subjects: Mapped[list["ExamSubject"]] = relationship(
         "ExamSubject",
         back_populates="exam",
         cascade="all, delete-orphan",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -289,27 +292,29 @@ class ExamSubject(Base, TenantMixin):
     exam: Mapped["Exam"] = relationship(
         "Exam",
         back_populates="subjects",
+        lazy="raise",
     )
     subject: Mapped["Subject"] = relationship(
         "Subject",
-        lazy="joined",
+        lazy="raise",
     )
     class_: Mapped["Class"] = relationship(
         "Class",
-        lazy="joined",
+        lazy="raise",
     )
     section: Mapped["ClassSection"] = relationship(
         "ClassSection",
-        lazy="joined",
+        lazy="raise",
     )
     grading_scale: Mapped["GradingScale"] = relationship(
         "GradingScale",
-        lazy="joined",
+        lazy="raise",
     )
     scores: Mapped[list["ExamScore"]] = relationship(
         "ExamScore",
         back_populates="exam_subject",
         cascade="all, delete-orphan",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -399,15 +404,16 @@ class ExamScore(Base, TenantMixin, SoftDeleteMixin):
     exam_subject: Mapped["ExamSubject"] = relationship(
         "ExamSubject",
         back_populates="scores",
+        lazy="raise",
     )
     student: Mapped["Student"] = relationship(
         "Student",
-        lazy="joined",
+        lazy="raise",
     )
     entered_by_user: Mapped["User"] = relationship(
         "User",
         foreign_keys=[entered_by],
-        lazy="joined",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -477,7 +483,7 @@ class ScoreChangeLog(Base, TenantMixin):
         nullable=True,
     )
     changed_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
@@ -493,12 +499,12 @@ class ScoreChangeLog(Base, TenantMixin):
     exam_score: Mapped["ExamScore"] = relationship(
         "ExamScore",
         foreign_keys=[exam_score_id],
-        lazy="joined",
+        lazy="raise",
     )
     changed_by_user: Mapped["User"] = relationship(
         "User",
         foreign_keys=[changed_by],
-        lazy="joined",
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -582,14 +588,15 @@ class ContinuousAssessment(Base, TenantMixin, SoftDeleteMixin):
     )
 
     # Relationships
-    academic_year: Mapped["AcademicYear"] = relationship("AcademicYear")
-    term: Mapped["Term"] = relationship("Term")
-    class_: Mapped["Class"] = relationship("Class")
-    subject: Mapped["Subject"] = relationship("Subject")
-    student: Mapped["Student"] = relationship("Student")
+    academic_year: Mapped["AcademicYear"] = relationship("AcademicYear", lazy="raise")
+    term: Mapped["Term"] = relationship("Term", lazy="raise")
+    class_: Mapped["Class"] = relationship("Class", lazy="raise")
+    subject: Mapped["Subject"] = relationship("Subject", lazy="raise")
+    student: Mapped["Student"] = relationship("Student", lazy="raise")
     entered_by_user: Mapped["User"] = relationship(
         "User",
         foreign_keys=[entered_by],
+        lazy="raise",
     )
 
     def __repr__(self) -> str:
@@ -734,11 +741,11 @@ class TermReport(Base, TenantMixin, SoftDeleteMixin):
     )
 
     # Relationships
-    academic_year: Mapped["AcademicYear"] = relationship("AcademicYear")
-    term: Mapped["Term"] = relationship("Term")
-    student: Mapped["Student"] = relationship("Student")
-    class_: Mapped["Class"] = relationship("Class")
-    section: Mapped["ClassSection"] = relationship("ClassSection")
+    academic_year: Mapped["AcademicYear"] = relationship("AcademicYear", lazy="raise")
+    term: Mapped["Term"] = relationship("Term", lazy="raise")
+    student: Mapped["Student"] = relationship("Student", lazy="raise")
+    class_: Mapped["Class"] = relationship("Class", lazy="raise")
+    section: Mapped["ClassSection"] = relationship("ClassSection", lazy="raise")
 
     def __repr__(self) -> str:
         return f"<TermReport(student_id='{self.student_id}', term_id='{self.term_id}', position={self.class_position})>"

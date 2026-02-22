@@ -1,0 +1,22 @@
+# SIMS Plus Backend - Test Dependencies
+# Install with: pip install -r requirements-test.txt
+#
+# For CI: install alongside main requirements:
+#   pip install -r requirements.txt -r requirements-test.txt
+#
+# For local development, requirements-dev.txt already includes
+# testing packages. This file exists for CI environments that
+# need only test dependencies without dev tooling (linters, docs).
+#
+# NOTE: httpx is provided by requirements.txt (pinned there).
+# Do not re-declare it here to avoid version conflicts.
+#
+# NOTE: When using pytest-xdist for parallel test execution, RLS
+# tests must use --dist loadgroup so that tests marked with
+# @pytest.mark.xdist_group("rls_serial") run in the same worker.
+
+pytest>=8.0
+pytest-asyncio>=0.23
+pytest-cov>=5.0
+pytest-xdist>=3.5
+factory-boy>=3.3

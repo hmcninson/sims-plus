@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env
 env/
 venv/
 ENV/
@@ -33,6 +34,7 @@ env/
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # IDEs
 .vscode/
@@ -104,3 +106,12 @@ nul
 
 # Docker
 .dockerignore
+
+# SSL certificates (never commit)
+docker/nginx/ssl/
+*.pem
+*.key
+*.crt
+
+# Local DNS scripts output
+/tmp/

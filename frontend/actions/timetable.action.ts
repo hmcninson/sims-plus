@@ -181,7 +181,7 @@ export async function deleteTimetableEntry(
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/timetable/${entryId}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -311,7 +311,7 @@ export async function deleteSchoolPeriod(
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/timetable/periods/${periodId}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -426,7 +426,7 @@ export async function deleteSchoolHoliday(
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/timetable/holidays/${holidayId}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

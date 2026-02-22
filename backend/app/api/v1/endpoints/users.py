@@ -4,7 +4,6 @@ SIMS Plus - User Management Endpoints
 API endpoints for user CRUD operations.
 """
 
-import logging
 from typing import Optional
 from uuid import UUID
 
@@ -15,6 +14,7 @@ from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
     RequestTenant,
+    ValidatedUser,
     require_permissions,
 )
 from app.config import settings
@@ -27,11 +27,15 @@ from app.schemas.user import (
     UserRoleUpdate,
     UserStatusUpdate,
     ResetUserPasswordRequest,
+    UserInviteRequest,
+    UserInviteResponse,
 )
+import structlog
+
 from app.services.user import UserService, UserServiceError
 from app.services.email import email_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -173,10 +177,10 @@ async def create_user(
             school_name=tenant.name,
             portal_url=portal_url,
         )
-        logger.info(f"Sent credentials email to new user: {data.email}")
-    except Exception as e:
-        # Log error but don't fail the request - user is already created
-        logger.error(f"Failed to send credentials email to {data.email}: {e}")
+        logger.info("credentials_email_sent", to=data.email)
+    except Exception:
+        # Log error but don't fail the request -- user is already created
+        logger.error("credentials_email_failed", to=data.email, exc_info=True)
 
     return _user_to_response(user)
 
@@ -412,3 +416,98 @@ async def get_user_stats_by_role(
     """
     service = UserService(db)
     return await service.count_users_by_role(tenant.tenant_id)
+
+
+# =========================
+# Invite Endpoint
+# =========================
+
+
+@router.post(
+    "/invite",
+    response_model=UserInviteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Invite a new user",
+    dependencies=[Depends(require_permissions("users.create"))],
+)
+async def invite_user(
+    data: UserInviteRequest,
+    tenant: RequestTenant,
+    user: ValidatedUser,
+    db: DatabaseSession,
+) -> UserInviteResponse:
+    """
+    Invite a new user by email.
+
+    Creates a user account with PENDING status and a temporary password,
+    then sends an invitation email with login credentials.
+    Requires `users.create` permission.
+    """
+    import secrets
+
+    service = UserService(db)
+
+    # Generate a secure temporary password that meets policy requirements
+    temp_password = secrets.token_urlsafe(12) + "!A1"
+
+    try:
+        new_user = await service.create_user(
+            tenant_id=tenant.tenant_id,
+            email=data.email,
+            password=temp_password,
+            first_name=data.first_name,
+            last_name=data.last_name,
+            role=data.role,
+            status=UserStatus.PENDING,
+            email_verified=False,
+        )
+    except UserServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+    except IntegrityError as e:
+        if "uq_users_email_tenant" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A user with this email already exists",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to invite user due to a database constraint",
+        )
+
+    # Send invitation email with temporary credentials
+    try:
+        if settings.is_production:
+            portal_url = f"https://{tenant.subdomain}.simsplus.io"
+        else:
+            portal_url = "http://localhost:3000"
+
+        role_display = data.role.value.replace("_", " ").title()
+
+        # Build inviter display name from the current user's email as fallback
+        inviter_name = user.get("email", "An administrator")
+
+        await email_service.send_user_invite(
+            to_email=data.email,
+            inviter_name=inviter_name,
+            school_name=tenant.name,
+            temp_password=temp_password,
+            role=role_display,
+            portal_url=portal_url,
+        )
+        logger.info("invite_email_sent", to=data.email)
+    except Exception:
+        # Log error but don't fail -- the user account was already created
+        logger.error("invite_email_failed", to=data.email, exc_info=True)
+
+    return UserInviteResponse(
+        id=new_user.id,
+        email=new_user.email,
+        first_name=new_user.first_name,
+        last_name=new_user.last_name,
+        role=new_user.role,
+        status=new_user.status,
+        created_at=new_user.created_at,
+    )

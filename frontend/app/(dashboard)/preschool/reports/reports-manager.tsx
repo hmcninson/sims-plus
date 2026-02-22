@@ -545,7 +545,7 @@ export function ReportsManager({
                       <TableHead className="w-12"></TableHead>
                       <TableHead>Student</TableHead>
                       <TableHead>Report Status</TableHead>
-                      <TableHead>Progress</TableHead>
+                      <TableHead className="hidden sm:table-cell">Progress</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -597,7 +597,7 @@ export function ReportsManager({
                               <Badge variant="secondary">Not Generated</Badge>
                             )}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="hidden sm:table-cell">
                             {report?.overall_progress ? (
                               <p className="max-w-[200px] truncate text-sm text-muted-foreground">
                                 {report.overall_progress}

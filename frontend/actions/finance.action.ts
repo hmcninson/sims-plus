@@ -208,7 +208,7 @@ export async function deleteFeeType(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/finance/fee-types/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -307,7 +307,7 @@ export async function deleteFeeStructure(id: string): Promise<ActionResult<void>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/finance/fee-structures/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -367,7 +367,7 @@ export async function deleteFeeItem(
       token,
       subdomain,
     });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -498,7 +498,7 @@ export async function deleteInvoice(id: string): Promise<ActionResult<void>> {
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/finance/invoices/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,
@@ -919,7 +919,7 @@ export async function deleteScholarship(id: string): Promise<ActionResult<void>>
   try {
     const { token, subdomain } = await getAuthContext();
     await apiDelete(`/finance/scholarships/${id}`, { token, subdomain });
-    return { success: true };
+    return { success: true, data: undefined };
   } catch (error) {
     return {
       success: false,

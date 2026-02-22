@@ -391,7 +391,7 @@ export function ScoreEntryForm({
             <div className="flex items-center gap-2">
               <Label>Grading Scale:</Label>
               <Select value={selectedScaleId} onValueChange={setSelectedScaleId}>
-                <SelectTrigger className="w-[280px]">
+                <SelectTrigger className="w-full sm:w-[280px]">
                   <SelectValue placeholder="Select grading scale" />
                 </SelectTrigger>
                 <SelectContent>
@@ -408,7 +408,7 @@ export function ScoreEntryForm({
               <div className="flex items-center gap-2">
                 <Label>Section:</Label>
                 <Select value={selectedSection} onValueChange={setSelectedSection}>
-                  <SelectTrigger className="w-[150px]">
+                  <SelectTrigger className="w-full sm:w-[150px]">
                     <SelectValue placeholder="All Sections" />
                   </SelectTrigger>
                   <SelectContent>
@@ -451,7 +451,7 @@ export function ScoreEntryForm({
                           placeholder="Search..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="h-7 pl-7 pr-7 w-[180px] text-sm"
+                          className="h-7 pl-7 pr-7 w-full sm:w-[180px] text-sm"
                         />
                         {searchQuery && (
                           <button

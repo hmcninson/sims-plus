@@ -604,7 +604,7 @@ export function AddGuardianDialog({
                     <User className="h-4 w-4" />
                     Personal Information
                   </h4>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="text-muted-foreground">Name:</span>{" "}
                       <span className="font-medium">{formValues.first_name} {formValues.last_name}</span>
@@ -622,7 +622,7 @@ export function AddGuardianDialog({
                     <Phone className="h-4 w-4" />
                     Contact Information
                   </h4>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="text-muted-foreground">Phone:</span>{" "}
                       <span className="font-medium">{formValues.phone}</span>
@@ -634,13 +634,13 @@ export function AddGuardianDialog({
                       </div>
                     )}
                     {formValues.email && (
-                      <div className="col-span-2">
+                      <div className="md:col-span-2">
                         <span className="text-muted-foreground">Email:</span>{" "}
                         <span className="font-medium">{formValues.email}</span>
                       </div>
                     )}
                     {(formValues.address || formValues.city || formValues.region) && (
-                      <div className="col-span-2">
+                      <div className="md:col-span-2">
                         <span className="text-muted-foreground">Address:</span>{" "}
                         <span className="font-medium">
                           {[formValues.address, formValues.city, formValues.region].filter(Boolean).join(", ")}
@@ -657,7 +657,7 @@ export function AddGuardianDialog({
                       <Briefcase className="h-4 w-4" />
                       Work Information
                     </h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       {formValues.occupation && (
                         <div>
                           <span className="text-muted-foreground">Occupation:</span>{" "}

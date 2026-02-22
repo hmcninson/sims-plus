@@ -6,7 +6,7 @@ Aggregates all API endpoints under /api/v1.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent
 
 api_router = APIRouter()
 
@@ -110,19 +110,42 @@ api_router.include_router(finance.router, prefix="/finance", tags=["Finance"])
 
 
 # =========================
-# Future Route Imports
+# Notifications
 # =========================
-# These will be added as modules are implemented:
-#
-# from app.api.v1.endpoints import auth, schools, students, staff, classes
-# from app.api.v1.endpoints import subjects, attendance, exams, finance
-#
-# api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-# api_router.include_router(schools.router, prefix="/schools", tags=["Schools"])
-# api_router.include_router(students.router, prefix="/students", tags=["Students"])
-# api_router.include_router(staff.router, prefix="/staff", tags=["Staff"])
-# api_router.include_router(classes.router, prefix="/classes", tags=["Classes"])
-# api_router.include_router(subjects.router, prefix="/subjects", tags=["Subjects"])
-# api_router.include_router(attendance.router, prefix="/attendance", tags=["Attendance"])
-# api_router.include_router(exams.router, prefix="/exams", tags=["Exams"])
-# api_router.include_router(finance.router, prefix="/finance", tags=["Finance"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+
+
+# =========================
+# Audit Logs
+# =========================
+api_router.include_router(audit.router, prefix="/audit-logs", tags=["Audit"])
+
+
+# =========================
+# Dashboard
+# =========================
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+
+
+# =========================
+# Boarding
+# =========================
+api_router.include_router(boarding.router, prefix="/boarding", tags=["Boarding"])
+
+
+# =========================
+# Transport
+# =========================
+api_router.include_router(transport.router, prefix="/transport", tags=["Transport"])
+
+
+# =========================
+# Push Notifications
+# =========================
+api_router.include_router(push.router, prefix="/push", tags=["Push Notifications"])
+
+
+# =========================
+# Parent Portal
+# =========================
+api_router.include_router(parent.router, prefix="/parent", tags=["Parent Portal"])
