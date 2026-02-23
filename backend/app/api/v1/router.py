@@ -6,7 +6,7 @@ Aggregates all API endpoints under /api/v1.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain, communication_settings, messaging
 
 api_router = APIRouter()
 
@@ -161,3 +161,15 @@ api_router.include_router(teacher.router, prefix="/teacher", tags=["Teacher Port
 # School Chain Management
 # =========================
 api_router.include_router(chain.router, prefix="/chain", tags=["Chain Management"])
+
+
+# =========================
+# Communication Settings
+# =========================
+api_router.include_router(communication_settings.router, prefix="/communication-settings", tags=["Communication"])
+
+
+# =========================
+# Messaging (SMS, Email, Recipients)
+# =========================
+api_router.include_router(messaging.router, prefix="/messaging", tags=["Messaging"])

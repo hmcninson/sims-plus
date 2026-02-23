@@ -120,6 +120,8 @@ TENANT_SCOPED_TABLES: list[str] = [
     "lesson_plans",
     # User-School junction (chain support)
     "user_schools",
+    # Email log (messaging module)
+    "email_log",
 ]
 
 DEFAULT_DATABASE_URL = (

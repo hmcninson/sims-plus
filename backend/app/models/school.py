@@ -168,6 +168,14 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         comment="Preschool configuration settings (enabled, tracking options, etc.)",
     )
 
+    # Communication Settings (SMS, email, notification preferences)
+    communication_settings: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="Communication settings (SMS, email, notification preferences)",
+    )
+
     # Active flags
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

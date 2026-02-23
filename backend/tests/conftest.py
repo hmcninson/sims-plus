@@ -102,6 +102,8 @@ TENANT_SCOPED_TABLES = [
     "report_comments", "lesson_plans",
     # User-School junction (chain support)
     "user_schools",
+    # Email log (messaging module)
+    "email_log",
 ]
 
 # Tables with tenant_id that intentionally do NOT use RLS.
@@ -627,6 +629,74 @@ async def _fix_schema_mismatches():
                     WITH CHECK (tenant_id = get_current_tenant_id())
             """))
             await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON user_schools TO sims_app_user"))
+
+        # ---- Create email_log table if missing (Sprint 18.5 messaging) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'email_log'
+                AND table_schema = 'public'
+            """)
+        )
+        if result.fetchone() is None:
+            # Create emailstatus enum if missing
+            check = await conn.execute(
+                text("SELECT 1 FROM pg_type WHERE typname = 'emailstatus'"),
+            )
+            if check.fetchone() is None:
+                await conn.execute(text(
+                    "CREATE TYPE emailstatus AS ENUM ('pending', 'sent', 'delivered', 'failed', 'bounced')"
+                ))
+
+            await conn.execute(text("""
+                CREATE TABLE email_log (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    recipient_email VARCHAR(255) NOT NULL,
+                    recipient_name VARCHAR(255),
+                    subject VARCHAR(500) NOT NULL,
+                    body TEXT NOT NULL,
+                    status emailstatus NOT NULL DEFAULT 'pending',
+                    error_message TEXT,
+                    sent_at TIMESTAMPTZ,
+                    sent_by UUID,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+            # Indexes
+            await conn.execute(text("CREATE INDEX ix_email_log_tenant_id ON email_log (tenant_id)"))
+            await conn.execute(text("CREATE INDEX ix_email_log_school_id ON email_log (school_id)"))
+            await conn.execute(text("CREATE INDEX ix_email_log_recipient_email ON email_log (recipient_email)"))
+            await conn.execute(text("CREATE INDEX ix_email_log_tenant_status ON email_log (tenant_id, status)"))
+            await conn.execute(text("CREATE INDEX ix_email_log_tenant_created_at ON email_log (tenant_id, created_at)"))
+
+            # Enable RLS
+            await conn.execute(text("ALTER TABLE email_log ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE email_log FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_email_log ON email_log
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON email_log TO sims_app_user"))
+
+        # ---- Add communication_settings column to schools if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'schools'
+                AND column_name = 'communication_settings'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE schools
+                ADD COLUMN communication_settings JSONB
+            """))
 
         # ---- Add school_id to tables that don't have it yet (chain support) ----
         chain_tables = [

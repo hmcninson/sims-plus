@@ -68,6 +68,7 @@ class AuthService:
             "preschool.*",
             "boarding.*",
             "transport.*",
+            "communications.*",
             "reports.*",
         ],
         "school_admin": [
@@ -86,6 +87,7 @@ class AuthService:
             "preschool.*",
             "boarding.*",
             "transport.*",
+            "communications.*",
             "reports.*",
             # School admins have full teacher portal access (head teacher view)
             "teacher.dashboard.read",

@@ -70,7 +70,8 @@ import {
   resetUserPassword,
   getUserStatsByRole,
 } from "@/actions/users.action";
-import type { User, UserRole, UserStatus, UserListResponse } from "@/types";
+import { inviteUser } from "@/actions/settings.action";
+import type { User, UserRole, UserStatus, UserListResponse, UserInviteRequest } from "@/types";
 
 // Role definitions with colors and descriptions
 const ROLE_CONFIG: Record<UserRole, { label: string; color: string; description: string }> = {
@@ -189,6 +190,15 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
   });
   const [newPassword, setNewPassword] = useState("");
 
+  // Invite dialog state
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteFormData, setInviteFormData] = useState<UserInviteRequest>({
+    email: "",
+    first_name: "",
+    last_name: "",
+    role: "teacher" as UserRole,
+  });
+
   const refreshUsers = async () => {
     startTransition(async () => {
       const result = await listUsers({
@@ -245,6 +255,30 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
         refreshUsers();
       } else {
         toast.error("Failed to create user", {
+          description: result.error,
+        });
+      }
+    });
+  };
+
+  const handleInviteUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    startTransition(async () => {
+      const result = await inviteUser(inviteFormData);
+      if (result.success) {
+        toast.success("Invitation sent", {
+          description: `An invitation has been sent to ${inviteFormData.email}.`,
+        });
+        setInviteDialogOpen(false);
+        setInviteFormData({
+          email: "",
+          first_name: "",
+          last_name: "",
+          role: "teacher",
+        });
+        refreshUsers();
+      } else {
+        toast.error("Failed to invite user", {
           description: result.error,
         });
       }
@@ -381,116 +415,210 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                 Manage staff accounts and their access levels.
               </CardDescription>
             </div>
-            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Add User
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
-                <form onSubmit={handleCreateUser}>
-                  <DialogHeader>
-                    <DialogTitle>Add New User</DialogTitle>
-                    <DialogDescription>
-                      Create a new staff account. They will receive login credentials.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex gap-2">
+              {/* Invite User Dialog -- sends credentials email, no password needed */}
+              <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Mail className="mr-2 h-4 w-4" />
+                    Invite User
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <form onSubmit={handleInviteUser}>
+                    <DialogHeader>
+                      <DialogTitle>Invite User</DialogTitle>
+                      <DialogDescription>
+                        Send an invitation email with auto-generated login credentials.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="invite_first_name">First Name</Label>
+                          <Input
+                            id="invite_first_name"
+                            required
+                            value={inviteFormData.first_name}
+                            onChange={(e) =>
+                              setInviteFormData((prev) => ({ ...prev, first_name: e.target.value }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="invite_last_name">Last Name</Label>
+                          <Input
+                            id="invite_last_name"
+                            required
+                            value={inviteFormData.last_name}
+                            onChange={(e) =>
+                              setInviteFormData((prev) => ({ ...prev, last_name: e.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
                       <div className="space-y-2">
-                        <Label htmlFor="first_name">First Name</Label>
+                        <Label htmlFor="invite_email">Email</Label>
                         <Input
-                          id="first_name"
+                          id="invite_email"
+                          type="email"
                           required
-                          value={formData.first_name}
+                          value={inviteFormData.email}
                           onChange={(e) =>
-                            setFormData((prev) => ({ ...prev, first_name: e.target.value }))
+                            setInviteFormData((prev) => ({ ...prev, email: e.target.value }))
                           }
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="last_name">Last Name</Label>
-                        <Input
-                          id="last_name"
-                          required
-                          value={formData.last_name}
-                          onChange={(e) =>
-                            setFormData((prev) => ({ ...prev, last_name: e.target.value }))
+                        <Label htmlFor="invite_role">Role</Label>
+                        <Select
+                          value={inviteFormData.role}
+                          onValueChange={(value) =>
+                            setInviteFormData((prev) => ({ ...prev, role: value as UserRole }))
                           }
-                        />
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STAFF_ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {ROLE_CONFIG[role].label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        required
-                        value={formData.email}
-                        onChange={(e) =>
-                          setFormData((prev) => ({ ...prev, email: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone (Optional)</Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="+233 XX XXX XXXX"
-                        value={formData.phone}
-                        onChange={(e) =>
-                          setFormData((prev) => ({ ...prev, phone: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Password</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        required
-                        minLength={8}
-                        value={formData.password}
-                        onChange={(e) =>
-                          setFormData((prev) => ({ ...prev, password: e.target.value }))
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Min 8 characters with uppercase, lowercase, number, and special character
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="role">Role</Label>
-                      <Select
-                        value={formData.role}
-                        onValueChange={(value) =>
-                          setFormData((prev) => ({ ...prev, role: value as UserRole }))
-                        }
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setInviteDialogOpen(false)}
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STAFF_ROLES.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {ROLE_CONFIG[role].label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={isPending}>
+                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Send Invitation
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              {/* Add User Dialog -- manual user creation with explicit password */}
+              <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Add User
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <form onSubmit={handleCreateUser}>
+                    <DialogHeader>
+                      <DialogTitle>Add New User</DialogTitle>
+                      <DialogDescription>
+                        Create a new staff account. They will receive login credentials.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="first_name">First Name</Label>
+                          <Input
+                            id="first_name"
+                            required
+                            value={formData.first_name}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, first_name: e.target.value }))
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="last_name">Last Name</Label>
+                          <Input
+                            id="last_name"
+                            required
+                            value={formData.last_name}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, last_name: e.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          required
+                          value={formData.email}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, email: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone (Optional)</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          placeholder="+233 XX XXX XXXX"
+                          value={formData.phone}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, phone: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="password">Password</Label>
+                        <Input
+                          id="password"
+                          type="password"
+                          required
+                          minLength={8}
+                          value={formData.password}
+                          onChange={(e) =>
+                            setFormData((prev) => ({ ...prev, password: e.target.value }))
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Min 8 characters with uppercase, lowercase, number, and special character
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="role">Role</Label>
+                        <Select
+                          value={formData.role}
+                          onValueChange={(value) =>
+                            setFormData((prev) => ({ ...prev, role: value as UserRole }))
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STAFF_ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {ROLE_CONFIG[role].label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="submit" disabled={isPending}>
-                      {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Create User
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <DialogFooter>
+                      <Button type="submit" disabled={isPending}>
+                        {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Create User
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

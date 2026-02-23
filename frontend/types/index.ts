@@ -3071,3 +3071,11 @@ export type { SchoolProfile, SchoolProfileUpdate, SchoolBrandingUpdate } from ".
 
 // Re-export Finance types
 export * from "./finance.type";
+
+// Re-export Communication types
+export type {
+  SMSSettings,
+  EmailSettings,
+  NotificationDefaults,
+  CommunicationSettings,
+} from "./communication.type";

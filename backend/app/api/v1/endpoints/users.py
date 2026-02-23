@@ -34,6 +34,8 @@ import structlog
 
 from app.services.user import UserService, UserServiceError
 from app.services.email import email_service
+from app.services.audit import AuditService, AuditEventType
+from app.services.token_blacklist import get_token_blacklist_service
 
 logger = structlog.get_logger()
 
@@ -119,6 +121,7 @@ async def create_user(
     data: UserCreate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> UserResponse:
     """
     Create a new user.
@@ -182,6 +185,17 @@ async def create_user(
         # Log error but don't fail the request -- user is already created
         logger.error("credentials_email_failed", to=data.email, exc_info=True)
 
+    # Audit: log account creation by admin
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.ACCOUNT_CREATED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=user.id,
+        details={"role": data.role.value, "email": data.email},
+    )
+
     return _user_to_response(user)
 
 
@@ -224,6 +238,7 @@ async def update_user(
     data: UserUpdate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> UserResponse:
     """
     Update a user.
@@ -248,6 +263,27 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # Token blacklisting: if status was changed to suspended/deactivated via PUT,
+    # blacklist all their tokens so they are immediately logged out.
+    if data.status in (UserStatus.SUSPENDED, UserStatus.DEACTIVATED):
+        try:
+            blacklist_service = await get_token_blacklist_service()
+            await blacklist_service.blacklist_user_tokens(str(user_id))
+            logger.info("user_tokens_blacklisted_via_put", user_id=str(user_id), new_status=data.status.value)
+        except Exception:
+            logger.error("token_blacklist_failed_via_put", user_id=str(user_id), exc_info=True)
+
+    # Audit: log user profile update
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.SETTINGS_CHANGED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=user_id,
+        details={"updated_fields": [k for k, v in data.model_dump(exclude_unset=True).items()]},
+    )
 
     return _user_to_response(user)
 
@@ -286,6 +322,24 @@ async def delete_user(
             detail="User not found",
         )
 
+    # Immediately invalidate all sessions for the deleted user
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(user_id))
+    except Exception:
+        logger.error("token_blacklist_failed_on_delete", user_id=str(user_id), exc_info=True)
+
+    # Audit: log account deletion
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.ACCOUNT_DEACTIVATED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user_id),
+        target_type="user",
+        target_id=user_id,
+        details={"action": "deleted"},
+    )
+
 
 # =========================
 # Role & Status Endpoints
@@ -303,6 +357,7 @@ async def update_user_role(
     data: UserRoleUpdate,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> UserResponse:
     """
     Update a user's role.
@@ -317,6 +372,17 @@ async def update_user_role(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    # Audit: log role change
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.USER_ROLE_CHANGED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=user_id,
+        details={"new_role": data.role.value},
+    )
 
     return _user_to_response(user)
 
@@ -356,6 +422,37 @@ async def update_user_status(
             detail="User not found",
         )
 
+    # Immediately invalidate all sessions when user is suspended or deactivated
+    if data.status in (UserStatus.SUSPENDED, UserStatus.DEACTIVATED):
+        try:
+            blacklist_service = await get_token_blacklist_service()
+            await blacklist_service.blacklist_user_tokens(str(user_id))
+        except Exception:
+            logger.error(
+                "token_blacklist_failed_on_status_change",
+                user_id=str(user_id),
+                new_status=data.status.value,
+                exc_info=True,
+            )
+
+    # Audit: log status change with appropriate event type
+    status_event_map = {
+        UserStatus.ACTIVE: AuditEventType.ACCOUNT_ACTIVATED,
+        UserStatus.SUSPENDED: AuditEventType.ACCOUNT_SUSPENDED,
+        UserStatus.DEACTIVATED: AuditEventType.ACCOUNT_DEACTIVATED,
+    }
+    audit_event = status_event_map.get(data.status, AuditEventType.SETTINGS_CHANGED)
+
+    audit = AuditService(db)
+    await audit.log(
+        event_type=audit_event,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user_id),
+        target_type="user",
+        target_id=user_id,
+        details={"new_status": data.status.value},
+    )
+
     return _user_to_response(user)
 
 
@@ -370,6 +467,7 @@ async def reset_user_password(
     data: ResetUserPasswordRequest,
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> UserResponse:
     """
     Reset a user's password (admin action).
@@ -390,7 +488,42 @@ async def reset_user_password(
             detail="User not found",
         )
 
-    # TODO: Send email notification if data.send_email is True
+    # Invalidate all existing sessions so old tokens can't be reused
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(user_id))
+    except Exception:
+        logger.error("token_blacklist_failed_on_password_reset", user_id=str(user_id), exc_info=True)
+
+    # Send email with new password if requested
+    if data.send_email:
+        try:
+            if settings.is_production:
+                portal_url = f"https://{tenant.subdomain}.simsplus.io"
+            else:
+                portal_url = "http://localhost:3000"
+            await email_service.send_user_credentials_email(
+                to_email=user.email,
+                user_name=f"{user.first_name} {user.last_name}",
+                password=data.new_password,
+                role=user.role.value.replace("_", " ").title(),
+                school_name=tenant.name,
+                portal_url=portal_url,
+            )
+            logger.info("password_reset_email_sent", to=user.email)
+        except Exception:
+            logger.error("password_reset_email_failed", to=user.email, exc_info=True)
+
+    # Audit: log admin-initiated password reset
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.PASSWORD_RESET_COMPLETE,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=user_id,
+        details={"send_email": data.send_email},
+    )
 
     return _user_to_response(user)
 
@@ -501,6 +634,17 @@ async def invite_user(
     except Exception:
         # Log error but don't fail -- the user account was already created
         logger.error("invite_email_failed", to=data.email, exc_info=True)
+
+    # Audit: log invited user account creation
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.ACCOUNT_CREATED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(user["user_id"]),
+        target_type="user",
+        target_id=new_user.id,
+        details={"role": data.role.value, "email": data.email, "method": "invite"},
+    )
 
     return UserInviteResponse(
         id=new_user.id,

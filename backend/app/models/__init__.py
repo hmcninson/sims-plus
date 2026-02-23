@@ -127,6 +127,7 @@ from app.models.parent import (
     ParentNotificationPreference,
 )
 from app.models.user_school import UserSchool
+from app.models.email_log import EmailLog, EmailStatus
 
 __all__ = [
     "Base",
@@ -257,4 +258,7 @@ __all__ = [
     "ParentNotificationPreference",
     # User-School junction (chain support)
     "UserSchool",
+    # Email log
+    "EmailLog",
+    "EmailStatus",
 ]
