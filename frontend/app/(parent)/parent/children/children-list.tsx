@@ -3,7 +3,6 @@
 import Link from "next/link";
 import {
   Users,
-  CalendarCheck,
   GraduationCap,
   ChevronRight,
 } from "lucide-react";
@@ -76,6 +75,11 @@ export function ChildrenList({ children }: ChildrenListProps) {
                           : ""}
                       </span>
                     </div>
+                    {child.school_name && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {child.school_name}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground mt-0.5">
                       ID: {child.admission_number}
                     </p>

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.academic import AcademicYear, Term
+from app.models.school import School
 from app.models.student import Guardian, Student, StudentGuardian
 from app.models.user import User
 
@@ -111,6 +112,8 @@ class ParentService:
             .options(
                 selectinload(Student.class_),
                 selectinload(Student.section),
+                # Load school for chain tenants where children attend different schools
+                selectinload(Student.school),
             )
             .order_by(Student.last_name, Student.first_name)
         )
@@ -220,6 +223,7 @@ class ParentService:
             .options(
                 selectinload(Student.class_),
                 selectinload(Student.section),
+                selectinload(Student.school),
             )
         )
         student = result.scalar_one_or_none()
@@ -290,4 +294,7 @@ class ParentService:
             "academic_year": current_year_name,
             "class_id": student.class_id,
             "section_id": student.section_id,
+            # School context for chain tenants
+            "school_id": student.school_id,
+            "school_name": student.school.name if student.school else None,
         }

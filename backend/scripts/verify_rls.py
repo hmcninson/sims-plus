@@ -115,6 +115,11 @@ TENANT_SCOPED_TABLES: list[str] = [
     "announcements",
     "teacher_notes",
     "parent_notification_preferences",
+    # Teacher Portal
+    "report_comments",
+    "lesson_plans",
+    # User-School junction (chain support)
+    "user_schools",
 ]
 
 DEFAULT_DATABASE_URL = (

@@ -15,7 +15,9 @@ from sqlalchemy import select
 from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
+    OptionalSchoolCtx,
     RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.models.academic import AcademicYear
@@ -36,7 +38,6 @@ from app.schemas.finance import (
 from app.services.finance import ScholarshipService, FinanceAuditService, FinanceServiceError
 
 from ._helpers import (
-    get_school_for_tenant,
     _build_scholarship_response,
     _build_student_scholarship_response,
 )
@@ -53,24 +54,16 @@ router = APIRouter()
 )
 async def create_scholarship(
     data: ScholarshipCreate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> ScholarshipResponse:
     """Create a new scholarship."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = ScholarshipService(db)
     try:
         scholarship = await service.create_scholarship(
-            tenant_id=tenant.tenant_id,
-            school_id=school.id,
+            tenant_id=school_ctx.tenant_id,
+            school_id=school_ctx.school_id,
             name=data.name,
             code=data.code,
             description=data.description,
@@ -87,7 +80,7 @@ async def create_scholarship(
         # Log audit trail for scholarship creation
         audit_service = FinanceAuditService(db)
         await audit_service.log_create(
-            tenant_id=tenant.tenant_id,
+            tenant_id=school_ctx.tenant_id,
             entity_type="scholarship",
             entity_id=scholarship.id,
             performed_by=UUID(user_id),
@@ -124,6 +117,7 @@ async def create_scholarship(
 async def list_scholarships(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     academic_year_id: Optional[UUID] = Query(None),
     scholarship_type: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
@@ -131,9 +125,12 @@ async def list_scholarships(
     page_size: int = Query(20, ge=1, le=100),
 ) -> ScholarshipListResponse:
     """List all scholarships with filters."""
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
     service = ScholarshipService(db)
     scholarships, total = await service.list_scholarships(
         tenant_id=tenant.tenant_id,
+        school_id=school_id,
         academic_year_id=academic_year_id,
         scholarship_type=scholarship_type,
         is_active=is_active,

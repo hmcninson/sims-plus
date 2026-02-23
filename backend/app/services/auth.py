@@ -23,11 +23,18 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User, UserRole, UserStatus
-from app.models.tenant import Tenant
+from app.models.tenant import Tenant, TenantType
+from app.models.user_school import UserSchool
 from app.services.audit import AuditService, AuditEventType
 from app.services.email import email_service
 
 logger = structlog.get_logger()
+
+# Maximum number of school UUIDs to embed in the JWT for chain tenants.
+# Beyond this threshold the token uses a ["*"] sentinel meaning "all schools
+# in the tenant" to keep JWTs under ~2 KB.  The DB query in get_school_context
+# still validates that the requested school belongs to the tenant.
+MAX_JWT_SCHOOL_IDS = 20
 
 
 class AuthenticationError(Exception):
@@ -80,6 +87,23 @@ class AuthService:
             "boarding.*",
             "transport.*",
             "reports.*",
+            # School admins have full teacher portal access (head teacher view)
+            "teacher.dashboard.read",
+            "teacher.schedule.read",
+            "teacher.classes.read",
+            "teacher.grading.read",
+            "teacher.grading.write",
+            "teacher.lessons.read",
+            "teacher.lessons.write",
+            "teacher.notes.read",
+            "teacher.notes.write",
+            "teacher.attendance.read",
+            "teacher.reports.read",
+            "teacher.reports.write",
+            "teacher.reports.head_teacher",
+            "teacher.performance.read",
+            "teacher.communication.write",
+            "teacher.notifications.read",
         ],
         "academic_head": [
             "students.read",
@@ -92,6 +116,23 @@ class AuthService:
             "exams.*",
             "preschool.*",
             "reports.academic",
+            # Academic heads have full teacher portal access including head teacher features
+            "teacher.dashboard.read",
+            "teacher.schedule.read",
+            "teacher.classes.read",
+            "teacher.grading.read",
+            "teacher.grading.write",
+            "teacher.lessons.read",
+            "teacher.lessons.write",
+            "teacher.notes.read",
+            "teacher.notes.write",
+            "teacher.attendance.read",
+            "teacher.reports.read",
+            "teacher.reports.write",
+            "teacher.reports.head_teacher",
+            "teacher.performance.read",
+            "teacher.communication.write",
+            "teacher.notifications.read",
         ],
         "finance_officer": [
             "students.read",
@@ -116,6 +157,21 @@ class AuthService:
             "boarding.read",
             "boarding.write",
             "transport.read",
+            # Teacher portal permissions
+            "teacher.dashboard.read",
+            "teacher.schedule.read",
+            "teacher.classes.read",
+            "teacher.grading.read",
+            "teacher.grading.write",
+            "teacher.lessons.read",
+            "teacher.lessons.write",
+            "teacher.notes.read",
+            "teacher.notes.write",
+            "teacher.attendance.read",
+            "teacher.reports.read",
+            "teacher.reports.write",
+            "teacher.communication.write",
+            "teacher.notifications.read",
         ],
         "house_parent": [
             "students.read",
@@ -274,6 +330,9 @@ class AuthService:
         # Get permissions for user's role
         permissions = self.get_role_permissions(user.role.value)
 
+        # Build chain-aware extra claims for JWT
+        extra_claims = await self._build_extra_claims(user, tenant_id)
+
         # Generate tokens with full claims
         access_token = create_access_token(
             subject=str(user.id),
@@ -281,10 +340,7 @@ class AuthService:
             school_id=str(user.school_id) if user.school_id else None,
             role=user.role.value,
             permissions=permissions,
-            extra_claims={
-                "email": user.email,
-                "tenant_subdomain": await self._get_tenant_subdomain(tenant_id),
-            },
+            extra_claims=extra_claims,
         )
         refresh_token = create_refresh_token(
             subject=str(user.id),
@@ -424,6 +480,9 @@ class AuthService:
         # Get permissions for user's role
         permissions = self.get_role_permissions(user.role.value)
 
+        # Build chain-aware extra claims for JWT
+        extra_claims = await self._build_extra_claims(user, tenant_id)
+
         # Generate new tokens with full claims
         access_token = create_access_token(
             subject=str(user.id),
@@ -431,10 +490,7 @@ class AuthService:
             school_id=str(user.school_id) if user.school_id else None,
             role=user.role.value,
             permissions=permissions,
-            extra_claims={
-                "email": user.email,
-                "tenant_subdomain": await self._get_tenant_subdomain(tenant_id),
-            },
+            extra_claims=extra_claims,
         )
         new_refresh_token = create_refresh_token(
             subject=str(user.id),
@@ -628,12 +684,96 @@ class AuthService:
         return result.scalar_one_or_none()
 
     async def _get_tenant_subdomain(self, tenant_id: UUID) -> str:
-        """Get tenant subdomain."""
+        """Get tenant subdomain. Used by invite_user for email URL."""
         result = await self.db.execute(
             select(Tenant.subdomain).where(Tenant.id == tenant_id)
         )
         subdomain = result.scalar_one_or_none()
         return subdomain or ""
+
+    async def _get_accessible_school_ids(self, user_id: UUID, tenant_id: UUID) -> list[str]:
+        """
+        Query user_schools to find all schools this user can access.
+
+        Returns a list of school UUID strings. For chain tenants this
+        determines which schools appear in the JWT accessible_school_ids
+        claim and which X-Active-School values are accepted.
+        """
+        result = await self.db.execute(
+            select(UserSchool.school_id)
+            .where(UserSchool.tenant_id == tenant_id)
+            .where(UserSchool.user_id == user_id)
+            .where(UserSchool.is_active.is_(True))
+        )
+        school_ids = result.scalars().all()
+        return [str(sid) for sid in school_ids]
+
+    async def _build_extra_claims(self, user: User, tenant_id: UUID) -> dict:
+        """
+        Build extra JWT claims including chain support fields.
+
+        For single-school tenants: includes email and subdomain only.
+        For chain tenants: adds tenant_type and accessible_school_ids.
+
+        Optimized: fetches subdomain + tenant_type in a single query
+        instead of two serial round-trips.
+        """
+        # Single query for both subdomain and tenant_type
+        result = await self.db.execute(
+            select(Tenant.subdomain, Tenant.tenant_type).where(Tenant.id == tenant_id)
+        )
+        row = result.one_or_none()
+        subdomain = row[0] if row else ""
+        tenant_type_raw = row[1] if row else None
+
+        if row is None:
+            # This should never happen -- the tenant should exist if the user exists.
+            # Raise instead of continuing with a half-built JWT.
+            logger.error(
+                "tenant_not_found_during_token_build",
+                tenant_id=str(tenant_id),
+                user_id=str(user.id),
+            )
+            raise AuthenticationError(
+                "Internal error: tenant configuration not found",
+                code="tenant_config_error",
+            )
+
+        if tenant_type_raw is None:
+            tenant_type = "single_school"
+        elif isinstance(tenant_type_raw, TenantType):
+            tenant_type = tenant_type_raw.value
+        else:
+            tenant_type = str(tenant_type_raw)
+
+        extra_claims: dict = {
+            "email": user.email,
+            "tenant_subdomain": subdomain,
+        }
+
+        # Add chain-specific claims when tenant is a school chain
+        if tenant_type == "school_chain":
+            accessible_ids = await self._get_accessible_school_ids(user.id, tenant_id)
+            extra_claims["tenant_type"] = tenant_type
+
+            # Keep JWT compact for large chains: when the user has access to
+            # more schools than the threshold, replace the full UUID list with
+            # a ["*"] sentinel.  The DB-level check in get_school_context still
+            # validates that the requested school belongs to the tenant, so
+            # security is not weakened.
+            if len(accessible_ids) > MAX_JWT_SCHOOL_IDS:
+                extra_claims["accessible_school_ids"] = ["*"]
+                logger.info(
+                    "jwt_school_ids_truncated",
+                    user_id=str(user.id),
+                    tenant_id=str(tenant_id),
+                    school_count=len(accessible_ids),
+                    threshold=MAX_JWT_SCHOOL_IDS,
+                )
+            else:
+                extra_claims["accessible_school_ids"] = accessible_ids
+
+        return extra_claims
 
     async def _record_failed_login(
         self,

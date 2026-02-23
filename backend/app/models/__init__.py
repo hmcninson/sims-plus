@@ -113,6 +113,20 @@ from app.models.sms import (
     SMSStatus,
 )
 from app.models.push_subscription import PushSubscription
+from app.models.teacher import (
+    ReportComment,
+    LessonPlan,
+    LessonPlanStatus,
+)
+from app.models.parent import (
+    Announcement,
+    AnnouncementTarget,
+    AnnouncementPriority,
+    TeacherNote,
+    NoteType,
+    ParentNotificationPreference,
+)
+from app.models.user_school import UserSchool
 
 __all__ = [
     "Base",
@@ -230,4 +244,17 @@ __all__ = [
     "SMSStatus",
     # Push subscription
     "PushSubscription",
+    # Teacher portal models
+    "ReportComment",
+    "LessonPlan",
+    "LessonPlanStatus",
+    # Parent portal models
+    "Announcement",
+    "AnnouncementTarget",
+    "AnnouncementPriority",
+    "TeacherNote",
+    "NoteType",
+    "ParentNotificationPreference",
+    # User-School junction (chain support)
+    "UserSchool",
 ]

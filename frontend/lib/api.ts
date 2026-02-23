@@ -3,10 +3,37 @@
  *
  * Server-side API client for use with Server Actions.
  * Uses process.env.API_URL which is only available server-side.
+ *
+ * Chain support: automatically reads the "x-active-school" cookie and
+ * includes it as the X-Active-School header on all API calls. This is
+ * centralized here so individual action files do not need modification.
  */
 import "server-only";
 
+import { cookies } from "next/headers";
+
 const API_BASE_URL = process.env.API_URL || "http://localhost:8000/api/v1";
+
+/**
+ * Read the active school ID from the x-active-school cookie.
+ * Returns undefined if the cookie is not set (single-school tenant).
+ * Wrapped in try/catch because cookies() is only available during
+ * a Server Action or Route Handler render -- not during static build.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function getActiveSchoolFromCookie(): Promise<string | undefined> {
+  try {
+    const cookieStore = await cookies();
+    const value = cookieStore.get("x-active-school")?.value;
+    // Validate UUID format to prevent arbitrary values being forwarded as header
+    if (value && UUID_RE.test(value)) return value;
+    return undefined;
+  } catch {
+    // cookies() throws outside of request context (e.g., build time)
+    return undefined;
+  }
+}
 
 /**
  * Typed API error that preserves HTTP status code and request ID
@@ -52,13 +79,20 @@ interface FetchOptions extends RequestInit {
 }
 
 /**
- * Fetch wrapper with error handling
+ * Fetch wrapper with error handling.
+ *
+ * Automatically includes X-Active-School from the cookie when no explicit
+ * activeSchoolId is provided. This ensures chain school context propagates
+ * through all API calls without modifying individual action files.
  */
 export async function apiFetch<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
   const { token, subdomain, activeSchoolId, ...fetchOptions } = options;
+
+  // Auto-resolve active school from cookie if not explicitly provided
+  const resolvedSchoolId = activeSchoolId ?? (await getActiveSchoolFromCookie());
 
   // Correlate client requests with backend structured logs
   const requestId = crypto.randomUUID();
@@ -68,7 +102,7 @@ export async function apiFetch<T>(
     "X-Request-ID": requestId,
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(subdomain && { "X-Subdomain": subdomain }),
-    ...(activeSchoolId && { "X-Active-School": activeSchoolId }),
+    ...(resolvedSchoolId && { "X-Active-School": resolvedSchoolId }),
     ...options.headers,
   };
 
@@ -179,6 +213,9 @@ export async function apiUpload<T>(
 ): Promise<T> {
   const { token, subdomain, activeSchoolId } = options || {};
 
+  // Auto-resolve active school from cookie if not explicitly provided
+  const resolvedSchoolId = activeSchoolId ?? (await getActiveSchoolFromCookie());
+
   const requestId = crypto.randomUUID();
 
   const headers: HeadersInit = {
@@ -186,7 +223,7 @@ export async function apiUpload<T>(
     "X-Request-ID": requestId,
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(subdomain && { "X-Subdomain": subdomain }),
-    ...(activeSchoolId && { "X-Active-School": activeSchoolId }),
+    ...(resolvedSchoolId && { "X-Active-School": resolvedSchoolId }),
   };
 
   const url = `${API_BASE_URL}${endpoint}`;

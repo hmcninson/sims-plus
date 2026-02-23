@@ -94,6 +94,18 @@ export function formatNumber(amount: number | string, decimals: number = 2): str
   }).format(num);
 }
 
+/**
+ * Format a time string like "08:30:00" or "08:30" to "8:30 AM".
+ * Used by the teacher schedule and dashboard pages.
+ */
+export function formatTime(time: string): string {
+  const [h, m] = time.split(":");
+  const hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return `${displayHour}:${m} ${ampm}`;
+}
+
 // Aliases for common naming conventions
 export const formatCurrency = formatGHS;
 export const formatDate = formatGhanaDate;

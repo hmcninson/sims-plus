@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
+    OptionalSchoolCtx,
     RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.schemas.finance import (
@@ -28,7 +30,7 @@ from app.schemas.finance import (
 )
 from app.services.finance import FeeStructureService, FinanceAuditService, FinanceServiceError
 
-from ._helpers import get_school_for_tenant, _build_fee_structure_response
+from ._helpers import _build_fee_structure_response
 
 router = APIRouter()
 
@@ -42,23 +44,15 @@ router = APIRouter()
 )
 async def create_fee_structure(
     data: FeeStructureCreate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> FeeStructureWithItemsResponse:
     """Create a new fee structure with items."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = FeeStructureService(db)
     fee_structure = await service.create_fee_structure(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         name=data.name,
         description=data.description,
         academic_year_id=data.academic_year_id,
@@ -74,7 +68,7 @@ async def create_fee_structure(
     # Log audit trail for fee structure creation
     audit_service = FinanceAuditService(db)
     await audit_service.log_create(
-        tenant_id=tenant.tenant_id,
+        tenant_id=school_ctx.tenant_id,
         entity_type="fee_structure",
         entity_id=fee_structure.id,
         performed_by=UUID(user_id),
@@ -93,6 +87,7 @@ async def create_fee_structure(
 async def list_fee_structures(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     academic_year_id: Optional[UUID] = Query(None),
     term_id: Optional[UUID] = Query(None),
     is_active: Optional[bool] = Query(None),
@@ -100,9 +95,12 @@ async def list_fee_structures(
     page_size: int = Query(20, ge=1, le=100),
 ) -> FeeStructureListResponse:
     """List all fee structures with filters."""
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
     service = FeeStructureService(db)
     fee_structures, total = await service.list_fee_structures(
         tenant_id=tenant.tenant_id,
+        school_id=school_id,
         academic_year_id=academic_year_id,
         term_id=term_id,
         is_active=is_active,

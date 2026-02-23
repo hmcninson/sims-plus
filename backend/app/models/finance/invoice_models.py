@@ -301,6 +301,14 @@ class InvoiceItem(Base, TenantMixin):
 
     __tablename__ = "invoice_items"
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("invoices.id", ondelete="CASCADE"),
@@ -356,6 +364,14 @@ class InvoiceScholarshipItem(Base, TenantMixin):
     """
 
     __tablename__ = "invoice_scholarship_items"
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

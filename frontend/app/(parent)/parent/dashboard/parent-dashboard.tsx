@@ -84,6 +84,11 @@ export function ParentDashboardView({
                   {child.class_name}
                   {child.section_name ? ` ${child.section_name}` : ""}
                 </p>
+                {child.school_name && (
+                  <p className="text-xs text-muted-foreground/70">
+                    {child.school_name}
+                  </p>
+                )}
               </div>
             </button>
           ))}

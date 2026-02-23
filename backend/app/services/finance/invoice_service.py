@@ -1184,12 +1184,16 @@ class InvoiceService:
         term_id: Optional[UUID] = None,
         status: Optional[str] = None,
         class_id: Optional[UUID] = None,
+        school_id: Optional[UUID] = None,
     ) -> list[dict]:
         """Export invoices as list of dicts for CSV writer."""
         conditions = [
             Invoice.tenant_id == tenant_id,
             Invoice.deleted_at.is_(None),
         ]
+        # Chain support: scope to active school when provided
+        if school_id:
+            conditions.append(Invoice.school_id == school_id)
         if academic_year_id:
             conditions.append(Invoice.academic_year_id == academic_year_id)
         if term_id:

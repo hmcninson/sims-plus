@@ -45,6 +45,7 @@ import {
   Eye,
   EyeOff,
   School,
+  Building2,
   UserCog,
   ClipboardCheck,
   Pencil,
@@ -88,7 +89,7 @@ const SCHOOL_TYPES = [
 
 // Subscription plans
 const PLANS = {
-  trial: { name: "Trial", price: "Free", period: "14 days" },
+  trial: { name: "Trial", price: "Free", period: "30 days" },
   starter: { name: "Starter", price: "GHS 500", period: "/month" },
   professional: { name: "Professional", price: "GHS 1,500", period: "/month" },
   enterprise: { name: "Enterprise", price: "Custom", period: "" },
@@ -112,6 +113,7 @@ const STEPS = [
 
 // Step 1 field names
 const STEP_1_FIELDS = [
+  "tenant_type",
   "school_name",
   "subdomain",
   "school_type",
@@ -132,6 +134,7 @@ type SubdomainStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 const registerSchema = z
   .object({
     // Step 1
+    tenant_type: z.enum(["single_school", "school_chain"]),
     school_name: z.string().min(2, "School name is required").max(255),
     subdomain: z
       .string()
@@ -179,6 +182,7 @@ export default function RegisterPage() {
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
+      tenant_type: "single_school",
       school_name: "",
       subdomain: "",
       school_type: "",
@@ -346,6 +350,7 @@ export default function RegisterPage() {
       admin_email: values.email,
       admin_phone: values.phone || "",
       admin_password: values.password,
+      tenant_type: values.tenant_type,
       plan: selectedPlan,
     });
 
@@ -480,15 +485,71 @@ export default function RegisterPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {/* Account Type Selector */}
+                      <FormField
+                        control={form.control}
+                        name="tenant_type"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Account Type *</FormLabel>
+                            <div className="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                onClick={() => field.onChange("single_school")}
+                                className={`rounded-lg border-2 p-4 text-center transition-colors ${
+                                  field.value === "single_school"
+                                    ? "border-primary bg-primary/5"
+                                    : "border-muted hover:border-muted-foreground/50"
+                                }`}
+                              >
+                                <School className="mx-auto mb-2 size-6" />
+                                <div className="text-sm font-medium">
+                                  Single School
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  One school, one location
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => field.onChange("school_chain")}
+                                className={`rounded-lg border-2 p-4 text-center transition-colors ${
+                                  field.value === "school_chain"
+                                    ? "border-primary bg-primary/5"
+                                    : "border-muted hover:border-muted-foreground/50"
+                                }`}
+                              >
+                                <Building2 className="mx-auto mb-2 size-6" />
+                                <div className="text-sm font-medium">
+                                  School Chain
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Multiple schools, one management
+                                </div>
+                              </button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
                       <FormField
                         control={form.control}
                         name="school_name"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>School Name *</FormLabel>
+                            <FormLabel>
+                              {form.watch("tenant_type") === "school_chain"
+                                ? "Organization Name *"
+                                : "School Name *"}
+                            </FormLabel>
                             <FormControl>
                               <Input
-                                placeholder="e.g., Bright Future Academy"
+                                placeholder={
+                                  form.watch("tenant_type") === "school_chain"
+                                    ? "e.g., Bright Future Education Group"
+                                    : "e.g., Bright Future Academy"
+                                }
                                 {...field}
                               />
                             </FormControl>
@@ -873,7 +934,19 @@ export default function RegisterPage() {
                         <dl className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <dt className="text-muted-foreground">
-                              School Name
+                              Account Type
+                            </dt>
+                            <dd className="font-medium text-foreground">
+                              {form.getValues("tenant_type") === "school_chain"
+                                ? "School Chain"
+                                : "Single School"}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between">
+                            <dt className="text-muted-foreground">
+                              {form.getValues("tenant_type") === "school_chain"
+                                ? "Organization Name"
+                                : "School Name"}
                             </dt>
                             <dd className="font-medium text-foreground">
                               {form.getValues("school_name")}
@@ -1017,7 +1090,7 @@ export default function RegisterPage() {
                       </div>
 
                       <p className="text-center text-sm text-muted-foreground">
-                        No credit card required &bull; 14-day free trial
+                        No credit card required &bull; 30-day free trial
                       </p>
                     </CardContent>
                   </>

@@ -42,6 +42,13 @@ class Department(Base, TenantMixin, SoftDeleteMixin):
         {"extend_existing": True},
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -235,6 +242,13 @@ class StaffClassAssignment(Base, TenantMixin):
             name="uq_staff_class_assignment_tenant"
         ),
         {"extend_existing": True},
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     staff_id: Mapped[UUID] = mapped_column(

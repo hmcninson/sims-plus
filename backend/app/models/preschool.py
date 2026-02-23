@@ -108,6 +108,14 @@ class LearningArea(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint("tenant_id", "code", name="uq_learning_area_code"),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -173,6 +181,14 @@ class DevelopmentalSkill(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint(
             "tenant_id", "learning_area_id", "name", name="uq_skill_name"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     learning_area_id: Mapped[uuid.UUID] = mapped_column(
@@ -252,6 +268,14 @@ class PreschoolRatingScale(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint("tenant_id", "name", name="uq_rating_scale_name"),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -302,6 +326,14 @@ class PreschoolRating(Base, TenantMixin, SoftDeleteMixin):
     __tablename__ = "preschool_ratings"
     __table_args__ = (
         UniqueConstraint("tenant_id", "scale_id", "short_code", name="uq_rating_code"),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     scale_id: Mapped[uuid.UUID] = mapped_column(
@@ -373,6 +405,14 @@ class StudentSkillAssessment(Base, TenantMixin):
             "tenant_id", "student_id", "skill_id", "term_id",
             name="uq_student_skill_term"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     student_id: Mapped[uuid.UUID] = mapped_column(
@@ -472,6 +512,14 @@ class ProgressObservation(Base, TenantMixin, SoftDeleteMixin):
 
     __tablename__ = "progress_observations"
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("students.id", ondelete="CASCADE"),
@@ -567,6 +615,14 @@ class DailyActivityLog(Base, TenantMixin, SoftDeleteMixin):
             "tenant_id", "student_id", "log_date",
             name="uq_student_daily_log"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     student_id: Mapped[uuid.UUID] = mapped_column(
@@ -698,6 +754,14 @@ class PreschoolReport(Base, TenantMixin, SoftDeleteMixin):
             "tenant_id", "student_id", "term_id",
             name="uq_preschool_report"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     student_id: Mapped[uuid.UUID] = mapped_column(

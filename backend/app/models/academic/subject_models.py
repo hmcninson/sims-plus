@@ -63,6 +63,14 @@ class Subject(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint("tenant_id", "code", name="uq_subject_code"),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Basic Info
     name: Mapped[str] = mapped_column(
         String(100),
@@ -132,6 +140,14 @@ class GradingScale(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint("tenant_id", "name", name="uq_grading_scale_name"),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Basic Info
     name: Mapped[str] = mapped_column(
         String(100),
@@ -186,6 +202,14 @@ class Grade(Base, TenantMixin):
         UniqueConstraint(
             "tenant_id", "grading_scale_id", "grade", name="uq_grade"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     grading_scale_id: Mapped[uuid.UUID] = mapped_column(
@@ -251,6 +275,14 @@ class AssessmentWeight(Base, TenantMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     academic_year_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("academic_years.id", ondelete="SET NULL"),
@@ -313,6 +345,14 @@ class AcademicSettings(Base, TenantMixin):
     __tablename__ = "academic_settings"
     __table_args__ = (
         UniqueConstraint("tenant_id", name="uq_academic_settings_tenant"),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Auto-promote passing students at end of academic year

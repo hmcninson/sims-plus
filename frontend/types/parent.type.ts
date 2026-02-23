@@ -21,6 +21,10 @@ export interface ChildSummary {
   admission_number: string;
   date_of_birth: string;
   gender: string;
+  /** School ID -- present when the student is assigned to a school (chain tenants) */
+  school_id?: string;
+  /** School name -- useful for chain tenants where children attend different schools */
+  school_name?: string;
 }
 
 export interface ChildDetail extends ChildSummary {

@@ -98,6 +98,10 @@ TENANT_SCOPED_TABLES = [
     "push_subscriptions",
     # Parent Portal
     "announcements", "teacher_notes", "parent_notification_preferences",
+    # Teacher Portal
+    "report_comments", "lesson_plans",
+    # User-School junction (chain support)
+    "user_schools",
 ]
 
 # Tables with tenant_id that intentionally do NOT use RLS.
@@ -475,6 +479,189 @@ async def _fix_schema_mismatches():
                     WITH CHECK (tenant_id = get_current_tenant_id())
             """))
             await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON push_subscriptions TO sims_app_user"))
+
+        # ---- Create teacher portal tables if missing (Sprint 15-16) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'report_comments'
+                AND table_schema = 'public'
+            """)
+        )
+        if result.fetchone() is None:
+            # Create lessonplanstatus enum
+            check = await conn.execute(
+                text("SELECT 1 FROM pg_type WHERE typname = 'lessonplanstatus'"),
+            )
+            if check.fetchone() is None:
+                await conn.execute(text(
+                    "CREATE TYPE lessonplanstatus AS ENUM ('planned', 'taught', 'cancelled')"
+                ))
+
+            # Add teacher_id to class_subjects if missing
+            cs_cols = await conn.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'class_subjects'
+            """))
+            cs_col_names = {r[0] for r in cs_cols.fetchall()}
+            if "teacher_id" not in cs_col_names:
+                await conn.execute(text("""
+                    ALTER TABLE class_subjects
+                    ADD COLUMN teacher_id UUID REFERENCES staff(id) ON DELETE SET NULL
+                """))
+                await conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_class_subjects_teacher_id ON class_subjects (teacher_id)"
+                ))
+
+            # Create report_comments table
+            await conn.execute(text("""
+                CREATE TABLE report_comments (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    term_id UUID NOT NULL REFERENCES terms(id) ON DELETE CASCADE,
+                    academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                    class_teacher_comment TEXT,
+                    head_teacher_comment TEXT,
+                    class_teacher_id UUID REFERENCES staff(id) ON DELETE SET NULL,
+                    head_teacher_id UUID REFERENCES staff(id) ON DELETE SET NULL,
+                    class_teacher_signed BOOLEAN NOT NULL DEFAULT false,
+                    head_teacher_signed BOOLEAN NOT NULL DEFAULT false,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_report_comment_student_term
+                ON report_comments (tenant_id, student_id, term_id)
+                WHERE deleted_at IS NULL
+            """))
+
+            # Create lesson_plans table
+            await conn.execute(text("""
+                CREATE TABLE lesson_plans (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    teacher_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+                    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                    date DATE NOT NULL,
+                    period INTEGER,
+                    topic VARCHAR(200) NOT NULL,
+                    objectives TEXT,
+                    resources TEXT,
+                    activities TEXT,
+                    notes TEXT,
+                    status lessonplanstatus NOT NULL DEFAULT 'planned',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_lesson_plan_with_period
+                ON lesson_plans (tenant_id, teacher_id, class_id, subject_id, date, period)
+                WHERE period IS NOT NULL AND deleted_at IS NULL
+            """))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_lesson_plan_without_period
+                ON lesson_plans (tenant_id, teacher_id, class_id, subject_id, date)
+                WHERE period IS NULL AND deleted_at IS NULL
+            """))
+
+            # Enable RLS on both tables
+            for tbl in ["report_comments", "lesson_plans"]:
+                await conn.execute(text(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY"))
+                await conn.execute(text(f"ALTER TABLE {tbl} FORCE ROW LEVEL SECURITY"))
+                await conn.execute(text(f"""
+                    CREATE POLICY tenant_isolation_{tbl} ON {tbl}
+                        FOR ALL TO sims_app_user
+                        USING (tenant_id = get_current_tenant_id())
+                        WITH CHECK (tenant_id = get_current_tenant_id())
+                """))
+                await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {tbl} TO sims_app_user"))
+
+        # ---- Create user_schools table if missing (Sprint 17-18 chain support) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'user_schools'
+                AND table_schema = 'public'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE user_schools (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                    role_at_school VARCHAR(50) NOT NULL,
+                    is_primary BOOLEAN NOT NULL DEFAULT false,
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (tenant_id, user_id, school_id)
+                )
+            """))
+
+            # Create indexes
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_schools_user_id ON user_schools (user_id)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_schools_school_id ON user_schools (school_id)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_schools_tenant_id ON user_schools (tenant_id)"
+            ))
+
+            # Enable RLS
+            await conn.execute(text("ALTER TABLE user_schools ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE user_schools FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_user_schools ON user_schools
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON user_schools TO sims_app_user"))
+
+        # ---- Add school_id to tables that don't have it yet (chain support) ----
+        chain_tables = [
+            "academic_years", "terms", "class_sections", "class_subjects",
+            "subjects", "grading_scales", "grades", "assessment_weights",
+            "academic_settings", "school_holidays", "school_periods",
+            "class_timetables", "departments", "staff_class_assignments",
+            "guardians", "student_guardians", "student_attendance",
+            "staff_attendance", "exams", "exam_subjects", "exam_scores",
+            "score_change_logs", "continuous_assessments", "term_reports",
+            "learning_areas", "developmental_skills", "preschool_rating_scales",
+            "preschool_ratings", "student_skill_assessments",
+            "progress_observations", "daily_activity_logs", "preschool_reports",
+            "fee_items", "invoice_items", "invoice_scholarship_items",
+            "student_scholarships", "scholarship_applications",
+            "finance_audit_log", "report_comments", "lesson_plans",
+        ]
+        for tbl in chain_tables:
+            # Check if table exists and school_id column is missing
+            check = await conn.execute(text(f"""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = '{tbl}'
+                AND column_name = 'school_id'
+            """))
+            if check.fetchone() is None:
+                # Check if table exists at all before altering
+                tbl_check = await conn.execute(text(f"""
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_name = '{tbl}' AND table_schema = 'public'
+                """))
+                if tbl_check.fetchone() is not None:
+                    await conn.execute(text(f"""
+                        ALTER TABLE {tbl}
+                        ADD COLUMN school_id UUID REFERENCES schools(id) ON DELETE SET NULL
+                    """))
 
         await conn.commit()
 

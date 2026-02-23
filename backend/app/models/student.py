@@ -210,6 +210,13 @@ class Guardian(Base, TenantMixin, SoftDeleteMixin):
         {"extend_existing": True},
     )
 
+    # School (nullable for chain support; guardians may be shared across schools)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Basic Information
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -263,6 +270,13 @@ class StudentGuardian(Base, TenantMixin):
             name="uq_student_guardian_tenant"
         ),
         {"extend_existing": True},
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     student_id: Mapped[UUID] = mapped_column(

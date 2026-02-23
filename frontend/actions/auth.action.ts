@@ -49,6 +49,7 @@ async function clearAuthCookies() {
   const cookieStore = await cookies();
   cookieStore.delete("access_token");
   cookieStore.delete("refresh_token");
+  cookieStore.delete("x-active-school");
 }
 
 // =========================

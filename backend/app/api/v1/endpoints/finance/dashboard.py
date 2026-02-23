@@ -7,11 +7,11 @@ Dashboard and statistics endpoints for the finance module.
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import (
     DatabaseSession,
-    RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.schemas.finance import (
@@ -21,8 +21,6 @@ from app.schemas.finance import (
     RecentPayment,
 )
 from app.services.finance import FinanceDashboardService
-
-from ._helpers import get_school_for_tenant
 
 router = APIRouter()
 
@@ -34,38 +32,30 @@ router = APIRouter()
     dependencies=[Depends(require_permissions("finance.read"))],
 )
 async def get_finance_dashboard(
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     academic_year_id: Optional[UUID] = Query(None),
     term_id: Optional[UUID] = Query(None),
 ) -> FinanceDashboardResponse:
     """Get finance dashboard with stats and recent activity."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = FinanceDashboardService(db)
 
     stats = await service.get_dashboard_stats(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         academic_year_id=academic_year_id,
         term_id=term_id,
     )
 
     recent_payments = await service.get_recent_payments(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         limit=5,
     )
 
     outstanding = await service.get_outstanding_by_class(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         academic_year_id=academic_year_id,
         term_id=term_id,
     )

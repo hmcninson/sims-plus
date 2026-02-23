@@ -62,6 +62,7 @@ class OnboardingService:
         admin_last_name: str,
         admin_password: str,
         admin_phone: Optional[str] = None,
+        tenant_type: str = "single_school",
         plan: str = "trial",
     ) -> Tuple[Tenant, School, User]:
         """
@@ -81,6 +82,7 @@ class OnboardingService:
             admin_last_name: Admin last name
             admin_password: Admin password
             admin_phone: Optional admin phone
+            tenant_type: Tenant type (single_school or school_chain)
             plan: Subscription plan
 
         Returns:
@@ -115,12 +117,15 @@ class OnboardingService:
         if subscription_tier == SubscriptionTier.TRIAL:
             trial_end = datetime.now(UTC) + timedelta(days=self.TRIAL_DAYS)
 
+        # Map tenant_type string to enum (defaults to SINGLE_SCHOOL for safety)
+        resolved_tenant_type = TenantType(tenant_type.lower()) if tenant_type else TenantType.SINGLE_SCHOOL
+
         # Create tenant
         tenant = Tenant(
             name=school_name,
             subdomain=subdomain.lower(),
             slug=subdomain.lower(),
-            tenant_type=TenantType.SINGLE_SCHOOL,
+            tenant_type=resolved_tenant_type,
             subscription_tier=subscription_tier,
             subscription_start=datetime.now(UTC).date(),
             subscription_end=trial_end.date() if trial_end else None,
@@ -152,6 +157,13 @@ class OnboardingService:
         self.db.add(school)
         await self.db.flush()
 
+        # Chain tenants get chain_admin role; single schools get school_admin
+        admin_role = (
+            UserRole.CHAIN_ADMIN
+            if resolved_tenant_type == TenantType.SCHOOL_CHAIN
+            else UserRole.SCHOOL_ADMIN
+        )
+
         # Create admin user
         admin_user = User(
             tenant_id=tenant.id,
@@ -161,7 +173,7 @@ class OnboardingService:
             first_name=admin_first_name,
             last_name=admin_last_name,
             phone=admin_phone,
-            role=UserRole.SCHOOL_ADMIN,
+            role=admin_role,
             status=UserStatus.ACTIVE,  # Auto-verify for initial admin
             email_verified=True,
             email_verified_at=datetime.now(UTC),

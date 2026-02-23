@@ -350,6 +350,9 @@ function OverviewTab({
             />
             <DetailRow label="Gender" value={child.gender === "male" ? "Male" : "Female"} />
             <DetailRow label="Date of Birth" value={formatGhanaDate(child.date_of_birth)} />
+            {child.school_name && (
+              <DetailRow label="School" value={child.school_name} />
+            )}
             <DetailRow label="Academic Year" value={child.academic_year || "--"} />
             <DetailRow label="Current Term" value={child.current_term || "--"} />
             {child.class_teacher_name && (

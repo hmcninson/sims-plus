@@ -77,6 +77,13 @@ class SchoolPeriod(Base, TenantMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Optional: Link to specific class (NULL = school-wide)
     class_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("classes.id", ondelete="CASCADE"),
@@ -156,6 +163,13 @@ class SchoolHoliday(Base, TenantMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     date: Mapped[date] = mapped_column(
         Date,
         nullable=False,
@@ -217,6 +231,14 @@ class ClassTimetable(Base, TenantMixin):
             "period_number",
             name="uq_timetable_period",
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Relationships

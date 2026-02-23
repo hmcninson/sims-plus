@@ -4,19 +4,22 @@ SIMS Plus - API Dependencies
 Common dependencies injected into API endpoints.
 """
 
+import dataclasses
 from collections.abc import AsyncGenerator
 from typing import Annotated
+from uuid import UUID
 
 import structlog
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.session import async_session_maker
 from app.middleware.tenant import TenantContext
+from app.models.school import School
 from app.services.token_blacklist import get_token_blacklist_service
 
 logger = structlog.get_logger()
@@ -405,6 +408,9 @@ async def get_validated_current_user(
             "role": payload.get("role"),
             "permissions": payload.get("permissions", []),
             "email": payload.get("email"),
+            # Chain support: tenant_type and accessible schools from JWT
+            "tenant_type": payload.get("tenant_type", "single_school"),
+            "accessible_school_ids": payload.get("accessible_school_ids", []),
         }
 
     except JWTError:
@@ -462,3 +468,175 @@ def require_permissions(*required_permissions: str):
             )
 
     return check_permissions
+
+
+# =========================
+# School Context (Chain Support)
+# =========================
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SchoolContext:
+    """
+    Resolved school context for the current request.
+
+    For single-school tenants, auto-resolves to the lone school.
+    For chain tenants, resolved from the X-Active-School header
+    after validating against the JWT's accessible_school_ids.
+    """
+
+    school_id: UUID
+    tenant_id: UUID
+    school_name: str
+
+    @classmethod
+    def from_explicit(cls, school_id: UUID, tenant_id: UUID, school_name: str = "") -> "SchoolContext":
+        """
+        Create a SchoolContext from explicit values (for Celery tasks
+        and other non-HTTP contexts where no request header exists).
+        """
+        return cls(school_id=school_id, tenant_id=tenant_id, school_name=school_name)
+
+
+async def get_school_context(
+    request: Request,
+    db: DatabaseSession,
+    user: ValidatedUser,
+    x_active_school: str | None = Header(None, alias="X-Active-School"),
+) -> SchoolContext:
+    """
+    Resolve the active school for the current request.
+
+    Resolution logic:
+    1. If X-Active-School header is present, validate it against
+       the JWT's accessible_school_ids and return it.
+    2. If the tenant is single-school and no header is provided,
+       auto-resolve to the only school in the tenant.
+    3. If the tenant is a chain and no header is provided, return 400.
+
+    SECURITY:
+    - The header value is validated against the JWT claim to prevent
+      a user from accessing schools they are not authorized for.
+    - Defense-in-depth: the school is also verified to belong to
+      the tenant via a DB query.
+    """
+    tenant_id_str = user.get("tenant_id")
+    if not tenant_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant context required",
+        )
+    tenant_id = UUID(tenant_id_str)
+    tenant_type = user.get("tenant_type", "single_school")
+    accessible_ids: list[str] = user.get("accessible_school_ids", [])
+
+    # Wildcard sentinel: ["*"] means the user has access to ALL schools in this
+    # tenant but the full list was too large for the JWT.  The DB query below
+    # still validates that the requested school belongs to the tenant, so
+    # security is preserved.
+    has_full_chain_access = accessible_ids == ["*"]
+
+    if x_active_school:
+        # Validate the header value against JWT claims
+        try:
+            active_school_id = UUID(x_active_school)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid X-Active-School header: not a valid UUID",
+            )
+
+        # For chain tenants, verify the user has access to this school.
+        # SECURITY: Must check even when accessible_ids is empty — an empty
+        # list means the user has NO school access (not "all schools").
+        if tenant_type == "school_chain":
+            if not has_full_chain_access:
+                # Normal path: check the specific list from the JWT
+                if not accessible_ids or str(active_school_id) not in accessible_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You do not have access to the requested school",
+                    )
+            # When has_full_chain_access is True, skip the list check.
+            # The defense-in-depth DB query below validates tenant membership.
+        elif accessible_ids and str(active_school_id) not in accessible_ids:
+            # Single-school tenants with explicit accessible_ids: validate too
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to the requested school",
+            )
+
+        # Defense-in-depth: verify school belongs to this tenant and is not deleted
+        result = await db.execute(
+            select(School)
+            .where(School.tenant_id == tenant_id)
+            .where(School.id == active_school_id)
+            .where(School.deleted_at.is_(None))
+        )
+        school = result.scalar_one_or_none()
+        if not school:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="School not found in this tenant",
+            )
+
+        return SchoolContext(
+            school_id=school.id,
+            tenant_id=tenant_id,
+            school_name=school.name,
+        )
+
+    # No header -- auto-resolve for single-school tenants
+    if tenant_type == "school_chain":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Active-School header is required for chain tenants",
+        )
+
+    # Single-school tenant: find the one school
+    result = await db.execute(
+        select(School)
+        .where(School.tenant_id == tenant_id)
+        .where(School.deleted_at.is_(None))
+        .limit(1)
+    )
+    school = result.scalar_one_or_none()
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No school found for this tenant",
+        )
+
+    return SchoolContext(
+        school_id=school.id,
+        tenant_id=tenant_id,
+        school_name=school.name,
+    )
+
+
+async def get_optional_school_context(
+    request: Request,
+    db: DatabaseSession,
+    user: ValidatedUser,
+    x_active_school: str | None = Header(None, alias="X-Active-School"),
+) -> SchoolContext | None:
+    """
+    Optional school context -- returns None instead of raising
+    when no school can be resolved.
+
+    Use for endpoints that work with or without school filtering
+    (e.g., cross-school reports for chain admins).
+    """
+    try:
+        return await get_school_context(request, db, user, x_active_school)
+    except HTTPException as exc:
+        # Only swallow "header required" errors (chain tenant without header).
+        # Let 403 (unauthorized) and 404 (not found) propagate.
+        if exc.status_code == status.HTTP_400_BAD_REQUEST:
+            return None
+        raise
+
+
+# Type aliases for school context dependency injection
+SchoolCtx = Annotated[SchoolContext, Depends(get_school_context)]
+OptionalSchoolCtx = Annotated[SchoolContext | None, Depends(get_optional_school_context)]

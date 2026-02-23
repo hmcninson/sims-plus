@@ -102,6 +102,14 @@ class Exam(Base, TenantMixin, SoftDeleteMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Relationships to Academic Context
     academic_year_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -213,6 +221,14 @@ class ExamSubject(Base, TenantMixin):
             text("COALESCE(section_id, '00000000-0000-0000-0000-000000000000')"),
             unique=True,
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Relationships
@@ -341,6 +357,14 @@ class ExamScore(Base, TenantMixin, SoftDeleteMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Relationships
     exam_subject_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -434,6 +458,14 @@ class ScoreChangeLog(Base, TenantMixin):
 
     __tablename__ = "score_change_logs"
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Reference to the score
     exam_score_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -524,6 +556,14 @@ class ContinuousAssessment(Base, TenantMixin, SoftDeleteMixin):
     """
 
     __tablename__ = "continuous_assessments"
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Academic Context
     academic_year_id: Mapped[uuid.UUID] = mapped_column(
@@ -621,6 +661,14 @@ class TermReport(Base, TenantMixin, SoftDeleteMixin):
             "tenant_id", "term_id", "student_id",
             name="uq_term_report_student"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Academic Context

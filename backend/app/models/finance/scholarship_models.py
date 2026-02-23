@@ -215,6 +215,14 @@ class StudentScholarship(Base, TenantMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     scholarship_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("scholarships.id", ondelete="CASCADE"),
@@ -356,6 +364,14 @@ class ScholarshipApplication(Base, TenantMixin):
     """
 
     __tablename__ = "scholarship_applications"
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     scholarship_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

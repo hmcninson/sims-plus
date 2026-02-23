@@ -188,6 +188,14 @@ class FeeItem(Base, TenantMixin):
 
     __tablename__ = "fee_items"
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     fee_structure_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("fee_structures.id", ondelete="CASCADE"),

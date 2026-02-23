@@ -239,3 +239,83 @@ async def test_invalidate_key_handles_redis_exception():
     result = await cache.invalidate_key("failing:key")
 
     assert result is False
+
+
+# =============================================================================
+# CacheKeys school-scoped key tests
+# =============================================================================
+
+from app.utils.cache_keys import CacheKeys
+
+
+class TestCacheKeysSchoolScoping:
+    """Verify that school-scoped cache keys include school_id to prevent
+    cross-school cache pollution in chain tenants."""
+
+    TENANT = "tenant-aaa"
+    SCHOOL_A = "school-111"
+    SCHOOL_B = "school-222"
+
+    def test_dashboard_stats_different_schools_produce_different_keys(self):
+        """Chain admin switching schools must get distinct cache entries."""
+        key_a = CacheKeys.dashboard_stats(self.TENANT, self.SCHOOL_A)
+        key_b = CacheKeys.dashboard_stats(self.TENANT, self.SCHOOL_B)
+        assert key_a != key_b
+        assert self.SCHOOL_A in key_a
+        assert self.SCHOOL_B in key_b
+
+    def test_dashboard_stats_without_school_uses_all(self):
+        """Fallback for callers that don't pass school_id."""
+        key = CacheKeys.dashboard_stats(self.TENANT)
+        assert ":all:" in key
+
+    def test_student_count_school_scoped(self):
+        """student_count key must differ per school."""
+        key_a = CacheKeys.student_count(self.TENANT, self.SCHOOL_A)
+        key_b = CacheKeys.student_count(self.TENANT, self.SCHOOL_B)
+        assert key_a != key_b
+
+    def test_student_count_without_school_uses_all(self):
+        key = CacheKeys.student_count(self.TENANT)
+        assert ":all:" in key
+
+    def test_active_academic_year_school_scoped(self):
+        """active_academic_year key must differ per school."""
+        key_a = CacheKeys.active_academic_year(self.TENANT, self.SCHOOL_A)
+        key_b = CacheKeys.active_academic_year(self.TENANT, self.SCHOOL_B)
+        assert key_a != key_b
+
+    def test_grading_scale_school_scoped(self):
+        """grading_scale key must differ per school."""
+        key_a = CacheKeys.grading_scale(self.TENANT, self.SCHOOL_A)
+        key_b = CacheKeys.grading_scale(self.TENANT, self.SCHOOL_B)
+        assert key_a != key_b
+
+    def test_school_cache_pattern_matches_school_keys(self):
+        """school_cache_pattern glob should match dashboard, student_count, etc."""
+        pattern = CacheKeys.school_cache_pattern(self.TENANT, self.SCHOOL_A)
+        dashboard_key = CacheKeys.dashboard_stats(self.TENANT, self.SCHOOL_A)
+        # Pattern ends with :* so the dashboard key should share the prefix
+        prefix = pattern.rstrip("*")
+        assert dashboard_key.startswith(prefix)
+
+    def test_tenant_school_cache_pattern_matches_all_schools(self):
+        """tenant_school_cache_pattern should match keys from any school."""
+        pattern = CacheKeys.tenant_school_cache_pattern(self.TENANT)
+        key_a = CacheKeys.dashboard_stats(self.TENANT, self.SCHOOL_A)
+        key_b = CacheKeys.dashboard_stats(self.TENANT, self.SCHOOL_B)
+        prefix = pattern.rstrip("*")
+        assert key_a.startswith(prefix)
+        assert key_b.startswith(prefix)
+
+    def test_tenant_wide_keys_not_school_scoped(self):
+        """Tenant-wide keys (subdomain lookup, user permissions) must not
+        vary by school -- they are intentionally tenant-scoped only."""
+        subdomain_key = CacheKeys.tenant_by_subdomain("presec")
+        perm_key = CacheKeys.user_permissions(self.TENANT, "user-x")
+        token_key = CacheKeys.token_blacklist("abc123")
+        rate_key = CacheKeys.rate_limit("default", "user:xyz")
+
+        # None of these should contain a :school: segment with a UUID-like scope
+        for key in [subdomain_key, perm_key, token_key, rate_key]:
+            assert ":school:" not in key

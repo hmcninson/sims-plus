@@ -3,6 +3,10 @@ SIMS Plus - Dashboard Service
 
 Aggregates analytics data from students, staff, attendance, finance, and exams
 for the school dashboard overview.
+
+All methods accept an optional school_id parameter to scope queries to a
+specific school within a chain tenant.  For single-school tenants the
+caller always passes the lone school's ID, keeping cache keys distinct.
 """
 
 from datetime import date, timedelta
@@ -53,6 +57,10 @@ class DashboardService:
         - Active class count
         - Today's attendance summary (present/absent/rate)
         - Finance summary for the current term (billed/collected/outstanding)
+
+        Args:
+            tenant_id: Tenant UUID (defense-in-depth with RLS)
+            school_id: Optional school UUID to scope data for chain tenants
         """
         # --- Student count (active, not soft-deleted) ---
         student_count_q = select(func.count(Student.id)).where(
@@ -93,7 +101,7 @@ class DashboardService:
             class_count_q = class_count_q.where(Class.school_id == school_id)
         total_classes = (await self.db.execute(class_count_q)).scalar() or 0
 
-        # --- Today's attendance ---
+        # --- Today's attendance (scoped to school when provided) ---
         today = date.today()
         attendance_q = select(
             func.count(StudentAttendance.id).label("total"),
@@ -116,6 +124,8 @@ class DashboardService:
                 StudentAttendance.deleted_at.is_(None),
             )
         )
+        if school_id:
+            attendance_q = attendance_q.where(StudentAttendance.school_id == school_id)
         att_result = (await self.db.execute(attendance_q)).one_or_none()
         att_total = att_result.total if att_result else 0
         att_present = att_result.present if att_result else 0
@@ -126,7 +136,7 @@ class DashboardService:
         total_billed = Decimal("0.00")
         total_collected = Decimal("0.00")
 
-        # Find the active academic year and its current term
+        # Find the active academic year (scoped to school for chain tenants)
         active_year_q = select(AcademicYear).where(
             and_(
                 AcademicYear.tenant_id == tenant_id,
@@ -134,6 +144,8 @@ class DashboardService:
                 AcademicYear.deleted_at.is_(None),
             )
         )
+        if school_id:
+            active_year_q = active_year_q.where(AcademicYear.school_id == school_id)
         active_year = (await self.db.execute(active_year_q)).scalar_one_or_none()
 
         if active_year:
@@ -159,24 +171,28 @@ class DashboardService:
                         Invoice.deleted_at.is_(None),
                     )
                 )
+                if school_id:
+                    billed_q = billed_q.where(Invoice.school_id == school_id)
                 total_billed = (await self.db.execute(billed_q)).scalar() or Decimal("0.00")
 
                 # Sum total collected (completed payments for this term's invoices)
+                invoice_subq = select(Invoice.id).where(
+                    and_(
+                        Invoice.tenant_id == tenant_id,
+                        Invoice.academic_year_id == active_year.id,
+                        Invoice.term_id == current_term.id,
+                        Invoice.deleted_at.is_(None),
+                    )
+                )
+                if school_id:
+                    invoice_subq = invoice_subq.where(Invoice.school_id == school_id)
+
                 collected_q = select(func.coalesce(func.sum(Payment.amount), 0)).where(
                     and_(
                         Payment.tenant_id == tenant_id,
                         Payment.status == PaymentStatus.COMPLETED,
                         Payment.is_voided.is_(False),
-                        Payment.invoice_id.in_(
-                            select(Invoice.id).where(
-                                and_(
-                                    Invoice.tenant_id == tenant_id,
-                                    Invoice.academic_year_id == active_year.id,
-                                    Invoice.term_id == current_term.id,
-                                    Invoice.deleted_at.is_(None),
-                                )
-                            )
-                        ),
+                        Payment.invoice_id.in_(invoice_subq),
                     )
                 )
                 total_collected = (await self.db.execute(collected_q)).scalar() or Decimal("0.00")
@@ -209,12 +225,18 @@ class DashboardService:
         self,
         tenant_id: UUID,
         days: int = 30,
+        school_id: Optional[UUID] = None,
     ) -> list[dict]:
         """
         Get daily attendance rates for the last N days.
 
         Returns a list of {date, present, absent, late, rate} dicts
         ordered by date ascending.
+
+        Args:
+            tenant_id: Tenant UUID (defense-in-depth with RLS)
+            days: Number of days to look back
+            school_id: Optional school UUID to scope data for chain tenants
         """
         start_date = date.today() - timedelta(days=days)
 
@@ -249,6 +271,8 @@ class DashboardService:
             .group_by(StudentAttendance.date)
             .order_by(StudentAttendance.date)
         )
+        if school_id:
+            query = query.where(StudentAttendance.school_id == school_id)
 
         result = await self.db.execute(query)
         rows = result.all()
@@ -270,11 +294,17 @@ class DashboardService:
         self,
         tenant_id: UUID,
         months: int = 6,
+        school_id: Optional[UUID] = None,
     ) -> list[dict]:
         """
         Get monthly billed vs collected amounts using date_trunc.
 
         Returns a list of {month, billed, collected} dicts ordered chronologically.
+
+        Args:
+            tenant_id: Tenant UUID (defense-in-depth with RLS)
+            months: Number of months to look back
+            school_id: Optional school UUID to scope data for chain tenants
         """
         start_date = date.today() - timedelta(days=months * 31)
 
@@ -297,6 +327,9 @@ class DashboardService:
             .group_by(billed_month)
             .order_by(billed_month)
         )
+        if school_id:
+            billed_q = billed_q.where(Invoice.school_id == school_id)
+
         billed_result = await self.db.execute(billed_q)
         billed_rows = {row.month: float(row.billed) for row in billed_result.all()}
 
@@ -319,6 +352,9 @@ class DashboardService:
             .group_by(collected_month)
             .order_by(collected_month)
         )
+        if school_id:
+            collected_q = collected_q.where(Payment.school_id == school_id)
+
         collected_result = await self.db.execute(collected_q)
         collected_rows = {row.month: float(row.collected) for row in collected_result.all()}
 
@@ -338,11 +374,17 @@ class DashboardService:
         self,
         tenant_id: UUID,
         term_id: UUID,
+        school_id: Optional[UUID] = None,
     ) -> list[dict]:
         """
         Get average, highest, and lowest exam scores per class for a given term.
 
         Only includes non-absent scores from exams in the specified term.
+
+        Args:
+            tenant_id: Tenant UUID (defense-in-depth with RLS)
+            term_id: Term UUID to filter exams by
+            school_id: Optional school UUID to scope data for chain tenants
         """
         # ExamScore -> ExamSubject -> Exam -> term_id
         # ExamSubject has class_id which links to Class
@@ -377,6 +419,9 @@ class DashboardService:
             .group_by(Class.name, Class.sequence)
             .order_by(Class.sequence)
         )
+        # Scope to school via the Class model (classes belong to a school)
+        if school_id:
+            query = query.where(Class.school_id == school_id)
 
         result = await self.db.execute(query)
         rows = result.all()
@@ -394,11 +439,16 @@ class DashboardService:
     async def get_gender_distribution(
         self,
         tenant_id: UUID,
+        school_id: Optional[UUID] = None,
     ) -> dict:
         """
         Count active students by gender.
 
         Returns {male: int, female: int}.
+
+        Args:
+            tenant_id: Tenant UUID (defense-in-depth with RLS)
+            school_id: Optional school UUID to scope data for chain tenants
         """
         query = (
             select(
@@ -422,6 +472,8 @@ class DashboardService:
                 )
             )
         )
+        if school_id:
+            query = query.where(Student.school_id == school_id)
 
         result = (await self.db.execute(query)).one_or_none()
 

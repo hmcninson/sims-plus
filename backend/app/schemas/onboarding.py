@@ -79,6 +79,10 @@ class SchoolRegistrationRequest(BaseSchema):
     )
 
     # Optional
+    tenant_type: str = Field(
+        default="single_school",
+        description="Type of tenant: single_school or school_chain",
+    )
     plan: str = Field(
         default="trial",
         description="Subscription plan (trial, starter, professional, enterprise)",
@@ -119,6 +123,17 @@ class SchoolRegistrationRequest(BaseSchema):
         ]
         if v.lower() not in valid_types:
             raise ValueError(f"Invalid school type. Must be one of: {', '.join(valid_types)}")
+        return v.lower()
+
+    @field_validator("tenant_type")
+    @classmethod
+    def validate_tenant_type(cls, v: str) -> str:
+        """Validate tenant type."""
+        valid_types = ["single_school", "school_chain"]
+        if v.lower() not in valid_types:
+            raise ValueError(
+                f"Invalid tenant type. Must be one of: {', '.join(valid_types)}"
+            )
         return v.lower()
 
     @field_validator("plan")

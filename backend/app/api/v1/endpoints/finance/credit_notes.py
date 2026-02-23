@@ -10,16 +10,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from sqlalchemy import select
-
 from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
+    OptionalSchoolCtx,
     RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.models.finance import CreditNoteStatus, CreditNoteType
-from app.models.school import School
 from app.schemas.finance import (
     CreditNoteCreate,
     CreditNoteUpdate,
@@ -34,7 +33,7 @@ from app.schemas.finance import (
 )
 from app.services.finance import CreditNoteService, FinanceAuditService
 
-from ._helpers import get_school_for_tenant, _build_credit_note_response
+from ._helpers import _build_credit_note_response
 
 router = APIRouter()
 
@@ -84,30 +83,22 @@ def _build_credit_note_basic_response(credit_note) -> CreditNoteResponse:
 )
 async def create_credit_note(
     data: CreditNoteCreate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> CreditNoteResponse:
     """Create a new credit note."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = CreditNoteService(db)
     try:
         credit_note = await service.create_credit_note(
-            tenant_id=tenant.tenant_id,
-            school_id=school.id,
+            tenant_id=school_ctx.tenant_id,
+            school_id=school_ctx.school_id,
             data=data,
         )
         # Log audit trail for credit note creation
         audit_service = FinanceAuditService(db)
         await audit_service.log_create(
-            tenant_id=tenant.tenant_id,
+            tenant_id=school_ctx.tenant_id,
             entity_type="credit_note",
             entity_id=credit_note.id,
             performed_by=UUID(user_id),
@@ -127,6 +118,7 @@ async def create_credit_note(
 async def list_credit_notes(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     student_id: Optional[UUID] = Query(None),
     credit_note_status: Optional[str] = Query(None, alias="status"),
     credit_note_type: Optional[str] = Query(None, alias="type"),
@@ -135,10 +127,8 @@ async def list_credit_notes(
     page_size: int = Query(20, ge=1, le=100),
 ) -> CreditNoteListResponse:
     """List all credit notes with filters."""
-    school_result = await db.execute(
-        select(School).where(School.tenant_id == tenant.tenant_id).limit(1)
-    )
-    school = school_result.scalar_one_or_none()
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
 
     # Parse status and type enums
     status_enum = None
@@ -157,7 +147,7 @@ async def list_credit_notes(
     service = CreditNoteService(db)
     credit_notes, total = await service.list_credit_notes(
         tenant_id=tenant.tenant_id,
-        school_id=school.id if school else None,
+        school_id=school_id,
         student_id=student_id,
         status=status_enum,
         credit_note_type=type_enum,

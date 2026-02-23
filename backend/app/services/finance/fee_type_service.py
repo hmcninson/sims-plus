@@ -128,6 +128,7 @@ class FeeTypeService:
     async def list_fee_types(
         self,
         tenant_id: UUID,
+        school_id: Optional[UUID] = None,
         search: Optional[str] = None,
         category: Optional[str] = None,
         is_active: Optional[bool] = None,
@@ -137,6 +138,9 @@ class FeeTypeService:
         """List fee types with optional filtering."""
         query = select(FeeType).where(FeeType.tenant_id == tenant_id)
 
+        # Chain support: scope to active school when provided
+        if school_id:
+            query = query.where(FeeType.school_id == school_id)
         if search:
             # Escape ILIKE wildcards to prevent wildcard injection
             safe_search = f"%{escape_ilike(search)}%"
@@ -168,17 +172,22 @@ class FeeTypeService:
         tenant_id: UUID,
         query: str,
         limit: int = 10,
+        school_id: Optional[UUID] = None,
     ) -> Sequence[FeeType]:
         """Quick search for fee types (for autocomplete)."""
+        # Build all WHERE conditions before order_by/limit for query clarity
+        conditions = [
+            FeeType.tenant_id == tenant_id,
+            FeeType.is_active == True,
+            FeeType.name.ilike(f"%{escape_ilike(query)}%"),
+        ]
+        # Chain support: scope to active school when provided
+        if school_id:
+            conditions.append(FeeType.school_id == school_id)
+
         stmt = (
             select(FeeType)
-            .where(
-                and_(
-                    FeeType.tenant_id == tenant_id,
-                    FeeType.is_active == True,
-                    FeeType.name.ilike(f"%{escape_ilike(query)}%"),
-                )
-            )
+            .where(and_(*conditions))
             .order_by(FeeType.name)
             .limit(limit)
         )

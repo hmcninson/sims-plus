@@ -78,6 +78,7 @@ export interface RegisterData {
   admin_last_name: string;
   admin_password: string;
   admin_phone?: string;
+  tenant_type?: "single_school" | "school_chain";
   plan?: string;
 }
 

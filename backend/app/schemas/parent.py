@@ -101,6 +101,10 @@ class ChildSummary(BaseSchema):
     admission_number: Optional[str] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
+    # School context -- useful for chain tenants where a parent has
+    # children across different schools within the same organization
+    school_id: Optional[UUID] = None
+    school_name: Optional[str] = None
 
 
 class ChildDetail(ChildSummary):

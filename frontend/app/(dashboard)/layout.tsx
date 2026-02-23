@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUserContext } from "@/actions/auth.action";
+import { getAccessibleSchools } from "@/actions/chain.action";
 import { ApiError } from "@/lib/api";
 import { getSchoolProfile } from "@/actions/school.action";
 import { getAcademicYears, getClasses } from "@/actions/academic.action";
@@ -8,6 +9,7 @@ import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { SetupCheck } from "@/components/setup-wizard";
 import { SessionProvider } from "@/components/providers/SessionProvider";
+import { SchoolProvider } from "@/contexts/school-context";
 import {
   SidebarInset,
   SidebarProvider,
@@ -75,40 +77,55 @@ export default async function DashboardLayout({
 
   // Sidebar always defaults to expanded state on page load
 
-  // Fetch data for setup check in parallel
-  const [schoolResult, academicYearsResult, classesResult] = await Promise.all([
+  // Determine if this user might manage a chain.
+  // Only chain_admin and platform_admin roles need the school switcher.
+  // TODO: Use session.tenant.tenant_type once backend returns it in /auth/me
+  const isPotentiallyChain = session.user.role === "chain_admin"
+    || session.user.role === "platform_admin";
+
+  // Fetch data for setup check and chain schools in parallel
+  // TODO: Consider caching getAccessibleSchools — it runs on every page load for chain admins
+  const [schoolResult, academicYearsResult, classesResult, schoolsResult] = await Promise.all([
     getSchoolProfile(),
     getAcademicYears(),
     getClasses(),
+    // Only fetch accessible schools for chain admin roles
+    isPotentiallyChain ? getAccessibleSchools() : Promise.resolve({ success: true as const, data: [] }),
   ]);
 
   const schoolProfile = schoolResult.success ? schoolResult.data : null;
   const academicYears = academicYearsResult.success ? academicYearsResult.data || [] : [];
   const classes = classesResult.success ? classesResult.data || [] : [];
+  const accessibleSchools = schoolsResult.success ? schoolsResult.data || [] : [];
+
+  // A tenant is truly a chain only if it has multiple schools
+  const isTrueChain = accessibleSchools.length > 1;
 
   return (
     <SessionProvider session={session}>
-      <SidebarProvider defaultOpen={true}>
-        <AppSidebar user={session.user} />
-        <SidebarInset className="flex flex-col min-h-svh">
-          <DashboardHeader user={session.user} />
-          <OfflineBanner />
-          <div className="flex-1 p-4 md:p-6">
-            {schoolProfile ? (
-              <SetupCheck
-                schoolProfile={schoolProfile}
-                academicYears={academicYears}
-                classes={classes}
-              >
-                {children}
-              </SetupCheck>
-            ) : (
-              children
-            )}
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-      <InstallPrompt />
+      <SchoolProvider schools={accessibleSchools} isChain={isTrueChain}>
+        <SidebarProvider defaultOpen={true}>
+          <AppSidebar user={session.user} isChain={isTrueChain} />
+          <SidebarInset className="flex flex-col min-h-svh">
+            <DashboardHeader user={session.user} />
+            <OfflineBanner />
+            <div className="flex-1 p-4 md:p-6">
+              {schoolProfile ? (
+                <SetupCheck
+                  schoolProfile={schoolProfile}
+                  academicYears={academicYears}
+                  classes={classes}
+                >
+                  {children}
+                </SetupCheck>
+              ) : (
+                children
+              )}
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+        <InstallPrompt />
+      </SchoolProvider>
     </SessionProvider>
   );
 }

@@ -66,6 +66,8 @@ async def list_children(
             admission_number=s.admission_number,
             date_of_birth=s.date_of_birth,
             gender=s.gender.value if s.gender else None,
+            school_id=s.school_id,
+            school_name=s.school.name if s.school else None,
         )
         for s in students
     ]

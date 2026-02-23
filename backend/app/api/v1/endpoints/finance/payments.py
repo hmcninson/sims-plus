@@ -10,11 +10,14 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 
 from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
+    OptionalSchoolCtx,
     RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.schemas.finance import (
@@ -28,7 +31,6 @@ from app.schemas.finance import (
 from app.services.finance import PaymentService, FinanceAuditService, FinanceServiceError
 
 from ._helpers import (
-    get_school_for_tenant,
     _build_payment_response,
     amount_to_words,
 )
@@ -45,23 +47,15 @@ router = APIRouter()
 )
 async def record_payment(
     data: PaymentCreate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> PaymentWithDetailsResponse:
     """Record a payment."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = PaymentService(db)
     payment = await service.record_payment(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         student_id=data.student_id,
         amount=data.amount,
         payment_method=data.payment_method,
@@ -79,11 +73,11 @@ async def record_payment(
         recorded_by=UUID(user_id),
     )
     # Reload with details
-    payment = await service.get_payment(tenant.tenant_id, payment.id)
+    payment = await service.get_payment(school_ctx.tenant_id, payment.id)
     # Log audit trail for payment recording
     audit_service = FinanceAuditService(db)
     await audit_service.log_create(
-        tenant_id=tenant.tenant_id,
+        tenant_id=school_ctx.tenant_id,
         entity_type="payment",
         entity_id=payment.id,
         performed_by=UUID(user_id),
@@ -106,6 +100,7 @@ async def record_payment(
 async def list_payments(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     student_id: Optional[UUID] = Query(None),
     invoice_id: Optional[UUID] = Query(None),
     academic_year_id: Optional[UUID] = Query(None),
@@ -119,9 +114,12 @@ async def list_payments(
     page_size: int = Query(20, ge=1, le=100),
 ) -> PaymentListResponse:
     """List all payments with filters."""
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
     service = PaymentService(db)
     payments, total = await service.list_payments(
         tenant_id=tenant.tenant_id,
+        school_id=school_id,
         student_id=student_id,
         invoice_id=invoice_id,
         academic_year_id=academic_year_id,
@@ -246,20 +244,21 @@ async def get_student_payments(
 )
 async def get_payment_receipt(
     payment_id: UUID,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
 ) -> PaymentReceiptResponse:
     """Get payment receipt details for printing."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
+    # Fetch full school record for receipt details (address, phone, logo)
+    from app.models.school import School
+    school_result = await db.execute(
+        select(School)
+        .where(School.tenant_id == school_ctx.tenant_id)
+        .where(School.id == school_ctx.school_id)
+    )
+    school = school_result.scalar_one_or_none()
 
     service = PaymentService(db)
-    payment = await service.get_payment(tenant.tenant_id, payment_id)
+    payment = await service.get_payment(school_ctx.tenant_id, payment_id)
     if not payment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

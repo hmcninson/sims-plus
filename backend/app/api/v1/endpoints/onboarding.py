@@ -55,6 +55,7 @@ async def register_school(
             admin_last_name=registration.admin_last_name,
             admin_password=registration.admin_password,
             admin_phone=registration.admin_phone,
+            tenant_type=registration.tenant_type,
             plan=registration.plan,
         )
     except OnboardingError as e:

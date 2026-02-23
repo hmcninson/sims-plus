@@ -22,6 +22,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.school import School
+
 
 # =========================
 # Enums
@@ -59,6 +64,14 @@ class AcademicYear(Base, TenantMixin, SoftDeleteMixin):
     __tablename__ = "academic_years"
     __table_args__ = (
         UniqueConstraint("tenant_id", "name", name="uq_academic_year_name"),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Basic Info
@@ -131,6 +144,14 @@ class Term(Base, TenantMixin, SoftDeleteMixin):
         UniqueConstraint(
             "tenant_id", "academic_year_id", "name", name="uq_term_name"
         ),
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Relationship to Academic Year

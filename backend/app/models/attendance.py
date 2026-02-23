@@ -54,6 +54,13 @@ class StudentAttendance(Base, TenantMixin, SoftDeleteMixin):
         {"extend_existing": True},
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Foreign keys
     student_id: Mapped[UUID] = mapped_column(
         ForeignKey("students.id", ondelete="CASCADE"),
@@ -146,6 +153,13 @@ class StaffAttendance(Base, TenantMixin, SoftDeleteMixin):
             name="uq_staff_attendance_date"
         ),
         {"extend_existing": True},
+    )
+
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # Foreign keys

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
-    from app.models.staff import StaffClassAssignment
+    from app.models.staff import Staff, StaffClassAssignment
     from app.models.student import Student
 
     from .subject_models import Subject
@@ -167,6 +167,14 @@ class ClassSection(Base, TenantMixin, SoftDeleteMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Relationship to Class
     class_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -244,6 +252,14 @@ class ClassSubject(Base, TenantMixin):
         ),
     )
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     class_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("classes.id", ondelete="CASCADE"),
@@ -268,6 +284,14 @@ class ClassSubject(Base, TenantMixin):
         default=True,
     )
 
+    # Assigned teacher for this class-subject combination
+    teacher_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("staff.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Assigned teacher for this class-subject combination",
+    )
+
     # Relationships
     class_: Mapped["Class"] = relationship(
         "Class",
@@ -277,5 +301,9 @@ class ClassSubject(Base, TenantMixin):
     subject: Mapped["Subject"] = relationship(
         "Subject",
         back_populates="class_subjects",
+        lazy="raise",
+    )
+    teacher: Mapped["Staff | None"] = relationship(
+        "Staff",
         lazy="raise",
     )

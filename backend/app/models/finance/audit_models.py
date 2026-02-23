@@ -60,6 +60,14 @@ class FinanceAuditLog(Base, TenantMixin):
 
     __tablename__ = "finance_audit_log"
 
+    # School (nullable for chain support; backfilled for existing data)
+    school_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     entity_type: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

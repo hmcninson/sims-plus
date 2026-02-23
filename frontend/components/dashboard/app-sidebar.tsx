@@ -27,6 +27,7 @@ import {
   Calendar,
   Megaphone,
   StickyNote,
+  Link2,
 } from "lucide-react";
 
 import {
@@ -63,6 +64,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/format";
 import { logout } from "@/actions/auth.action";
 import { clearOfflineData } from "@/lib/offline/db";
+import { SchoolSwitcher } from "@/components/layout/school-switcher";
 
 interface User {
   first_name: string;
@@ -74,6 +76,8 @@ interface User {
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   user: User;
   schoolName?: string;
+  /** Whether the tenant is a school chain with multiple schools. */
+  isChain?: boolean;
 }
 
 interface SubItem {
@@ -280,6 +284,23 @@ const navigationGroups: NavGroup[] = [
   },
 ];
 
+// Chain management navigation -- only shown for chain tenants
+const chainNavigationGroup: NavGroup = {
+  label: "Chain Management",
+  items: [
+    {
+      title: "Chain Overview",
+      url: "/chain",
+      icon: Link2,
+      subItems: [
+        { title: "Dashboard", url: "/chain" },
+        { title: "Schools", url: "/chain/schools" },
+        { title: "Users", url: "/chain/users" },
+      ],
+    },
+  ],
+};
+
 function NavItemComponent({
   item,
   pathname,
@@ -377,12 +398,17 @@ function NavItemComponent({
   );
 }
 
-export function AppSidebar({ user, schoolName, ...props }: AppSidebarProps) {
+export function AppSidebar({ user, schoolName, isChain = false, ...props }: AppSidebarProps) {
   const pathname = usePathname();
+
+  // Build navigation groups, appending chain management for chain tenants
+  const allGroups = isChain
+    ? [...navigationGroups, chainNavigationGroup]
+    : navigationGroups;
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="h-14 border-b border-sidebar-border flex items-center px-2">
+      <SidebarHeader className="border-b border-sidebar-border px-2 py-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="h-10" asChild>
@@ -395,17 +421,23 @@ export function AppSidebar({ user, schoolName, ...props }: AppSidebarProps) {
                     {schoolName || "SIMS Plus"}
                   </span>
                   <span className="truncate text-xs text-muted-foreground">
-                    School Portal
+                    {isChain ? "School Chain" : "School Portal"}
                   </span>
                 </div>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          {/* School switcher -- only visible for chain tenants */}
+          {isChain && (
+            <SidebarMenuItem>
+              <SchoolSwitcher />
+            </SidebarMenuItem>
+          )}
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent>
-        {navigationGroups.map((group) => (
+        {allGroups.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -478,6 +510,9 @@ export function AppSidebar({ user, schoolName, ...props }: AppSidebarProps) {
                 <DropdownMenuItem
                   onSelect={async () => {
                     try { await clearOfflineData(); } catch { /* ignore */ }
+                    // Clear the active-school cookie so chain users don't have
+                    // a stale school context carried into the next session.
+                    document.cookie = "x-active-school=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
                     await logout();
                   }}
                 >

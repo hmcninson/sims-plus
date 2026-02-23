@@ -19,7 +19,9 @@ from sqlalchemy.orm import joinedload
 from app.api.deps import (
     CurrentUserId,
     DatabaseSession,
+    OptionalSchoolCtx,
     RequestTenant,
+    SchoolCtx,
     require_permissions,
 )
 from app.models.finance import FeeStructure, Invoice
@@ -48,7 +50,6 @@ from app.schemas.finance import (
 from app.services.finance import InvoiceService, FinanceAuditService, FinanceServiceError
 
 from ._helpers import (
-    get_school_for_tenant,
     _build_invoice_response,
     _build_invoice_response_basic,
 )
@@ -65,24 +66,16 @@ router = APIRouter()
 )
 async def create_invoice(
     data: InvoiceCreate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> InvoiceWithDetailsResponse:
     """Create a new invoice."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = InvoiceService(db)
     try:
         invoice = await service.create_invoice(
-            tenant_id=tenant.tenant_id,
-            school_id=school.id,
+            tenant_id=school_ctx.tenant_id,
+            school_id=school_ctx.school_id,
             student_id=data.student_id,
             academic_year_id=data.academic_year_id,
             term_id=data.term_id,
@@ -94,11 +87,11 @@ async def create_invoice(
             created_by=UUID(user_id),
         )
         # Reload with details
-        invoice = await service.get_invoice(tenant.tenant_id, invoice.id)
+        invoice = await service.get_invoice(school_ctx.tenant_id, invoice.id)
         # Log audit trail for invoice creation
         audit_service = FinanceAuditService(db)
         await audit_service.log_create(
-            tenant_id=tenant.tenant_id,
+            tenant_id=school_ctx.tenant_id,
             entity_type="invoice",
             entity_id=invoice.id,
             performed_by=UUID(user_id),
@@ -118,6 +111,7 @@ async def create_invoice(
 async def list_invoices(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     student_id: Optional[UUID] = Query(None),
     academic_year_id: Optional[UUID] = Query(None),
     term_id: Optional[UUID] = Query(None),
@@ -127,9 +121,12 @@ async def list_invoices(
     page_size: int = Query(20, ge=1, le=100),
 ) -> InvoiceListResponse:
     """List all invoices with filters and search."""
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
     service = InvoiceService(db)
     invoices, total = await service.list_invoices(
         tenant_id=tenant.tenant_id,
+        school_id=school_id,
         student_id=student_id,
         academic_year_id=academic_year_id,
         term_id=term_id,
@@ -159,23 +156,15 @@ async def list_invoices(
 )
 async def bulk_generate_invoices(
     data: InvoiceBulkGenerate,
-    tenant: RequestTenant,
+    school_ctx: SchoolCtx,
     db: DatabaseSession,
     user_id: CurrentUserId,
 ) -> InvoiceBulkResult:
     """Bulk generate invoices for students."""
-    try:
-        school = await get_school_for_tenant(db, tenant.tenant_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
-
     service = InvoiceService(db)
     result = await service.bulk_generate_invoices(
-        tenant_id=tenant.tenant_id,
-        school_id=school.id,
+        tenant_id=school_ctx.tenant_id,
+        school_id=school_ctx.school_id,
         fee_structure_id=data.fee_structure_id,
         academic_year_id=data.academic_year_id,
         term_id=data.term_id,
@@ -412,12 +401,15 @@ async def update_overdue_invoices(
 async def export_invoices_csv(
     tenant: RequestTenant,
     db: DatabaseSession,
+    school_ctx: OptionalSchoolCtx,
     academic_year_id: Optional[UUID] = Query(None),
     term_id: Optional[UUID] = Query(None),
     invoice_status: Optional[str] = Query(None, alias="status"),
     class_id: Optional[UUID] = Query(None),
 ) -> StreamingResponse:
     """Export invoices as CSV file."""
+    # Chain support: scope to active school when header is present
+    school_id = school_ctx.school_id if school_ctx else None
     service = InvoiceService(db)
     rows = await service.export_invoices_csv(
         tenant_id=tenant.tenant_id,
@@ -425,6 +417,7 @@ async def export_invoices_csv(
         term_id=term_id,
         status=invoice_status,
         class_id=class_id,
+        school_id=school_id,
     )
 
     output = io.StringIO()

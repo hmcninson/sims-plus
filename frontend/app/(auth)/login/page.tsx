@@ -115,8 +115,13 @@ export default function LoginPage() {
     const result = await login(values);
 
     if (result.success) {
-      // Redirect parents to the parent portal, all other roles to admin dashboard
-      const redirectUrl = result.data.role === "parent" ? "/parent/dashboard" : "/dashboard";
+      // Route each role to its dedicated portal
+      let redirectUrl = "/dashboard";
+      if (result.data.role === "parent") {
+        redirectUrl = "/parent/dashboard";
+      } else if (result.data.role === "teacher" || result.data.role === "academic_head") {
+        redirectUrl = "/teacher/dashboard";
+      }
       router.push(redirectUrl);
       return;
     }

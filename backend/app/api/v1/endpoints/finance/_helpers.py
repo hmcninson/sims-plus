@@ -4,12 +4,8 @@ SIMS Plus - Finance Endpoint Helpers
 Shared helper functions used across finance endpoint modules.
 """
 
-from uuid import UUID
+from sqlalchemy import inspect
 
-from sqlalchemy import inspect, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.school import School
 from app.schemas.finance import (
     CreditNoteWithDetailsResponse,
     FeeItemResponse,
@@ -23,21 +19,6 @@ from app.schemas.finance import (
     ScholarshipWithStatsResponse,
     StudentScholarshipWithDetailsResponse,
 )
-
-
-async def get_school_for_tenant(db: AsyncSession, tenant_id: UUID) -> School:
-    """
-    Fetch the first school for a tenant.
-
-    Raises ValueError if no school is found.
-    """
-    school_result = await db.execute(
-        select(School).where(School.tenant_id == tenant_id).limit(1)
-    )
-    school = school_result.scalar_one_or_none()
-    if not school:
-        raise ValueError("No school found for this tenant")
-    return school
 
 
 def _build_fee_structure_response(fs) -> FeeStructureWithItemsResponse:
