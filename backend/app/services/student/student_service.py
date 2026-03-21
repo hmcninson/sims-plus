@@ -69,6 +69,11 @@ class StudentCoreMixin:
         guardians: Optional[list[dict]] = None,
     ) -> Student:
         """Create a new student."""
+        # Check plan limit before creating (raises LimitExceededError if exceeded)
+        from app.services.subscription import SubscriptionService
+        sub_service = SubscriptionService(self.db)
+        await sub_service.check_student_limit(tenant_id)
+
         # Check for duplicate student_id
         existing = await self.db.execute(
             select(Student).where(

@@ -24,6 +24,7 @@ from app.models.exam import (
 from app.models.academic import (
     ClassSubject,
 )
+from app.services.academic.guards import assert_term_year_editable
 
 
 class ExamServiceError(Exception):
@@ -91,6 +92,9 @@ class ExamService:
         created_by: Optional[UUID] = None,
     ) -> Exam:
         """Create a new exam."""
+        # Guard: cannot create exams in completed/archived years
+        await assert_term_year_editable(self.db, tenant_id, term_id)
+
         # Check for duplicate name in same term
         existing = await self.db.execute(
             select(Exam).where(

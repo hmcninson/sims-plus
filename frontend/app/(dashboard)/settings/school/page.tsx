@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { getSchoolProfile } from "@/actions/school.action";
+import { getCachedSchoolProfile } from "@/actions/school.action";
 import { SchoolProfileForm } from "./school-profile-form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -46,7 +46,7 @@ function LoadingSkeleton() {
 }
 
 async function SchoolProfileContent() {
-  const result = await getSchoolProfile();
+  const result = await getCachedSchoolProfile();
 
   if (!result.success || !result.data) {
     return (

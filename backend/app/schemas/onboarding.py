@@ -78,6 +78,16 @@ class SchoolRegistrationRequest(BaseSchema):
         description="Admin password",
     )
 
+    # School Classification (optional during registration)
+    school_category: Optional[str] = Field(
+        None,
+        description="School category: public, private, international, faith_based",
+    )
+    boarding_type: Optional[str] = Field(
+        None,
+        description="Boarding type: day_only, boarding_only, mixed",
+    )
+
     # Optional
     tenant_type: str = Field(
         default="single_school",
@@ -125,6 +135,32 @@ class SchoolRegistrationRequest(BaseSchema):
             raise ValueError(f"Invalid school type. Must be one of: {', '.join(valid_types)}")
         return v.lower()
 
+    @field_validator("school_category")
+    @classmethod
+    def validate_school_category(cls, v: Optional[str]) -> Optional[str]:
+        """Validate school category."""
+        if v is None:
+            return None
+        valid_categories = ["public", "private", "international", "faith_based"]
+        if v.lower() not in valid_categories:
+            raise ValueError(
+                f"Invalid school category. Must be one of: {', '.join(valid_categories)}"
+            )
+        return v.lower()
+
+    @field_validator("boarding_type")
+    @classmethod
+    def validate_boarding_type(cls, v: Optional[str]) -> Optional[str]:
+        """Validate boarding type."""
+        if v is None:
+            return None
+        valid_types = ["day_only", "boarding_only", "mixed"]
+        if v.lower() not in valid_types:
+            raise ValueError(
+                f"Invalid boarding type. Must be one of: {', '.join(valid_types)}"
+            )
+        return v.lower()
+
     @field_validator("tenant_type")
     @classmethod
     def validate_tenant_type(cls, v: str) -> str:
@@ -148,7 +184,8 @@ class SchoolRegistrationRequest(BaseSchema):
     @field_validator("admin_phone")
     @classmethod
     def validate_phone(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
+        # Defense-in-depth: treat empty string the same as None
+        if not v:
             return None
         phone = re.sub(r"\s+", "", v)
         if not re.match(r"^(\+233|0)[0-9]{9}$", phone):
@@ -273,6 +310,19 @@ class OnboardingCompleteRequest(BaseSchema):
     """Mark onboarding as complete."""
 
     skip_remaining: bool = False
+
+
+class ResendVerificationRequest(BaseSchema):
+    """Request body for resending verification email during onboarding."""
+
+    email: EmailStr
+    subdomain: str = Field(
+        ...,
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+        description="School subdomain to resolve tenant context",
+    )
 
 
 class OnboardingStatus(BaseSchema):

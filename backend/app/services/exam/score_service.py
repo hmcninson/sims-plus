@@ -30,6 +30,7 @@ from app.models.academic import (
 from app.models.student import Student
 
 from app.services.exam.exam_service import ExamServiceError
+from app.services.academic.guards import assert_term_year_editable
 
 
 class ScoreService:
@@ -190,6 +191,19 @@ class ScoreService:
         exam_subject = exam_subject.scalar_one_or_none()
         if not exam_subject:
             raise ExamServiceError("Exam subject not found", code="not_found")
+
+        # Guard: cannot enter scores in completed/archived years.
+        # Resolve the term_id through the parent exam.
+        exam_term_id = await self.db.scalar(
+            select(Exam.term_id).where(
+                and_(
+                    Exam.id == exam_subject.exam_id,
+                    Exam.tenant_id == tenant_id,
+                )
+            )
+        )
+        if exam_term_id:
+            await assert_term_year_editable(self.db, tenant_id, exam_term_id)
 
         # Get grading scale for auto grade calculation
         # Use provided grading_scale_id, or fall back to exam_subject's grading_scale_id
@@ -525,6 +539,19 @@ class ScoreService:
         exam_score = result.scalar_one_or_none()
         if not exam_score:
             return None
+
+        # Guard: cannot update scores in completed/archived years.
+        # Resolve the term_id through the parent exam.
+        exam_term_id = await self.db.scalar(
+            select(Exam.term_id).where(
+                and_(
+                    Exam.id == exam_score.exam_subject.exam_id,
+                    Exam.tenant_id == tenant_id,
+                )
+            )
+        )
+        if exam_term_id:
+            await assert_term_year_editable(self.db, tenant_id, exam_term_id)
 
         # Update fields if provided
         if is_absent is not None:

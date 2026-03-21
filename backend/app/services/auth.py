@@ -70,6 +70,9 @@ class AuthService:
             "transport.*",
             "communications.*",
             "reports.*",
+            "admissions.*",
+            "curriculum.*",
+            "subscription.*",
         ],
         "school_admin": [
             "school.read",
@@ -89,6 +92,9 @@ class AuthService:
             "transport.*",
             "communications.*",
             "reports.*",
+            "admissions.*",
+            "curriculum.*",
+            "subscription.*",
             # School admins have full teacher portal access (head teacher view)
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -118,6 +124,9 @@ class AuthService:
             "exams.*",
             "preschool.*",
             "reports.academic",
+            "admissions.read",
+            "admissions.review",
+            "curriculum.read",
             # Academic heads have full teacher portal access including head teacher features
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -159,6 +168,7 @@ class AuthService:
             "boarding.read",
             "boarding.write",
             "transport.read",
+            "curriculum.read",
             # Teacher portal permissions
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -193,6 +203,16 @@ class AuthService:
         ],
         "student": [
             "self.read",
+        ],
+        # Applicant role -- prospective parents with limited access
+        "applicant": [
+            "applicant.profile.read",
+            "applicant.profile.update",
+            "applicant.applications.read",
+            "applicant.applications.create",
+            "applicant.applications.update",
+            "applicant.applications.submit",
+            "applicant.applications.claim",
         ],
     }
 
@@ -587,6 +607,11 @@ class AuthService:
         Raises:
             AuthenticationError: If the email already exists for this tenant
         """
+        # Check plan limit before inviting (raises LimitExceededError if exceeded)
+        from app.services.subscription import SubscriptionService
+        sub_service = SubscriptionService(self.db)
+        await sub_service.check_user_limit(tenant_id)
+
         # Defense-in-depth: check email uniqueness within tenant
         existing = await self._get_user_by_email(email, tenant_id)
         if existing:

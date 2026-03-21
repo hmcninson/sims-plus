@@ -14,7 +14,7 @@ from app.api.deps import (
     RequestTenant,
     require_permissions,
 )
-from app.models.school import School
+from app.models.school import School, SchoolCategory, BoardingType
 from app.schemas.school import (
     PreschoolSettings,
     PreschoolSettingsUpdate,
@@ -52,6 +52,8 @@ def _build_school_response(school: School) -> SchoolProfileResponse:
         year_established=school.year_established,
         uses_boarding=school.uses_boarding,
         uses_transport=school.uses_transport,
+        category=school.category.value if school.category else None,
+        boarding_type=school.boarding_type.value if school.boarding_type else None,
         student_id_prefix=school.student_id_prefix,
         staff_id_prefix=school.staff_id_prefix,
         preschool_settings=preschool_settings,
@@ -61,6 +63,35 @@ def _build_school_response(school: School) -> SchoolProfileResponse:
     )
 
 router = APIRouter()
+
+
+async def _get_current_school(db: AsyncSession, tenant_id) -> School:
+    """Fetch the current school for a tenant.
+
+    For chain tenants with multiple schools, returns the first school
+    (ordered by creation date) so that the setup wizard and other
+    profile-dependent features have a deterministic school to work with.
+    Uses order_by + limit(1) instead of scalar_one_or_none() to avoid
+    MultipleResultsFound errors for chain tenants.
+    """
+    result = await db.execute(
+        select(School)
+        .where(
+            School.tenant_id == tenant_id,
+            School.deleted_at.is_(None),
+        )
+        .order_by(School.created_at.asc())
+        .limit(1)
+    )
+    school = result.scalar_one_or_none()
+
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="School not found",
+        )
+
+    return school
 
 
 @router.get(
@@ -75,20 +106,7 @@ async def get_current_school(
     db: DatabaseSession,
 ) -> SchoolProfileResponse:
     """Get the current school's profile."""
-    result = await db.execute(
-        select(School).where(
-            School.tenant_id == tenant.tenant_id,
-            School.deleted_at.is_(None),
-        )
-    )
-    school = result.scalar_one_or_none()
-
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="School not found",
-        )
-
+    school = await _get_current_school(db, tenant.tenant_id)
     return _build_school_response(school)
 
 
@@ -105,19 +123,7 @@ async def update_current_school(
     data: SchoolProfileUpdate,
 ) -> SchoolProfileResponse:
     """Update the current school's profile."""
-    result = await db.execute(
-        select(School).where(
-            School.tenant_id == tenant.tenant_id,
-            School.deleted_at.is_(None),
-        )
-    )
-    school = result.scalar_one_or_none()
-
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="School not found",
-        )
+    school = await _get_current_school(db, tenant.tenant_id)
 
     # Update fields that are provided
     update_data = data.model_dump(exclude_unset=True)
@@ -127,6 +133,14 @@ async def update_current_school(
         existing_settings = school.preschool_settings or {}
         existing_settings.update(update_data.pop("preschool_settings"))
         school.preschool_settings = existing_settings
+
+    # Convert string values to enums for enum columns
+    if "category" in update_data:
+        val = update_data.pop("category")
+        school.category = SchoolCategory(val) if val else None
+    if "boarding_type" in update_data:
+        val = update_data.pop("boarding_type")
+        school.boarding_type = BoardingType(val) if val else None
 
     for field, value in update_data.items():
         setattr(school, field, value)
@@ -150,19 +164,7 @@ async def update_school_branding(
     data: SchoolBrandingUpdate,
 ) -> SchoolProfileResponse:
     """Update the current school's branding."""
-    result = await db.execute(
-        select(School).where(
-            School.tenant_id == tenant.tenant_id,
-            School.deleted_at.is_(None),
-        )
-    )
-    school = result.scalar_one_or_none()
-
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="School not found",
-        )
+    school = await _get_current_school(db, tenant.tenant_id)
 
     # Update branding fields
     update_data = data.model_dump(exclude_unset=True)
@@ -187,19 +189,7 @@ async def get_preschool_settings(
     db: DatabaseSession,
 ) -> PreschoolSettings:
     """Get the current school's preschool settings."""
-    result = await db.execute(
-        select(School).where(
-            School.tenant_id == tenant.tenant_id,
-            School.deleted_at.is_(None),
-        )
-    )
-    school = result.scalar_one_or_none()
-
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="School not found",
-        )
+    school = await _get_current_school(db, tenant.tenant_id)
 
     # Return existing settings or defaults
     if school.preschool_settings:
@@ -220,19 +210,7 @@ async def update_preschool_settings(
     data: PreschoolSettingsUpdate,
 ) -> PreschoolSettings:
     """Update the current school's preschool settings."""
-    result = await db.execute(
-        select(School).where(
-            School.tenant_id == tenant.tenant_id,
-            School.deleted_at.is_(None),
-        )
-    )
-    school = result.scalar_one_or_none()
-
-    if not school:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="School not found",
-        )
+    school = await _get_current_school(db, tenant.tenant_id)
 
     # Merge with existing settings
     existing_settings = school.preschool_settings or {}

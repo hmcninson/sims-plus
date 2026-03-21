@@ -108,6 +108,10 @@ class SchoolProfileResponse(BaseSchema):
     uses_boarding: bool = False
     uses_transport: bool = False
 
+    # School Classification
+    category: Optional[str] = None
+    boarding_type: Optional[str] = None
+
     # ID Prefix Settings
     student_id_prefix: str = "STU"
     staff_id_prefix: str = "STF"
@@ -147,6 +151,10 @@ class SchoolProfileUpdate(BaseSchema):
     # Features
     uses_boarding: Optional[bool] = None
     uses_transport: Optional[bool] = None
+
+    # School Classification
+    category: Optional[str] = None
+    boarding_type: Optional[str] = None
 
     # ID Prefix Settings
     student_id_prefix: Optional[str] = Field(None, min_length=1, max_length=10)
@@ -192,6 +200,26 @@ class SchoolProfileUpdate(BaseSchema):
             return None
         if not v.startswith(("http://", "https://")):
             return f"https://{v}"
+        return v
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        valid = ["public", "private", "international", "faith_based"]
+        if v not in valid:
+            raise ValueError(f"Invalid category. Must be one of: {', '.join(valid)}")
+        return v
+
+    @field_validator("boarding_type")
+    @classmethod
+    def validate_boarding_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        valid = ["day_only", "boarding_only", "mixed"]
+        if v not in valid:
+            raise ValueError(f"Invalid boarding type. Must be one of: {', '.join(valid)}")
         return v
 
 

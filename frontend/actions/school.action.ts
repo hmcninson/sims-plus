@@ -6,6 +6,7 @@
  * Server actions for school profile management.
  */
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { apiGet, apiPut, apiFetch, apiUpload } from "@/lib/api";
 import { getValidAccessToken } from "./auth.action";
@@ -52,6 +53,13 @@ export async function getSchoolProfile(): Promise<ActionResult<SchoolProfile>> {
     };
   }
 }
+
+/**
+ * Cached version of getSchoolProfile for React server component deduplication.
+ * Import this (instead of getSchoolProfile) in server components that share a
+ * render pass, so the fetch executes only once across layout + page.
+ */
+export const getCachedSchoolProfile = cache(getSchoolProfile);
 
 /**
  * Update school profile

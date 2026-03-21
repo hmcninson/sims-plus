@@ -6,6 +6,7 @@ Common dependencies injected into API endpoints.
 
 import dataclasses
 from collections.abc import AsyncGenerator
+from datetime import datetime, time, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -44,6 +45,8 @@ _PUBLIC_PATH_PREFIXES = (
     "/api/v1/auth/validate-reset-token",
     "/api/v1/auth/reset-password",
     "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
+    "/api/v1/admissions/public/",  # Public application form — no JWT, tenant from subdomain
+    "/api/v1/subscription/webhook/",  # Subscription webhook — tenant from metadata, not subdomain
 )
 
 
@@ -132,9 +135,56 @@ async def get_unscoped_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def get_public_tenant_db(
+    request: Request,
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Tenant-scoped DB session for public (unauthenticated) endpoints.
+
+    Used by the Admissions Portal public form endpoints. Reads tenant_id
+    from request.state (set by TenantMiddleware from subdomain resolution).
+
+    Unlike get_db(), this does NOT require JWT authentication.
+    Unlike get_unscoped_db(), this DOES set RLS tenant context.
+    """
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="School not found. Please check the URL.",
+        )
+
+    async with async_session_maker() as session:
+        try:
+            # Set RLS context — all queries will be filtered by this tenant
+            await session.execute(
+                text("SELECT set_tenant_context(CAST(:tid AS uuid))"),
+                {"tid": str(tenant_id)},
+            )
+            yield session
+            await session.commit()
+        except HTTPException:
+            raise
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            try:
+                # Clear tenant context to prevent leaking to next connection user
+                await session.execute(text("SELECT clear_tenant_context()"))
+            except Exception:
+                logger.warning(
+                    "clear_tenant_context_failed",
+                    tenant_id=str(tenant_id),
+                    exc_info=True,
+                )
+            await session.close()
+
+
 # Type aliases for dependency injection
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 UnscopedDatabaseSession = Annotated[AsyncSession, Depends(get_unscoped_db)]
+PublicTenantSession = Annotated[AsyncSession, Depends(get_public_tenant_db)]
 
 
 async def get_current_user_id(
@@ -421,6 +471,166 @@ async def get_validated_current_user(
 ValidatedUser = Annotated[dict, Depends(get_validated_current_user)]
 
 
+# =========================
+# Subscription Enforcement (C1 — dependency, not middleware)
+# =========================
+
+# Paths exempt from subscription enforcement even when authenticated.
+# The subscription management page must remain accessible so users can upgrade.
+_SUBSCRIPTION_EXEMPT_PATHS = (
+    "/api/v1/subscription/",
+    "/api/v1/auth/",
+    "/api/v1/tenant/",
+    "/api/v1/onboarding/",
+    "/api/v1/settings/subscription",
+)
+
+# HTTP methods allowed during grace period (read-only access)
+_GRACE_PERIOD_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+async def enforce_subscription(
+    request: Request,
+) -> None:
+    """
+    Enforce subscription/trial status on all API requests.
+
+    This is added as a global dependency on api_router. It reads
+    tenant status from request.state (set by TenantMiddleware) and
+    only enforces on requests that have both a tenant context and
+    an authenticated user (indicated by presence of user_id on
+    request.state, set by get_validated_current_user).
+
+    Unauthenticated routes are implicitly exempt because they won't
+    have user_id on request.state.
+
+    Enforcement rules:
+    - Suspended/cancelled tenants: 403 hard block
+    - Trial expired (within grace period): read-only (GET/HEAD/OPTIONS only)
+    - Trial expired (past grace period): 403 hard block
+    - Subscription expired: same grace/block pattern
+    - Active/trial not expired: pass through
+    """
+    path = request.url.path
+
+    # Exempt subscription-related paths so users can upgrade (H3)
+    if any(path.startswith(prefix) for prefix in _SUBSCRIPTION_EXEMPT_PATHS):
+        return
+
+    # Only enforce for requests with tenant context — public paths skip
+    tenant_status = getattr(request.state, "tenant_status", None)
+    if not tenant_status:
+        return
+
+    # Only enforce for authenticated requests — unauthenticated routes
+    # (login, register, webhook, etc.) won't have an Authorization header.
+    # We check the header directly rather than request.state.user_id because
+    # this runs as a router-level dependency BEFORE endpoint-level deps like
+    # get_validated_current_user have a chance to set request.state.
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return
+
+    trial_ends_at = getattr(request.state, "tenant_trial_ends_at", None)
+    subscription_end = getattr(request.state, "tenant_subscription_end", None)
+
+    now = datetime.now(timezone.utc)
+
+    # 1. Suspended or cancelled — hard block
+    if tenant_status in ("suspended", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been suspended. Contact support.",
+            headers={"X-Subscription-Code": "TENANT_SUSPENDED"},
+        )
+
+    # 2. Trial tenant — check expiration
+    if tenant_status == "trial" and trial_ends_at:
+        # Ensure trial_ends_at is a datetime for comparison
+        if isinstance(trial_ends_at, datetime):
+            trial_dt = trial_ends_at
+        else:
+            return
+
+        if now > trial_dt:
+            grace_end = trial_dt + timedelta(days=settings.TRIAL_GRACE_PERIOD_DAYS)
+
+            if now > grace_end:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your trial has expired. Upgrade to continue.",
+                    headers={"X-Subscription-Code": "TRIAL_EXPIRED"},
+                )
+            else:
+                # Within grace period — read-only
+                if request.method not in _GRACE_PERIOD_METHODS:
+                    days_left = max(0, (grace_end - now).days)
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Your trial has expired. You have {days_left} days of "
+                            f"read-only access remaining. Upgrade to continue."
+                        ),
+                        headers={"X-Subscription-Code": "TRIAL_GRACE_PERIOD"},
+                    )
+
+    # 3. Active subscription — check expiration
+    if tenant_status == "active" and subscription_end:
+        from datetime import date as date_type
+
+        if isinstance(subscription_end, date_type):
+            sub_expires = datetime.combine(subscription_end, time.max, tzinfo=timezone.utc)
+        elif isinstance(subscription_end, datetime):
+            sub_expires = subscription_end
+        else:
+            return
+
+        if now > sub_expires:
+            grace_end = sub_expires + timedelta(days=settings.TRIAL_GRACE_PERIOD_DAYS)
+
+            if now > grace_end:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your subscription has expired. Renew to continue.",
+                    headers={"X-Subscription-Code": "SUBSCRIPTION_EXPIRED"},
+                )
+            else:
+                if request.method not in _GRACE_PERIOD_METHODS:
+                    days_left = max(0, (grace_end - now).days)
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Your subscription has expired. You have {days_left} days "
+                            f"of read-only access. Renew to continue."
+                        ),
+                        headers={"X-Subscription-Code": "SUBSCRIPTION_GRACE_PERIOD"},
+                    )
+
+
+def require_feature(feature: str):
+    """
+    Dependency factory that checks if a feature is available on the tenant's plan.
+
+    Handles three states from PLAN_FEATURES:
+    - True: feature included in plan -> access granted
+    - "addon": feature available as add-on -> check tenant.features JSONB
+    - False: feature not available on this plan -> 403
+
+    Usage:
+        @router.get("/endpoint", dependencies=[Depends(require_feature("boarding"))])
+    """
+    async def _check_feature(
+        db: AsyncSession = Depends(get_db),
+        current_user: dict = Depends(get_validated_current_user),
+    ) -> None:
+        tenant_id = UUID(current_user["tenant_id"])
+        from app.services.subscription import SubscriptionService
+        sub_service = SubscriptionService(db)
+        await sub_service.check_feature_access(tenant_id, feature)
+
+    return _check_feature
+
+
 def require_permissions(*required_permissions: str):
     """
     Dependency factory to require specific permissions.
@@ -640,3 +850,108 @@ async def get_optional_school_context(
 # Type aliases for school context dependency injection
 SchoolCtx = Annotated[SchoolContext, Depends(get_school_context)]
 OptionalSchoolCtx = Annotated[SchoolContext | None, Depends(get_optional_school_context)]
+
+
+# =========================
+# Applicant User (Role-Validated)
+# =========================
+
+
+async def get_applicant_user(
+    request: Request,
+    token: Annotated[str, Depends(oauth2_scheme)],
+) -> dict:
+    """
+    Validate JWT and ensure user has the 'applicant' role.
+
+    This dependency is used for all authenticated applicant endpoints.
+    It performs the same validation as get_validated_current_user() plus
+    an additional role check.
+
+    Rejects:
+    - Invalid/expired tokens
+    - Blacklisted tokens
+    - Cross-tenant tokens
+    - Non-applicant roles (staff, parent, student, etc.)
+
+    Returns:
+        Dict with user claims: user_id, tenant_id, email, role, permissions.
+
+    Raises:
+        HTTPException 401: Invalid token
+        HTTPException 403: Cross-tenant or wrong role
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+
+        # Validate token type
+        if payload.get("type") != "access":
+            raise credentials_exception
+
+        # Check if token is blacklisted
+        blacklist_service = await get_token_blacklist_service()
+        if await blacklist_service.is_blacklisted(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check if user's tokens were mass-revoked
+        token_iat = payload.get("iat")
+        if token_iat and await blacklist_service.is_user_token_revoked(
+            user_id, token_iat
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Cross-tenant validation
+        token_tenant_id = payload.get("tenant_id")
+        request_tenant_id = getattr(request.state, "tenant_id", None)
+
+        if request_tenant_id and token_tenant_id:
+            if str(token_tenant_id) != str(request_tenant_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Token not valid for this school.",
+                )
+
+        # Role check: must be applicant
+        role = payload.get("role")
+        if role != "applicant":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access restricted to applicant accounts.",
+            )
+
+        return {
+            "user_id": user_id,
+            "tenant_id": token_tenant_id,
+            "email": payload.get("email"),
+            "role": role,
+            "permissions": payload.get("permissions", []),
+        }
+
+    except JWTError:
+        raise credentials_exception
+
+
+# Type alias for applicant user dependency
+ApplicantUser = Annotated[dict, Depends(get_applicant_user)]

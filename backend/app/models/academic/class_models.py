@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
+    from app.models.curriculum import CurriculumProfile
     from app.models.staff import Staff, StaffClassAssignment
     from app.models.student import Student
 
@@ -123,7 +124,19 @@ class Class(Base, TenantMixin, SoftDeleteMixin):
     # Active
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Curriculum (overrides school default for dual-track)
+    curriculum_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("curriculum_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Class-level curriculum override (for dual-track schools)",
+    )
+
     # Relationships
+    curriculum_profile: Mapped["CurriculumProfile | None"] = relationship(
+        "CurriculumProfile",
+        lazy="raise",
+    )
     sections: Mapped[list["ClassSection"]] = relationship(
         "ClassSection",
         back_populates="class_",

@@ -89,7 +89,7 @@ const SCHOOL_TYPES = [
 
 // Subscription plans
 const PLANS = {
-  trial: { name: "Trial", price: "Free", period: "30 days" },
+  trial: { name: "Trial", price: "Free", period: "90 days" },
   starter: { name: "Starter", price: "GHS 500", period: "/month" },
   professional: { name: "Professional", price: "GHS 1,500", period: "/month" },
   enterprise: { name: "Enterprise", price: "Custom", period: "" },
@@ -145,6 +145,8 @@ const registerSchema = z
         "Only lowercase letters, numbers, and hyphens"
       ),
     school_type: z.string().min(1, "Please select a school type"),
+    school_category: z.string().optional(),
+    boarding_type: z.string().optional(),
     phone: z.string().optional(),
     // Step 2
     first_name: z.string().min(1, "First name is required"),
@@ -186,6 +188,8 @@ export default function RegisterPage() {
       school_name: "",
       subdomain: "",
       school_type: "",
+      school_category: "",
+      boarding_type: "",
       phone: "",
       first_name: "",
       last_name: "",
@@ -345,10 +349,12 @@ export default function RegisterPage() {
       school_name: values.school_name,
       subdomain: values.subdomain,
       school_type: values.school_type,
+      school_category: values.school_category || undefined,
+      boarding_type: values.boarding_type || undefined,
       admin_first_name: values.first_name,
       admin_last_name: values.last_name,
       admin_email: values.email,
-      admin_phone: values.phone || "",
+      admin_phone: values.phone || undefined,
       admin_password: values.password,
       tenant_type: values.tenant_type,
       plan: selectedPlan,
@@ -358,6 +364,8 @@ export default function RegisterPage() {
 
     if (result.success) {
       toast.success("School registered successfully!");
+      // Store email in sessionStorage to avoid PII leakage in URL params
+      sessionStorage.setItem("registration_email", values.email);
       router.push(`/register/success?school=${values.subdomain}`);
     } else {
       // Handle specific error codes
@@ -588,6 +596,68 @@ export default function RegisterPage() {
                           </FormItem>
                         )}
                       />
+
+                      {/* Optional: Category and Boarding Type */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="school_category"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>School Category</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select category" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="public">Public (Government)</SelectItem>
+                                  <SelectItem value="private">Private</SelectItem>
+                                  <SelectItem value="international">International</SelectItem>
+                                  <SelectItem value="faith_based">Faith-Based</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                Optional. You can set this later.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="boarding_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Boarding Type</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select boarding type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="day_only">Day School Only</SelectItem>
+                                  <SelectItem value="boarding_only">Boarding School Only</SelectItem>
+                                  <SelectItem value="mixed">Mixed (Day & Boarding)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                Optional. You can set this later.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
 
                       {/* Subdomain Selection */}
                       <FormField
@@ -968,6 +1038,22 @@ export default function RegisterPage() {
                               {form.getValues("subdomain")}.simsplus.io
                             </dd>
                           </div>
+                          {form.getValues("school_category") && (
+                            <div className="flex justify-between">
+                              <dt className="text-muted-foreground">Category</dt>
+                              <dd className="font-medium text-foreground capitalize">
+                                {form.getValues("school_category")?.replace("_", "-")}
+                              </dd>
+                            </div>
+                          )}
+                          {form.getValues("boarding_type") && (
+                            <div className="flex justify-between">
+                              <dt className="text-muted-foreground">Boarding Type</dt>
+                              <dd className="font-medium text-foreground capitalize">
+                                {form.getValues("boarding_type")?.replace(/_/g, " ")}
+                              </dd>
+                            </div>
+                          )}
                           {form.getValues("phone") && (
                             <div className="flex justify-between">
                               <dt className="text-muted-foreground">Phone</dt>
@@ -1090,7 +1176,7 @@ export default function RegisterPage() {
                       </div>
 
                       <p className="text-center text-sm text-muted-foreground">
-                        No credit card required &bull; 30-day free trial
+                        No credit card required &bull; 90-day free trial
                       </p>
                     </CardContent>
                   </>

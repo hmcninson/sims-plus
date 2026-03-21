@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
+    from app.models.curriculum import CurriculumProfile
     from app.models.student import Student
     from app.models.staff import Staff
 
@@ -42,6 +43,23 @@ class SchoolStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
+
+
+class SchoolCategory(str, Enum):
+    """Ownership/governance type of the school."""
+
+    PUBLIC = "public"
+    PRIVATE = "private"
+    INTERNATIONAL = "international"
+    FAITH_BASED = "faith_based"
+
+
+class BoardingType(str, Enum):
+    """Residential accommodation type."""
+
+    DAY_ONLY = "day_only"
+    BOARDING_ONLY = "boarding_only"
+    MIXED = "mixed"  # Both day and boarding students
 
 
 class School(Base, TenantMixin, SoftDeleteMixin):
@@ -142,6 +160,26 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         default=False,
         comment="Has boarding facilities",
     )
+    # School classification
+    category: Mapped[SchoolCategory | None] = mapped_column(
+        SQLEnum(
+            SchoolCategory,
+            name="schoolcategory",
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=True,
+        comment="Ownership: public, private, international, faith_based",
+    )
+    boarding_type: Mapped[BoardingType | None] = mapped_column(
+        SQLEnum(
+            BoardingType,
+            name="boardingtype",
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=True,
+        comment="Residential: day_only, boarding_only, mixed",
+    )
+
     uses_transport: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -176,6 +214,20 @@ class School(Base, TenantMixin, SoftDeleteMixin):
         comment="Communication settings (SMS, email, notification preferences)",
     )
 
+    # Curriculum
+    curriculum_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("curriculum_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="School's default curriculum profile",
+    )
+    curriculum_settings: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None,
+        comment="School-level curriculum overrides",
+    )
+
     # Active flags
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -190,6 +242,11 @@ class School(Base, TenantMixin, SoftDeleteMixin):
     staff_members: Mapped[list["Staff"]] = relationship(
         "Staff",
         back_populates="school",
+        lazy="raise",
+    )
+    curriculum_profile: Mapped["CurriculumProfile | None"] = relationship(
+        "CurriculumProfile",
+        foreign_keys=[curriculum_profile_id],
         lazy="raise",
     )
 

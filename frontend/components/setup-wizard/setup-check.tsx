@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { SetupWizard } from "./setup-wizard";
-import type { SchoolProfile, AcademicYear, Class } from "@/types";
+import type { SchoolProfile, AcademicYear, Class, Term, Subject } from "@/types";
 
 interface SetupCheckProps {
-  schoolProfile: SchoolProfile;
+  schoolProfile: SchoolProfile | null;
   academicYears: AcademicYear[];
   classes: Class[];
+  terms: Term[];
+  subjects: Subject[];
   children: React.ReactNode;
 }
 
@@ -15,6 +17,8 @@ export function SetupCheck({
   schoolProfile,
   academicYears,
   classes,
+  terms,
+  subjects,
   children,
 }: SetupCheckProps) {
   const [showWizard, setShowWizard] = useState(false);
@@ -24,10 +28,13 @@ export function SetupCheck({
     // Check if setup is needed:
     // - No academic years exist
     // - No classes exist
-    // - School motto is empty (basic profile incomplete)
+    // - No terms exist
+    // - No subjects exist
     const needsSetup =
       academicYears.length === 0 ||
-      classes.length === 0;
+      classes.length === 0 ||
+      terms.length === 0 ||
+      subjects.length === 0;
 
     // Check if user has already dismissed the wizard in this session
     const wizardDismissed = sessionStorage.getItem("setup_wizard_dismissed");
@@ -35,7 +42,7 @@ export function SetupCheck({
     if (needsSetup && !wizardDismissed && !dismissed) {
       setShowWizard(true);
     }
-  }, [academicYears, classes, dismissed]);
+  }, [academicYears, classes, terms, subjects, dismissed]);
 
   const handleComplete = () => {
     setShowWizard(false);

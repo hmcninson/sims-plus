@@ -419,7 +419,8 @@ export async function validateVerificationToken(
 }
 
 /**
- * Resend email verification link
+ * Resend email verification link (requires tenant context via subdomain cookie).
+ * Used from within a school's subdomain (e.g., the login page).
  */
 export async function resendVerificationEmail(
   email: string
@@ -434,6 +435,42 @@ export async function resendVerificationEmail(
     return { success: true, data: response };
   } catch (error) {
     // Check for specific error codes
+    const errorMessage = error instanceof Error ? error.message : "Failed to send verification email";
+
+    // Rate limit or already verified errors should be shown to user
+    if (errorMessage.includes("rate") || errorMessage.includes("already verified")) {
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+
+    // For other errors, return generic success to prevent email enumeration
+    return {
+      success: true,
+      data: {
+        message: "If this email is registered and unverified, you will receive a verification link shortly.",
+      },
+    };
+  }
+}
+
+/**
+ * Resend verification email during onboarding (no tenant context required).
+ * Used from the registration success page which lives on the main domain.
+ * Takes subdomain as a parameter instead of reading from cookies.
+ */
+export async function resendOnboardingVerification(
+  email: string,
+  subdomain: string
+): Promise<ActionResult<EmailVerificationResponse>> {
+  try {
+    const response = await apiPost<EmailVerificationResponse>(
+      "/onboarding/resend-verification",
+      { email, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Failed to send verification email";
 
     // Rate limit or already verified errors should be shown to user

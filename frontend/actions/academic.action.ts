@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { apiGet, apiPost, apiPut, apiDelete, ApiError } from "@/lib/api";
 import { getValidAccessToken, refreshAccessToken } from "./auth.action";
@@ -90,6 +91,13 @@ export async function getAcademicYears(includeTerms: boolean = true): Promise<Ac
   }
 }
 
+/**
+ * Cached version of getAcademicYears for React server component deduplication.
+ * Import this (instead of getAcademicYears) in server components that share a
+ * render pass, so the fetch executes only once across layout + page.
+ */
+export const getCachedAcademicYears = cache(getAcademicYears);
+
 export async function getAcademicYear(id: string): Promise<ActionResult<AcademicYear>> {
   try {
     const { token, subdomain } = await getAuthContext();
@@ -174,6 +182,22 @@ export async function deleteAcademicYear(id: string): Promise<ActionResult<void>
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to delete academic year",
+    };
+  }
+}
+
+export async function archiveAcademicYear(
+  yearId: string,
+): Promise<ActionResult<AcademicYear>> {
+  try {
+    const response = await withAuthRetry((opts) =>
+      apiPost<AcademicYear>(`/academic/academic-years/${yearId}/archive`, {}, opts),
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to archive academic year",
     };
   }
 }
@@ -288,6 +312,14 @@ export async function getClasses(includeSections: boolean = false): Promise<Acti
     };
   }
 }
+
+/**
+ * Cached version of getClasses for React server component deduplication.
+ * React.cache() deduplicates by arguments, so getCachedClasses() and
+ * getCachedClasses(true) remain separate calls — correct since they return
+ * different data (without vs with sections).
+ */
+export const getCachedClasses = cache(getClasses);
 
 export async function getClass(id: string): Promise<ActionResult<Class>> {
   try {
@@ -742,6 +774,67 @@ export async function updateAcademicSettings(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to update academic settings",
+    };
+  }
+}
+
+// =========================
+// Subject Template Actions
+// =========================
+
+export async function initializeSubjectsFromTemplate(
+  schoolType: string,
+  programmes?: string[],
+): Promise<ActionResult<{ created: number; skipped: number; subjects: { name: string; code: string; category: string }[] }>> {
+  try {
+    const response = await withAuthRetry((ctx) =>
+      apiPost<{ created: number; skipped: number; subjects: { name: string; code: string; category: string }[] }>(
+        "/academic/subject-templates/init",
+        { school_type: schoolType, programmes },
+        ctx,
+      ),
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to initialize subjects from template",
+    };
+  }
+}
+
+export async function getSubjectTemplates(
+  schoolType: string,
+): Promise<ActionResult<{ name: string; code: string; category: string; applicable_levels: string[] }[]>> {
+  try {
+    const response = await withAuthRetry((ctx) =>
+      apiGet<{ name: string; code: string; category: string; applicable_levels: string[] }[]>(
+        `/academic/subject-templates?school_type=${encodeURIComponent(schoolType)}`,
+        ctx,
+      ),
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch subject templates",
+    };
+  }
+}
+
+export async function getAvailableProgrammes(): Promise<ActionResult<string[]>> {
+  try {
+    const response = await withAuthRetry((ctx) =>
+      apiGet<{ programmes: string[] }>(
+        "/academic/subject-templates/programmes",
+        ctx,
+      ),
+    );
+    return { success: true, data: response.programmes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch available programmes",
     };
   }
 }

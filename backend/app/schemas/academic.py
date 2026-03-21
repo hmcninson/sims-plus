@@ -139,6 +139,7 @@ class ClassCreate(BaseSchema):
     sequence: int = Field(default=1, ge=1)
     capacity: Optional[int] = Field(None, ge=1)
     school_id: Optional[UUID] = None
+    curriculum_profile_id: Optional[UUID] = None
 
 
 class ClassUpdate(BaseSchema):
@@ -150,6 +151,7 @@ class ClassUpdate(BaseSchema):
     sequence: Optional[int] = Field(None, ge=1)
     capacity: Optional[int] = Field(None, ge=1)
     is_active: Optional[bool] = None
+    curriculum_profile_id: Optional[UUID] = None
 
 
 class ClassResponse(BaseSchema):
@@ -162,6 +164,7 @@ class ClassResponse(BaseSchema):
     sequence: int
     capacity: Optional[int] = None
     school_id: Optional[UUID] = None
+    curriculum_profile_id: Optional[UUID] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -772,6 +775,75 @@ class SchoolHolidayResponse(BaseSchema):
     is_recurring: bool
     created_at: datetime
     updated_at: datetime
+
+
+# =========================
+# Subject Template Schemas
+# =========================
+
+
+class SubjectTemplateInitRequest(BaseSchema):
+    """Request to initialize subjects from a GES curriculum template."""
+
+    school_type: str = Field(
+        ...,
+        description="School type: preschool, primary, jhs, shs, basic, etc.",
+    )
+    programmes: list[str] | None = Field(
+        None,
+        description="SHS elective programme names (e.g., ['General Science', 'Business'])",
+    )
+
+    @field_validator("school_type")
+    @classmethod
+    def validate_school_type(cls, v: str) -> str:
+        from app.data.ges_subjects import SCHOOL_TYPE_SUBJECT_MAP
+
+        if v not in SCHOOL_TYPE_SUBJECT_MAP:
+            raise ValueError(
+                f"Invalid school type '{v}'. "
+                f"Valid options: {list(SCHOOL_TYPE_SUBJECT_MAP.keys())}"
+            )
+        return v
+
+    @field_validator("programmes")
+    @classmethod
+    def validate_programmes(cls, v: list[str] | None) -> list[str] | None:
+        if v:
+            from app.data.ges_subjects import SHS_ELECTIVE_PROGRAMMES
+
+            for p in v:
+                if p not in SHS_ELECTIVE_PROGRAMMES:
+                    raise ValueError(
+                        f"Unknown programme '{p}'. "
+                        f"Valid options: {list(SHS_ELECTIVE_PROGRAMMES.keys())}"
+                    )
+        return v
+
+
+class SubjectTemplateSubject(BaseSchema):
+    """A single subject entry in a template response."""
+
+    name: str
+    code: str
+    category: str
+
+
+class SubjectTemplateListItem(BaseSchema):
+    """A subject template entry with applicable levels."""
+
+    name: str
+    code: str
+    category: str
+    applicable_levels: list[str] = []
+
+
+class SubjectTemplateInitResponse(BaseSchema):
+    """Response from subject template initialization."""
+
+    created: int
+    skipped: int
+    subjects: list[SubjectTemplateSubject]
 
 
 # Update forward references

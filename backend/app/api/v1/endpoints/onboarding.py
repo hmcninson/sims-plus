@@ -6,14 +6,19 @@ API endpoints for school registration and onboarding.
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.api.deps import UnscopedDatabaseSession
 from app.schemas.onboarding import (
+    ResendVerificationRequest,
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
 )
 from app.services.onboarding import OnboardingService, OnboardingError
+from app.services.email_verification import (
+    EmailVerificationService,
+    EmailVerificationError,
+)
 
 router = APIRouter()
 
@@ -26,6 +31,7 @@ router = APIRouter()
     description="Self-service school registration. Creates tenant, school, and admin user.",
 )
 async def register_school(
+    request: Request,
     registration: SchoolRegistrationRequest,
     db: UnscopedDatabaseSession,
 ) -> SchoolRegistrationResponse:
@@ -38,12 +44,16 @@ async def register_school(
     3. Creates a school within the tenant
     4. Creates an admin user for the school
     5. Sets up a trial subscription
+    6. Sends a verification email to the admin
 
     No authentication required - this is a public endpoint.
 
-    **Note:** The admin will need to verify their email before full access.
+    **Note:** The admin must verify their email before they can log in.
     """
-    service = OnboardingService(db)
+    # Get shared Redis client for verification token storage
+    redis_client = getattr(request.app.state, "redis", None)
+
+    service = OnboardingService(db, redis_client=redis_client)
 
     try:
         tenant, school, admin_user = await service.register_school(
@@ -57,6 +67,8 @@ async def register_school(
             admin_phone=registration.admin_phone,
             tenant_type=registration.tenant_type,
             plan=registration.plan,
+            school_category=registration.school_category,
+            boarding_type=registration.boarding_type,
         )
     except OnboardingError as e:
         raise HTTPException(
@@ -78,7 +90,7 @@ async def register_school(
 
     return SchoolRegistrationResponse(
         success=True,
-        message=f"School '{school.name}' registered successfully! You can now login at {portal_url}",
+        message=f"School '{school.name}' registered successfully! Please check your email to verify your account before logging in.",
         tenant_id=tenant.id,
         school_id=school.id,
         admin_user_id=admin_user.id,
@@ -124,6 +136,80 @@ async def suggest_subdomains(
     return {
         "school_name": school_name,
         "suggestions": suggestions,
+    }
+
+
+@router.post(
+    "/resend-verification",
+    status_code=status.HTTP_200_OK,
+    summary="Resend verification email for newly registered admin",
+    description="Public endpoint for resending the verification email after registration.",
+)
+async def resend_onboarding_verification(
+    request: Request,
+    body: ResendVerificationRequest,
+    db: UnscopedDatabaseSession,
+) -> dict:
+    """
+    Resend the email verification link for a newly registered admin.
+
+    This is a public endpoint (no tenant context required) used from the
+    registration success page, which lives on the main domain without a subdomain.
+    The tenant is resolved from the subdomain parameter in the request body.
+
+    Always returns success to prevent email enumeration.
+    """
+    from sqlalchemy import select as sa_select
+    from app.models.tenant import Tenant
+    from app.middleware.tenant import set_db_tenant_context
+
+    # Look up tenant by subdomain
+    result = await db.execute(
+        sa_select(Tenant).where(
+            Tenant.subdomain == body.subdomain.lower(),
+            Tenant.is_active.is_(True),
+        )
+    )
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        # Return generic success to prevent subdomain enumeration
+        return {
+            "message": "If an account with this email exists, a verification link has been sent.",
+        }
+
+    # Set tenant context so RLS allows reading the user record
+    await set_db_tenant_context(db, tenant.id)
+
+    redis_client = getattr(request.app.state, "redis", None)
+    verification_service = EmailVerificationService(db, redis_client=redis_client)
+
+    try:
+        client_ip = request.client.host if request.client else None
+        token = await verification_service.resend_verification(
+            email=body.email,
+            tenant_id=tenant.id,
+            ip_address=client_ip,
+        )
+
+        if token:
+            await verification_service.send_verification_email(
+                email=body.email,
+                token=token,
+                subdomain=body.subdomain.lower(),
+            )
+
+    except EmailVerificationError as e:
+        if e.code == "rate_limited":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=e.message,
+            )
+        # For all other errors (including already_verified), fall through to
+        # the generic success message to prevent email enumeration attacks.
+
+    return {
+        "message": "If an account with this email exists, a verification link has been sent.",
     }
 
 

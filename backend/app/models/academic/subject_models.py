@@ -40,10 +40,19 @@ class SubjectCategory(str, Enum):
 class GradingScaleType(str, Enum):
     """Type of grading scale."""
 
+    # Existing values
     WAEC = "waec"  # WAEC standard (A1-F9)
     GPA = "gpa"  # GPA scale (4.0)
     PERCENTAGE = "percentage"  # Percentage-based
     CUSTOM = "custom"  # Custom scale
+
+    # Multi-curriculum values (Phase 1)
+    CAMBRIDGE = "cambridge"    # A*-G (IGCSE), A*-E (A-Level)
+    EDEXCEL = "edexcel"        # 9-1 (IGCSE), A*-E (A-Level)
+    IB = "ib"                  # 1-7 achievement levels
+    FRENCH = "french"          # 0-20 scale
+    NARRATIVE = "narrative"    # Qualitative (Montessori)
+    AMERICAN = "american"      # A-F with +/- modifiers
 
 
 # =========================
@@ -111,6 +120,16 @@ class Subject(Base, TenantMixin, SoftDeleteMixin):
     # Active
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Curriculum-specific defaults (Phase 2)
+    credit_value: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 1), nullable=True,
+        comment="Default credit value for American system",
+    )
+    coefficient: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 1), nullable=True,
+        comment="Default coefficient for French system",
+    )
+
     # Relationships
     class_subjects: Mapped[list["ClassSubject"]] = relationship(
         "ClassSubject",
@@ -176,6 +195,14 @@ class GradingScale(Base, TenantMixin, SoftDeleteMixin):
 
     # Active
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Curriculum link
+    curriculum_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("curriculum_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Links scale to a curriculum (NULL = usable by all)",
+    )
 
     # Relationships
     grades: Mapped[list["Grade"]] = relationship(

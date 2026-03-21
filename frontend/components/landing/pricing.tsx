@@ -8,7 +8,7 @@ const plans = [
   {
     name: "Trial",
     price: "Free",
-    period: "14 days",
+    period: "90 days",
     description: "Try SIMS Plus risk-free",
     students: "Up to 50 students",
     features: [

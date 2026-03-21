@@ -162,6 +162,33 @@ class Settings(BaseSettings):
     PAYMENT_CALLBACK_URL: str = ""  # URL to redirect parent after Paystack payment
 
     # =========================
+    # Cloudflare Turnstile (CAPTCHA for public forms)
+    # =========================
+    TURNSTILE_SECRET_KEY: str = ""  # Server-side secret key
+    TURNSTILE_SITE_KEY: str = ""  # Client-side site key (exposed to frontend)
+
+    # =========================
+    # Admissions
+    # =========================
+    ADMISSIONS_DAILY_CAP_PER_TENANT: int = 500  # Max applications per tenant per day
+    RATE_LIMIT_ADMISSIONS_SUBMIT_REQUESTS: int = 3
+    RATE_LIMIT_ADMISSIONS_SUBMIT_WINDOW: int = 60  # 3 submissions per minute per IP
+
+    # Applicant account rate limits
+    RATE_LIMIT_APPLICANT_REGISTER_REQUESTS: int = 3
+    RATE_LIMIT_APPLICANT_REGISTER_WINDOW: int = 60  # 3 per minute per IP
+    RATE_LIMIT_APPLICANT_RESEND_REQUESTS: int = 2
+    RATE_LIMIT_APPLICANT_RESEND_WINDOW: int = 60  # 2 per minute per IP
+    RATE_LIMIT_SUBSCRIPTION_REQUESTS: int = 5
+    RATE_LIMIT_SUBSCRIPTION_WINDOW: int = 3600  # 5 per hour per IP (M3)
+
+    # =========================
+    # Subscription / Trial
+    # =========================
+    TRIAL_DAYS: int = 90
+    TRIAL_GRACE_PERIOD_DAYS: int = 7  # Read-only grace period after trial/subscription expires
+
+    # =========================
     # Sentry
     # =========================
     SENTRY_DSN: str | None = None

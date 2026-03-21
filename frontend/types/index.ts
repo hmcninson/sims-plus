@@ -15,7 +15,8 @@ export type UserRole =
   | "teacher"
   | "house_parent"
   | "parent"
-  | "student";
+  | "student"
+  | "applicant";
 
 export type UserStatus = "pending" | "active" | "suspended" | "deactivated";
 
@@ -73,6 +74,8 @@ export interface RegisterData {
   school_name: string;
   subdomain: string;
   school_type: string;
+  school_category?: string;
+  boarding_type?: string;
   admin_email: string;
   admin_first_name: string;
   admin_last_name: string;
@@ -182,6 +185,8 @@ export interface School {
   year_established?: number;
   uses_boarding?: boolean;
   uses_transport?: boolean;
+  category?: "public" | "private" | "international" | "faith_based" | null;
+  boarding_type?: "day_only" | "boarding_only" | "mixed" | null;
   is_active: boolean;
 }
 
@@ -469,7 +474,7 @@ export interface PaginatedResponse<T> {
 // Academic Types
 // =========================
 
-export type AcademicYearStatus = "planning" | "active" | "completed";
+export type AcademicYearStatus = "planning" | "active" | "completed" | "archived";
 export type TermStatus = "upcoming" | "active" | "completed";
 export type ClassLevel = "preschool" | "primary" | "jhs" | "shs";
 export type SubjectCategory = "core" | "elective" | "vocational" | "extra";
@@ -546,6 +551,7 @@ export interface Class {
   sequence: number;
   capacity?: number;
   school_id?: string;
+  curriculum_profile_id?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -563,6 +569,7 @@ export interface ClassCreate {
   sequence?: number;
   capacity?: number;
   school_id?: string;
+  curriculum_profile_id?: string;
 }
 
 export interface ClassUpdate {
@@ -572,6 +579,7 @@ export interface ClassUpdate {
   sequence?: number;
   capacity?: number;
   is_active?: boolean;
+  curriculum_profile_id?: string;
 }
 
 export interface ClassSection {

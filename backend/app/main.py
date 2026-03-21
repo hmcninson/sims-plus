@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.config import settings
+from app.services.academic.guards import ReadOnlyYearError
 from app.core.logging import configure_logging
 from app.core.sentry import init_sentry
 from app.db.session import async_session_maker
@@ -236,6 +237,40 @@ app.include_router(api_router, prefix="/api/v1")
 # =========================
 # Exception Handlers
 # =========================
+
+
+@app.exception_handler(ReadOnlyYearError)
+async def read_only_year_handler(request: Request, exc: ReadOnlyYearError) -> JSONResponse:
+    """Return 409 Conflict when attempting to modify a completed/archived academic year."""
+    return JSONResponse(
+        status_code=409,
+        content={"detail": exc.message, "code": "READ_ONLY_YEAR"},
+    )
+
+
+from app.services.subscription import LimitExceededError, FeatureNotAvailableError
+
+
+@app.exception_handler(LimitExceededError)
+async def limit_exceeded_handler(request: Request, exc: LimitExceededError) -> JSONResponse:
+    """Handle subscription limit exceeded errors with a clear upgrade message."""
+    return JSONResponse(
+        status_code=403,
+        content={"detail": exc.message, "code": exc.code},
+    )
+
+
+@app.exception_handler(FeatureNotAvailableError)
+async def feature_not_available_handler(
+    request: Request, exc: FeatureNotAvailableError
+) -> JSONResponse:
+    """Handle feature gating errors when a feature requires a higher plan."""
+    return JSONResponse(
+        status_code=403,
+        content={"detail": exc.message, "code": exc.code},
+    )
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     """Global exception handler for unhandled errors."""

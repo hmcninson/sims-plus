@@ -10,6 +10,7 @@ from enum import Enum
 
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
@@ -33,6 +34,7 @@ class UserRole(str, Enum):
     HOUSE_PARENT = "house_parent"
     PARENT = "parent"
     STUDENT = "student"
+    APPLICANT = "applicant"
 
 
 class UserStatus(str, Enum):
@@ -53,12 +55,20 @@ class User(Base, TenantMixin, SoftDeleteMixin):
 
     __tablename__ = "users"
 
+    __table_args__ = (
+        sa.Index(
+            "uq_users_tenant_email",
+            "tenant_id",
+            "email",
+            unique=True,
+            postgresql_where=sa.text("deleted_at IS NULL"),
+        ),
+    )
+
     # Basic Information
     email: Mapped[str] = mapped_column(
         String(255),
-        unique=True,
         nullable=False,
-        index=True,
     )
     password_hash: Mapped[str] = mapped_column(
         String(255),

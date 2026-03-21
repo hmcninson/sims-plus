@@ -36,6 +36,41 @@ class PDFService:
     # Templates directory
     TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "reports"
 
+    # Curriculum-specific report card templates.
+    # Each key maps a CurriculumType value to its HTML template file.
+    # Edexcel reuses the Cambridge layout since both follow the same
+    # component-based British assessment structure.
+    REPORT_TEMPLATES: dict[str, str] = {
+        "ges": "term_report.html",
+        "cambridge": "cambridge_report.html",
+        "edexcel": "cambridge_report.html",
+        "american": "american_report.html",
+        "ib": "ib_report.html",
+        "french": "french_report.html",
+        "montessori": "montessori_report.html",
+        "default": "term_report.html",
+    }
+
+    @classmethod
+    def get_report_template(cls, profile) -> str:
+        """
+        Get the template filename for a curriculum profile.
+
+        Falls back to the default GES template when the profile is None
+        or when the curriculum type is not recognized (e.g., 'custom').
+        """
+        if profile is None:
+            return cls.REPORT_TEMPLATES["default"]
+        # Handle both enum instances and plain strings
+        curriculum_type = (
+            profile.curriculum_type.value
+            if hasattr(profile.curriculum_type, "value")
+            else profile.curriculum_type
+        )
+        return cls.REPORT_TEMPLATES.get(
+            curriculum_type, cls.REPORT_TEMPLATES["default"]
+        )
+
     @classmethod
     def _get_jinja_env(cls) -> Environment:
         """Get Jinja2 environment configured for PDF templates."""
@@ -297,6 +332,62 @@ class PDFService:
             section_id=report.section_id,
         )
 
+        # Resolve curriculum profile for this class (if multi-curriculum is active)
+        curriculum_profile = None
+        report_config = None
+        components = []
+        if report.class_ and hasattr(report.class_, "curriculum_profile_id") and report.class_.curriculum_profile_id:
+            from app.models.curriculum import CurriculumProfile, ReportCardConfig, AssessmentStructure
+            from sqlalchemy.orm import selectinload as _sel
+
+            profile_result = await db.execute(
+                select(CurriculumProfile).where(
+                    and_(
+                        CurriculumProfile.id == report.class_.curriculum_profile_id,
+                        CurriculumProfile.tenant_id == tenant_id,
+                        CurriculumProfile.deleted_at.is_(None),
+                    )
+                )
+            )
+            curriculum_profile = profile_result.scalar_one_or_none()
+
+            # Fetch report card display config for the profile
+            if curriculum_profile:
+                rc_result = await db.execute(
+                    select(ReportCardConfig).where(
+                        and_(
+                            ReportCardConfig.curriculum_profile_id == curriculum_profile.id,
+                            ReportCardConfig.tenant_id == tenant_id,
+                            ReportCardConfig.deleted_at.is_(None),
+                        )
+                    )
+                )
+                report_config = rc_result.scalar_one_or_none()
+
+                # Fetch assessment structure components for column rendering
+                from app.models.curriculum import AssessmentComponent
+                struct_result = await db.execute(
+                    select(AssessmentStructure).where(
+                        and_(
+                            AssessmentStructure.curriculum_profile_id == curriculum_profile.id,
+                            AssessmentStructure.tenant_id == tenant_id,
+                            AssessmentStructure.is_active == True,
+                            AssessmentStructure.deleted_at.is_(None),
+                        )
+                    )
+                )
+                structure = struct_result.scalar_one_or_none()
+                if structure:
+                    comp_result = await db.execute(
+                        select(AssessmentComponent)
+                        .where(AssessmentComponent.assessment_structure_id == structure.id)
+                        .order_by(AssessmentComponent.sequence)
+                    )
+                    components = comp_result.scalars().all()
+
+        # Select the correct template based on curriculum type
+        template_name = cls.get_report_template(curriculum_profile)
+
         # Prepare template context
         context = {
             "report": report,
@@ -313,11 +404,34 @@ class PDFService:
             "grades": grades,
             "next_term_begins": None,  # Can be added later if needed
             "current_date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+            # Curriculum-specific context (unused by GES template, consumed by others)
+            "report_config": report_config,
+            "components": components,
+            "curriculum_profile": curriculum_profile,
+            # Curriculum-specific values — populated by the calling service when available.
+            # Templates degrade gracefully when these are absent (show dashes).
+            "term_gpa": None,
+            "cumulative_gpa": None,
+            "total_credits_attempted": None,
+            "total_credits_earned": None,
+            "honor_roll": None,
+            "ib_total_points": None,
+            "ib_bonus_points": None,
+            "learner_profile_traits": None,
+            "atl_skills": None,
+            "mention": None,
+            "weighted_average": None,
+            "total_coefficients": None,
+            "total_weighted_score": None,
+            "class_averages": None,
+            "developmental_areas": None,
+            "work_samples": None,
+            "goals": None,
         }
 
         # Render HTML template
         env = cls._get_jinja_env()
-        template = env.get_template("term_report.html")
+        template = env.get_template(template_name)
         html_content = template.render(**context)
 
         # Generate PDF

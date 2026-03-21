@@ -56,6 +56,10 @@ export interface SchoolProfile {
   uses_boarding: boolean;
   uses_transport: boolean;
 
+  // Classification
+  category?: "public" | "private" | "international" | "faith_based" | null;
+  boarding_type?: "day_only" | "boarding_only" | "mixed" | null;
+
   // ID Prefix Settings
   student_id_prefix: string;
   staff_id_prefix: string;
@@ -93,6 +97,10 @@ export interface SchoolProfileUpdate {
   // Features
   uses_boarding?: boolean;
   uses_transport?: boolean;
+
+  // Classification
+  category?: "public" | "private" | "international" | "faith_based" | null;
+  boarding_type?: "day_only" | "boarding_only" | "mixed" | null;
 
   // ID Prefix Settings
   student_id_prefix?: string;

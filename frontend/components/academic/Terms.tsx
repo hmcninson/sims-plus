@@ -51,11 +51,13 @@ import type { Term, TermCreate, TermUpdate, AcademicYear } from "@/types";
 interface TermsProps {
   academicYearId?: string;
   initialData?: Term[];
+  /** Pre-fetched academic years from the parent page to avoid duplicate API calls */
+  initialAcademicYears?: AcademicYear[];
 }
 
-export function Terms({ academicYearId, initialData }: TermsProps) {
+export function Terms({ academicYearId, initialData, initialAcademicYears }: TermsProps) {
   const [terms, setTerms] = useState<Term[]>(initialData || []);
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>(initialAcademicYears || []);
   const [loading, setLoading] = useState(!initialData);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTerm, setEditingTerm] = useState<Term | null>(null);
@@ -77,23 +79,39 @@ export function Terms({ academicYearId, initialData }: TermsProps) {
     is_current: false,
   });
 
+  // Sync academic years from parent when prop changes
+  useEffect(() => {
+    if (initialAcademicYears) {
+      setAcademicYears(initialAcademicYears);
+    }
+  }, [initialAcademicYears]);
+
   useEffect(() => {
     loadData();
   }, [academicYearId]);
 
   const loadData = async () => {
     setLoading(true);
-    const [termsResult, yearsResult] = await Promise.all([
-      getTerms(academicYearId),
-      getAcademicYears(),
-    ]);
 
-    if (termsResult.success && termsResult.data) {
-      setTerms(termsResult.data);
+    // Only fetch academic years if not provided by parent
+    if (initialAcademicYears) {
+      const termsResult = await getTerms(academicYearId);
+      if (termsResult.success && termsResult.data) {
+        setTerms(termsResult.data);
+      }
+    } else {
+      const [termsResult, yearsResult] = await Promise.all([
+        getTerms(academicYearId),
+        getAcademicYears(),
+      ]);
+      if (termsResult.success && termsResult.data) {
+        setTerms(termsResult.data);
+      }
+      if (yearsResult.success && yearsResult.data) {
+        setAcademicYears(yearsResult.data);
+      }
     }
-    if (yearsResult.success && yearsResult.data) {
-      setAcademicYears(yearsResult.data);
-    }
+
     setLoading(false);
   };
 
@@ -416,6 +434,17 @@ export function Terms({ academicYearId, initialData }: TermsProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {(() => {
+          const selectedYear = academicYears.find((y) => y.id === formData.academic_year_id);
+          if (selectedYear?.status === "archived") {
+            return (
+              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-300 mb-4">
+                This academic year is archived. All records are read-only.
+              </div>
+            );
+          }
+          return null;
+        })()}
         {terms.length === 0 ? (
           <div className="py-8 text-center text-muted-foreground">
             No terms found. Add terms to organize your academic year.

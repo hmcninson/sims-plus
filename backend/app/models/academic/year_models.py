@@ -39,6 +39,7 @@ class AcademicYearStatus(str, Enum):
     PLANNING = "planning"  # Being set up
     ACTIVE = "active"  # Currently running
     COMPLETED = "completed"  # Finished
+    ARCHIVED = "archived"  # Read-only, hidden by default
 
 
 class TermStatus(str, Enum):

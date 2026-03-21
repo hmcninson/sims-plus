@@ -16,6 +16,7 @@ import {
   Database,
   Baby,
   ScrollText,
+  BookOpen,
 } from "lucide-react";
 
 const settingsNavItems = [
@@ -64,6 +65,12 @@ const settingsNavItems = [
         description: "Years, terms, grading",
       },
       {
+        title: "Curriculum",
+        href: "/settings/curriculum",
+        icon: BookOpen,
+        description: "Curriculum profiles, assessment",
+      },
+      {
         title: "Preschool",
         href: "/settings/preschool",
         icon: Baby,
@@ -87,10 +94,10 @@ const settingsNavItems = [
     title: "System",
     items: [
       {
-        title: "Billing",
-        href: "/settings/billing",
+        title: "Subscription",
+        href: "/settings/subscription",
         icon: CreditCard,
-        description: "Subscription and payments",
+        description: "Plan, billing, and add-ons",
       },
       {
         title: "Data",
@@ -136,7 +143,10 @@ export default function SettingsLayout({
                 </h4>
                 <ul className="space-y-1">
                   {group.items.map((item) => {
-                    const isActive = pathname === item.href;
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== "/settings" &&
+                        pathname.startsWith(item.href + "/"));
                     return (
                       <li key={item.href}>
                         <Link
@@ -161,7 +171,7 @@ export default function SettingsLayout({
         </aside>
 
         {/* Settings content */}
-        <main className="flex-1 lg:max-w-2xl">{children}</main>
+        <main className="flex-1 lg:max-w-3xl">{children}</main>
       </div>
     </div>
   );

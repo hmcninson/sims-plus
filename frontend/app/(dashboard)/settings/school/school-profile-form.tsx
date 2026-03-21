@@ -75,6 +75,8 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
     primary_color: initialData.primary_color || "#3b82f6",
     uses_boarding: initialData.uses_boarding || false,
     uses_transport: initialData.uses_transport || false,
+    category: initialData.category || "",
+    boarding_type: initialData.boarding_type || "",
     student_id_prefix: initialData.student_id_prefix || "STU",
     staff_id_prefix: initialData.staff_id_prefix || "STF",
   });
@@ -190,6 +192,8 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
         primary_color: formData.primary_color || undefined,
         uses_boarding: formData.uses_boarding,
         uses_transport: formData.uses_transport,
+        category: (formData.category || undefined) as SchoolProfileUpdate["category"],
+        boarding_type: (formData.boarding_type || undefined) as SchoolProfileUpdate["boarding_type"],
         student_id_prefix: formData.student_id_prefix || undefined,
         staff_id_prefix: formData.staff_id_prefix || undefined,
       };
@@ -257,6 +261,49 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
                 value={formData.year_established}
                 onChange={handleInputChange}
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>School Category</Label>
+              <Select
+                value={formData.category}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, category: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Public (Government)</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="international">International</SelectItem>
+                  <SelectItem value="faith_based">Faith-Based</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The ownership or governance type of your school
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Boarding Type</Label>
+              <Select
+                value={formData.boarding_type}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, boarding_type: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select boarding type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day_only">Day School Only</SelectItem>
+                  <SelectItem value="boarding_only">Boarding School Only</SelectItem>
+                  <SelectItem value="mixed">Mixed (Day & Boarding)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Whether your school offers boarding facilities
+              </p>
             </div>
           </div>
 

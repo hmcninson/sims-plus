@@ -8,19 +8,22 @@ from datetime import UTC, datetime, timedelta
 from typing import Optional, Tuple
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.middleware.tenant import set_db_tenant_context
 from app.models.tenant import Tenant, TenantType, SubscriptionTier
-from app.models.school import School, SchoolType, SchoolStatus
+from app.models.school import School, SchoolType, SchoolStatus, SchoolCategory, BoardingType
 from app.models.user import User, UserRole, UserStatus
 from app.models.reserved_subdomain import ReservedSubdomain
 import structlog
 
+from app.config import settings
 from app.services.tenant import TenantService
 from app.services.email import email_service
+from app.services.email_verification import EmailVerificationService
 
 logger = structlog.get_logger()
 
@@ -37,8 +40,8 @@ class OnboardingError(Exception):
 class OnboardingService:
     """Service for school registration and onboarding."""
 
-    # Trial duration
-    TRIAL_DAYS = 30
+    # Trial duration — read from settings for consistency across the app
+    TRIAL_DAYS = settings.TRIAL_DAYS
 
     # Max students by plan
     MAX_STUDENTS_BY_PLAN = {
@@ -48,8 +51,9 @@ class OnboardingService:
         "enterprise": 10000,
     }
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, redis_client: Optional[aioredis.Redis] = None):
         self.db = db
+        self.redis_client = redis_client
         self.tenant_service = TenantService(db)
 
     async def register_school(
@@ -64,6 +68,8 @@ class OnboardingService:
         admin_phone: Optional[str] = None,
         tenant_type: str = "single_school",
         plan: str = "trial",
+        school_category: Optional[str] = None,
+        boarding_type: Optional[str] = None,
     ) -> Tuple[Tenant, School, User]:
         """
         Register a new school.
@@ -84,6 +90,8 @@ class OnboardingService:
             admin_phone: Optional admin phone
             tenant_type: Tenant type (single_school or school_chain)
             plan: Subscription plan
+            school_category: Optional school category (public, private, etc.)
+            boarding_type: Optional boarding type (day_only, boarding_only, mixed)
 
         Returns:
             Tuple of (Tenant, School, User)
@@ -150,6 +158,8 @@ class OnboardingService:
             slug=subdomain.lower(),
             school_type=SchoolType(school_type.lower()),
             status=SchoolStatus.ACTIVE,
+            category=SchoolCategory(school_category) if school_category else None,
+            boarding_type=BoardingType(boarding_type) if boarding_type else None,
             email=admin_email,
             phone=admin_phone,
             is_active=True,
@@ -164,7 +174,7 @@ class OnboardingService:
             else UserRole.SCHOOL_ADMIN
         )
 
-        # Create admin user
+        # Create admin user with PENDING status — requires email verification before login
         admin_user = User(
             tenant_id=tenant.id,
             school_id=school.id,
@@ -174,9 +184,9 @@ class OnboardingService:
             last_name=admin_last_name,
             phone=admin_phone,
             role=admin_role,
-            status=UserStatus.ACTIVE,  # Auto-verify for initial admin
-            email_verified=True,
-            email_verified_at=datetime.now(UTC),
+            status=UserStatus.PENDING,
+            email_verified=False,
+            email_verified_at=None,
         )
         self.db.add(admin_user)
         await self.db.flush()
@@ -185,6 +195,54 @@ class OnboardingService:
         await self.db.refresh(tenant)
         await self.db.refresh(school)
         await self.db.refresh(admin_user)
+
+        # Send verification email (non-blocking, don't fail registration if email fails)
+        verification_sent = False
+        try:
+            verification_service = EmailVerificationService(
+                self.db, redis_client=self.redis_client
+            )
+            token = await verification_service.create_verification_token(
+                user_id=admin_user.id,
+                tenant_id=tenant.id,
+                email=admin_email.lower(),
+            )
+            if token:
+                await verification_service.send_verification_email(
+                    email=admin_email.lower(),
+                    token=token,
+                    subdomain=subdomain,
+                    first_name=admin_first_name,
+                )
+                verification_sent = True
+                logger.info("verification_email_sent", to=admin_email)
+            else:
+                # Redis unavailable -- token could not be created
+                logger.warning(
+                    "verification_token_creation_failed",
+                    to=admin_email,
+                    reason="redis_unavailable",
+                )
+        except Exception:
+            # Log error but don't fail registration
+            logger.error("verification_email_failed", to=admin_email, exc_info=True)
+
+        # Fallback: if verification email could not be sent (Redis down, email
+        # service failure, etc.), activate the user immediately so they are not
+        # locked out with no way to verify. Email verification is a nice-to-have
+        # layer for the initial admin, not a hard security gate.
+        if not verification_sent:
+            logger.warning(
+                "email_verification_skipped_activating_user",
+                user_id=str(admin_user.id),
+                tenant_id=str(tenant.id),
+                reason="verification_email_could_not_be_sent",
+            )
+            admin_user.status = UserStatus.ACTIVE
+            admin_user.email_verified = True
+            admin_user.email_verified_at = datetime.now(UTC)
+            await self.db.flush()
+            await self.db.refresh(admin_user)
 
         # Send welcome email (non-blocking, don't fail registration if email fails)
         try:

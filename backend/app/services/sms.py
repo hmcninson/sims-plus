@@ -48,6 +48,7 @@ class SMSService:
         message: str,
         provider: SMSProvider = SMSProvider.HUBTEL,
         sender_id: str | None = None,
+        _skip_limit_check: bool = False,
     ) -> SMSLog:
         """
         Send an SMS message and log it.
@@ -59,7 +60,15 @@ class SMSService:
         Args:
             sender_id: Optional override for the sender ID (from school
                        communication settings).
+            _skip_limit_check: Internal flag — set by send_bulk() which does
+                              a single batch-level check instead.
         """
+        if not _skip_limit_check:
+            # Check plan SMS limit before sending (raises LimitExceededError if exceeded)
+            from app.services.subscription import SubscriptionService
+            sub_service = SubscriptionService(self.db)
+            await sub_service.check_sms_limit(tenant_id)
+
         sms_log = SMSLog(
             tenant_id=tenant_id,
             recipient_phone=recipient_phone,
@@ -118,6 +127,11 @@ class SMSService:
         Returns:
             List of SMSLog entries (one per recipient).
         """
+        # Pre-check plan SMS limit for the entire batch (avoids partial sends)
+        from app.services.subscription import SubscriptionService
+        sub_service = SubscriptionService(self.db)
+        await sub_service.check_sms_limit(tenant_id, count=len(recipients))
+
         logs: list[SMSLog] = []
 
         for recipient in recipients:
@@ -131,6 +145,7 @@ class SMSService:
                 message=message,
                 provider=provider,
                 sender_id=sender_id,
+                _skip_limit_check=True,  # Batch check already done above
             )
             logs.append(log_entry)
 

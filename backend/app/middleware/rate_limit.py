@@ -30,9 +30,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/api/v1/auth/login": ("auth", "auth"),
         "/api/v1/auth/refresh": ("auth", "auth"),
         "/api/v1/onboarding/register": ("auth", "register"),
+        "/api/v1/onboarding/resend-verification": ("auth", "onboarding_resend"),
         "/api/v1/tenant/check-subdomain": ("subdomain", "subdomain"),
         "/api/v1/tenant/validate": ("subdomain", "subdomain"),
         "/api/v1/onboarding/suggest-subdomain": ("subdomain", "subdomain"),
+        # Admissions — strict limits on public application submission
+        "/api/v1/admissions/public/applications": ("admissions_submit", "admissions_submit"),
+        # Applicant account rate limits — separate from general auth limits
+        "/api/v1/admissions/public/applicant/register": ("applicant_register", "applicant_register"),
+        "/api/v1/admissions/public/applicant/login": ("auth", "auth"),
+        "/api/v1/admissions/public/applicant/forgot-password": ("applicant_register", "applicant_register"),
+        "/api/v1/admissions/public/applicant/reset-password": ("applicant_register", "applicant_register"),
+        "/api/v1/admissions/public/applicant/verify-email": ("applicant_register", "applicant_register"),
+        "/api/v1/admissions/public/applicant/resend-verification": ("applicant_resend", "applicant_resend"),
+        # Subscription — strict limits on payment initiation (M3)
+        "/api/v1/subscription/upgrade": ("subscription", "subscription"),
+        "/api/v1/subscription/addon": ("subscription", "subscription"),
+        "/api/v1/subscription/calculate-cost": ("subscription", "subscription"),
+        # M4: Webhook rate-limited to auth tier — signature verification is
+        # expensive (HMAC-SHA512), so cap invalid request volume
+        "/api/v1/subscription/webhook/paystack": ("auth", "subscription_webhook"),
     }
 
     # Endpoints that should be excluded from rate limiting.
@@ -121,6 +138,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     settings.RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW,
                     key_prefix,
                 )
+            elif limit_type == "admissions_submit":
+                return (
+                    settings.RATE_LIMIT_ADMISSIONS_SUBMIT_REQUESTS,
+                    settings.RATE_LIMIT_ADMISSIONS_SUBMIT_WINDOW,
+                    key_prefix,
+                )
+            elif limit_type == "applicant_register":
+                return (
+                    settings.RATE_LIMIT_APPLICANT_REGISTER_REQUESTS,
+                    settings.RATE_LIMIT_APPLICANT_REGISTER_WINDOW,
+                    key_prefix,
+                )
+            elif limit_type == "applicant_resend":
+                return (
+                    settings.RATE_LIMIT_APPLICANT_RESEND_REQUESTS,
+                    settings.RATE_LIMIT_APPLICANT_RESEND_WINDOW,
+                    key_prefix,
+                )
+            elif limit_type == "subscription":
+                return (
+                    settings.RATE_LIMIT_SUBSCRIPTION_REQUESTS,
+                    settings.RATE_LIMIT_SUBSCRIPTION_WINDOW,
+                    key_prefix,
+                )
 
         # Check for prefix matches
         for endpoint, (limit_type, key_prefix) in self.ENDPOINT_LIMITS.items():
@@ -135,6 +176,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     return (
                         settings.RATE_LIMIT_SUBDOMAIN_CHECK_REQUESTS,
                         settings.RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "admissions_submit":
+                    return (
+                        settings.RATE_LIMIT_ADMISSIONS_SUBMIT_REQUESTS,
+                        settings.RATE_LIMIT_ADMISSIONS_SUBMIT_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "applicant_register":
+                    return (
+                        settings.RATE_LIMIT_APPLICANT_REGISTER_REQUESTS,
+                        settings.RATE_LIMIT_APPLICANT_REGISTER_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "applicant_resend":
+                    return (
+                        settings.RATE_LIMIT_APPLICANT_RESEND_REQUESTS,
+                        settings.RATE_LIMIT_APPLICANT_RESEND_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "subscription":
+                    return (
+                        settings.RATE_LIMIT_SUBSCRIPTION_REQUESTS,
+                        settings.RATE_LIMIT_SUBSCRIPTION_WINDOW,
                         key_prefix,
                     )
 

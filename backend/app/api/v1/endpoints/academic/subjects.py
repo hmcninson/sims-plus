@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import (
     DatabaseSession,
     RequestTenant,
+    SchoolCtx,
     ValidatedUser,
     require_permissions,
 )
@@ -28,8 +29,13 @@ from app.schemas.academic import (
     AssessmentWeightResponse,
     AcademicSettingsUpdate,
     AcademicSettingsResponse,
+    SubjectTemplateInitRequest,
+    SubjectTemplateInitResponse,
+    SubjectTemplateSubject,
+    SubjectTemplateListItem,
 )
 from app.services.academic import AcademicService, AcademicServiceError
+from app.services.academic.subject_template_service import SubjectTemplateService
 
 router = APIRouter()
 
@@ -196,6 +202,95 @@ async def delete_subject(
     deleted = await service.delete_subject(tenant.tenant_id, subject_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found")
+
+
+# =========================
+# Subject Template Endpoints
+# =========================
+
+
+@router.get(
+    "/subject-templates",
+    response_model=list[SubjectTemplateListItem],
+    summary="List available subject templates",
+    dependencies=[Depends(require_permissions("academic.*"))],
+)
+async def list_subject_templates(
+    current_user: ValidatedUser,
+    school_type: str = Query(
+        ...,
+        description="School type to list templates for (e.g., primary, jhs, shs)",
+    ),
+) -> list[SubjectTemplateListItem]:
+    """
+    List available GES subject templates for a given school type.
+
+    Returns the standard subjects that would be created by the
+    initialize-from-template endpoint. Does not require a database
+    session because templates are static data.
+    """
+    templates = SubjectTemplateService.list_templates(school_type)
+    return [SubjectTemplateListItem(**t) for t in templates]
+
+
+@router.get(
+    "/subject-templates/programmes",
+    summary="List SHS elective programmes",
+    dependencies=[Depends(require_permissions("academic.*"))],
+)
+async def get_available_programmes(
+    current_user: ValidatedUser,
+) -> dict[str, list[str]]:
+    """
+    Get list of available SHS elective programmes.
+
+    Used by the frontend to show programme selection when school_type
+    includes SHS (e.g., shs, basic_shs).
+    """
+    return {"programmes": SubjectTemplateService.get_available_programmes()}
+
+
+@router.post(
+    "/subject-templates/init",
+    response_model=SubjectTemplateInitResponse,
+    summary="Initialize subjects from GES template",
+    dependencies=[Depends(require_permissions("academic.*"))],
+)
+async def initialize_subjects_from_template(
+    request: SubjectTemplateInitRequest,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+    school_context: SchoolCtx,
+) -> SubjectTemplateInitResponse:
+    """
+    Initialize subjects from GES curriculum templates.
+
+    Creates standard subjects for the school type. Idempotent:
+    skips subjects that already exist (by code) within the tenant.
+
+    For SHS schools, optionally specify elective programmes
+    to include their subjects.
+    """
+    tenant_id = UUID(current_user["tenant_id"])
+    service = SubjectTemplateService(db)
+
+    try:
+        result = await service.initialize_from_template(
+            tenant_id=tenant_id,
+            school_type=request.school_type,
+            school_id=school_context.school_id,
+            programmes=request.programmes,
+        )
+    except SubjectTemplateService.Error as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
+
+    return SubjectTemplateInitResponse(
+        created=result["created"],
+        skipped=result["skipped"],
+        subjects=[
+            SubjectTemplateSubject(**s) for s in result["subjects"]
+        ],
+    )
 
 
 # =========================

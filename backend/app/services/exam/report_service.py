@@ -24,6 +24,7 @@ from app.models.exam import (
     TermReport,
 )
 from app.models.academic import (
+    Class,
     Term,
     Subject,
     GradingScale,
@@ -33,6 +34,13 @@ from app.models.academic import (
 )
 from app.models.student import Student
 from app.models.attendance import StudentAttendance, AttendanceStatus
+from app.models.curriculum import (
+    AssessmentComponent,
+    AssessmentStructure,
+    CurriculumProfile,
+)
+from app.models.school import School
+from app.services.exam.score_strategies import get_score_strategy, SubjectScoreResult
 
 
 logger = structlog.get_logger()
@@ -44,6 +52,123 @@ class TermReportService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    # =========================
+    # Curriculum Resolution (Phase 1 prep for Phase 2 score engine)
+    # =========================
+
+    async def _resolve_curriculum_profile(
+        self,
+        tenant_id: UUID,
+        class_id: UUID,
+        student_id: UUID | None = None,
+    ) -> CurriculumProfile | None:
+        """
+        Resolve the curriculum profile for a class/student.
+
+        Resolution chain:
+        1. student.curriculum_profile_id (if student_id provided)
+        2. class.curriculum_profile_id
+        3. school.curriculum_profile_id (via class.school_id)
+        4. None (fall back to GES default logic)
+
+        This method is added in Phase 1 but only used by the score
+        engine refactor in Phase 2. Adding it now avoids merge conflicts.
+        """
+        # 1. Check student override
+        if student_id:
+            stmt = select(Student.curriculum_profile_id).where(
+                Student.tenant_id == tenant_id,
+                Student.id == student_id,
+            )
+            result = await self.db.execute(stmt)
+            student_profile_id = result.scalar_one_or_none()
+            if student_profile_id:
+                return await self._load_profile(tenant_id, student_profile_id)
+
+        # 2. Check class
+        stmt = select(Class.curriculum_profile_id, Class.school_id).where(
+            Class.tenant_id == tenant_id,
+            Class.id == class_id,
+        )
+        result = await self.db.execute(stmt)
+        row = result.one_or_none()
+        if row and row.curriculum_profile_id:
+            return await self._load_profile(tenant_id, row.curriculum_profile_id)
+
+        # 3. Check school
+        if row and row.school_id:
+            stmt = select(School.curriculum_profile_id).where(
+                School.tenant_id == tenant_id,
+                School.id == row.school_id,
+            )
+            result = await self.db.execute(stmt)
+            school_profile_id = result.scalar_one_or_none()
+            if school_profile_id:
+                return await self._load_profile(tenant_id, school_profile_id)
+
+        # 4. No profile found -- fall back to GES default logic
+        return None
+
+    async def _load_profile(
+        self, tenant_id: UUID, profile_id: UUID
+    ) -> CurriculumProfile | None:
+        """Load a curriculum profile with its grading scale."""
+        stmt = (
+            select(CurriculumProfile)
+            .where(
+                CurriculumProfile.tenant_id == tenant_id,
+                CurriculumProfile.id == profile_id,
+                CurriculumProfile.is_active == True,
+                CurriculumProfile.deleted_at.is_(None),
+            )
+            .options(selectinload(CurriculumProfile.grading_scale))
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _get_assessment_structure(
+        self,
+        profile: CurriculumProfile,
+        academic_year_id: UUID | None,
+    ) -> AssessmentStructure | None:
+        """
+        Resolve the active assessment structure for a curriculum profile.
+
+        Prefers a year-specific structure when academic_year_id is provided,
+        falling back to the default (NULL academic_year_id) structure.
+        Components are eagerly loaded so callers can iterate immediately.
+        """
+        # Try year-specific structure first
+        if academic_year_id:
+            result = await self.db.execute(
+                select(AssessmentStructure)
+                .where(
+                    AssessmentStructure.tenant_id == profile.tenant_id,
+                    AssessmentStructure.curriculum_profile_id == profile.id,
+                    AssessmentStructure.academic_year_id == academic_year_id,
+                    AssessmentStructure.is_active == True,
+                    AssessmentStructure.deleted_at.is_(None),
+                )
+                .options(selectinload(AssessmentStructure.components))
+            )
+            structure = result.scalar_one_or_none()
+            if structure:
+                return structure
+
+        # Fall back to default structure (NULL academic_year_id)
+        result = await self.db.execute(
+            select(AssessmentStructure)
+            .where(
+                AssessmentStructure.tenant_id == profile.tenant_id,
+                AssessmentStructure.curriculum_profile_id == profile.id,
+                AssessmentStructure.academic_year_id.is_(None),
+                AssessmentStructure.is_active == True,
+                AssessmentStructure.deleted_at.is_(None),
+            )
+            .options(selectinload(AssessmentStructure.components))
+        )
+        return result.scalar_one_or_none()
+
     async def calculate_student_term_scores(
         self,
         tenant_id: UUID,
@@ -54,6 +179,196 @@ class TermReportService:
     ) -> tuple[Decimal | None, Decimal | None, int]:
         """
         Calculate a student's total score, average, and subject count for a term.
+
+        Dispatches to curriculum-aware strategy if a curriculum profile is
+        resolved for the class/student, otherwise falls back to the legacy
+        GES scoring logic unchanged.
+
+        Returns (total_score, average_score, subjects_count)
+        """
+        # Resolve curriculum profile for strategy dispatch
+        profile = await self._resolve_curriculum_profile(
+            tenant_id, class_id, student_id
+        )
+
+        if profile is not None:
+            structure = await self._get_assessment_structure(
+                profile, academic_year_id
+            )
+            if structure is not None:
+                # Curriculum-aware path -- use the score strategy
+                return await self._calculate_student_term_scores_curriculum(
+                    tenant_id=tenant_id,
+                    term_id=term_id,
+                    student_id=student_id,
+                    class_id=class_id,
+                    academic_year_id=academic_year_id,
+                    profile=profile,
+                    structure=structure,
+                )
+
+        # Legacy GES path -- unchanged scoring logic
+        return await self._calculate_student_term_scores_legacy(
+            tenant_id=tenant_id,
+            term_id=term_id,
+            student_id=student_id,
+            class_id=class_id,
+            academic_year_id=academic_year_id,
+        )
+
+    async def _calculate_student_term_scores_curriculum(
+        self,
+        tenant_id: UUID,
+        term_id: UUID,
+        student_id: UUID,
+        class_id: UUID,
+        academic_year_id: Optional[UUID],
+        profile: CurriculumProfile,
+        structure: AssessmentStructure,
+    ) -> tuple[Decimal | None, Decimal | None, int]:
+        """
+        Curriculum-aware term score calculation using the strategy pattern.
+
+        Delegates per-subject scoring to the appropriate ScoreStrategy,
+        then sums across subjects for total and average.
+        """
+        strategy = get_score_strategy(profile.curriculum_type.value)
+        components = structure.components
+
+        # Get term info for academic_year_id if not provided
+        if not academic_year_id:
+            term_result = await self.db.execute(
+                select(Term.academic_year_id).where(
+                    and_(Term.id == term_id, Term.tenant_id == tenant_id)
+                )
+            )
+            term_row = term_result.scalar_one_or_none()
+            if term_row:
+                academic_year_id = term_row
+
+        # Get all exams for the term
+        exams_result = await self.db.execute(
+            select(Exam.id, Exam.exam_type).where(
+                and_(
+                    Exam.tenant_id == tenant_id,
+                    Exam.term_id == term_id,
+                    Exam.deleted_at.is_(None),
+                )
+            )
+        )
+        exams = exams_result.all()
+        if not exams:
+            return None, None, 0
+
+        all_exam_ids = [e[0] for e in exams]
+
+        # Get all subjects assigned to exams for this class
+        subjects_result = await self.db.execute(
+            select(ExamSubject.subject_id).where(
+                and_(
+                    ExamSubject.tenant_id == tenant_id,
+                    ExamSubject.exam_id.in_(all_exam_ids),
+                    ExamSubject.class_id == class_id,
+                )
+            ).distinct()
+        )
+        subject_ids = [s[0] for s in subjects_result.all()]
+        if not subject_ids:
+            return None, None, 0
+
+        # Build max_scores from component definitions
+        max_scores: dict[str, Decimal] = {}
+        for comp in components:
+            max_scores[comp.component_type.value] = comp.max_score or Decimal("100")
+
+        # For each subject, gather component scores and run through strategy
+        total_score = Decimal("0")
+        subjects_with_scores = 0
+
+        for subject_id in subject_ids:
+            component_scores: dict[str, Decimal | None] = {}
+
+            # Collect CA scores (mapped to CA components)
+            ca_components = [c for c in components if c.maps_to_ca]
+            if ca_components:
+                ca_result = await self.db.execute(
+                    select(
+                        func.sum(ContinuousAssessment.score),
+                        func.sum(ContinuousAssessment.max_score),
+                    ).where(
+                        and_(
+                            ContinuousAssessment.tenant_id == tenant_id,
+                            ContinuousAssessment.term_id == term_id,
+                            ContinuousAssessment.student_id == student_id,
+                            ContinuousAssessment.subject_id == subject_id,
+                            ContinuousAssessment.class_id == class_id,
+                            ContinuousAssessment.score.isnot(None),
+                        )
+                    )
+                )
+                ca_row = ca_result.one()
+                if ca_row[0] is not None:
+                    # Distribute CA total across CA component types
+                    for comp in ca_components:
+                        component_scores[comp.component_type.value] = ca_row[0]
+                        max_scores[comp.component_type.value] = ca_row[1] or Decimal("10")
+
+            # Collect exam scores (mapped to exam components)
+            exam_components = [c for c in components if c.maps_to_exam]
+            if exam_components:
+                end_term_exam_ids = [e[0] for e in exams if e[1] == ExamType.END_TERM]
+                if end_term_exam_ids:
+                    exam_result = await self.db.execute(
+                        select(ExamScore.score, ExamSubject.max_score)
+                        .join(ExamSubject, ExamScore.exam_subject_id == ExamSubject.id)
+                        .where(
+                            and_(
+                                ExamScore.tenant_id == tenant_id,
+                                ExamScore.student_id == student_id,
+                                ExamSubject.exam_id.in_(end_term_exam_ids),
+                                ExamSubject.subject_id == subject_id,
+                                ExamSubject.class_id == class_id,
+                                ExamScore.is_absent == False,
+                                ExamScore.score.isnot(None),
+                            )
+                        )
+                    )
+                    exam_total = Decimal("0")
+                    exam_max_total = Decimal("0")
+                    for score, max_score in exam_result.all():
+                        if score is not None:
+                            exam_total += score
+                            exam_max_total += max_score
+                    if exam_max_total > 0:
+                        for comp in exam_components:
+                            component_scores[comp.component_type.value] = exam_total
+                            max_scores[comp.component_type.value] = exam_max_total
+
+            # Run through strategy
+            result = strategy.calculate_subject_score(
+                component_scores, components, max_scores
+            )
+
+            if result.final_score is not None:
+                total_score += result.final_score
+                subjects_with_scores += 1
+
+        if subjects_with_scores == 0:
+            return None, None, 0
+
+        average_score = total_score / subjects_with_scores
+        return total_score, average_score, subjects_with_scores
+
+    async def _calculate_student_term_scores_legacy(
+        self,
+        tenant_id: UUID,
+        term_id: UUID,
+        student_id: UUID,
+        class_id: UUID,
+        academic_year_id: Optional[UUID] = None,
+    ) -> tuple[Decimal | None, Decimal | None, int]:
+        """
+        Legacy GES term score calculation -- UNCHANGED from original.
 
         Uses weighted scoring based on assessment weights:
         - CA (class work + homework) + midterm + end_term
@@ -788,6 +1103,253 @@ class TermReportService:
     ) -> list[dict]:
         """
         Get detailed subject results for a student in a term.
+
+        Dispatches to curriculum-aware strategy if a curriculum profile
+        is resolved, otherwise falls back to the legacy GES logic.
+        """
+        # Resolve curriculum profile for strategy dispatch
+        profile = await self._resolve_curriculum_profile(
+            tenant_id, class_id, student_id
+        )
+
+        if profile is not None:
+            structure = await self._get_assessment_structure(
+                profile, academic_year_id
+            )
+            if structure is not None:
+                return await self._get_student_subject_results_curriculum(
+                    tenant_id=tenant_id,
+                    term_id=term_id,
+                    student_id=student_id,
+                    class_id=class_id,
+                    academic_year_id=academic_year_id,
+                    section_id=section_id,
+                    profile=profile,
+                    structure=structure,
+                )
+
+        # Legacy GES path -- unchanged scoring logic
+        return await self._get_student_subject_results_legacy(
+            tenant_id=tenant_id,
+            term_id=term_id,
+            student_id=student_id,
+            class_id=class_id,
+            academic_year_id=academic_year_id,
+            section_id=section_id,
+        )
+
+    async def _get_student_subject_results_curriculum(
+        self,
+        tenant_id: UUID,
+        term_id: UUID,
+        student_id: UUID,
+        class_id: UUID,
+        academic_year_id: Optional[UUID],
+        section_id: Optional[UUID],
+        profile: CurriculumProfile,
+        structure: AssessmentStructure,
+    ) -> list[dict]:
+        """
+        Curriculum-aware subject results using the strategy pattern.
+
+        Delegates per-subject scoring to the appropriate ScoreStrategy,
+        then resolves grades from the profile's grading scale.
+        """
+        strategy = get_score_strategy(profile.curriculum_type.value)
+        components = structure.components
+
+        # Get the student's section_id if not provided
+        if section_id is None:
+            student_result = await self.db.execute(
+                select(Student.section_id).where(
+                    and_(Student.id == student_id, Student.tenant_id == tenant_id)
+                )
+            )
+            section_id = student_result.scalar_one_or_none()
+
+        # Get all exams for the term
+        exams_result = await self.db.execute(
+            select(Exam.id, Exam.exam_type).where(
+                and_(
+                    Exam.tenant_id == tenant_id,
+                    Exam.term_id == term_id,
+                    Exam.deleted_at.is_(None),
+                )
+            )
+        )
+        exams = exams_result.all()
+        if not exams:
+            return []
+
+        all_exam_ids = [e[0] for e in exams]
+
+        # Get all subjects with exam assignments for this class
+        from sqlalchemy import or_
+        subjects_result = await self.db.execute(
+            select(Subject)
+            .join(ExamSubject, ExamSubject.subject_id == Subject.id)
+            .where(
+                and_(
+                    ExamSubject.exam_id.in_(all_exam_ids),
+                    ExamSubject.class_id == class_id,
+                    or_(
+                        ExamSubject.section_id.is_(None),
+                        ExamSubject.section_id == section_id,
+                    ),
+                )
+            )
+            .distinct()
+        )
+        subjects = subjects_result.scalars().all()
+        if not subjects:
+            return []
+
+        # Resolve grading scale -- prefer profile's linked scale, fall back to tenant default
+        grades: list[Grade] = []
+        grading_scale_id = profile.grading_scale_id
+        if grading_scale_id:
+            grades_result = await self.db.execute(
+                select(Grade)
+                .where(Grade.grading_scale_id == grading_scale_id)
+                .order_by(Grade.min_score.desc())
+            )
+            grades = list(grades_result.scalars().all())
+        else:
+            # Fall back to tenant default grading scale
+            default_scale = await self.db.execute(
+                select(GradingScale).where(
+                    and_(
+                        GradingScale.tenant_id == tenant_id,
+                        GradingScale.is_default == True,
+                    )
+                )
+            )
+            scale = default_scale.scalar_one_or_none()
+            if scale:
+                grades_result = await self.db.execute(
+                    select(Grade)
+                    .where(Grade.grading_scale_id == scale.id)
+                    .order_by(Grade.min_score.desc())
+                )
+                grades = list(grades_result.scalars().all())
+
+        # Build max_scores from component definitions
+        max_scores: dict[str, Decimal] = {}
+        for comp in components:
+            max_scores[comp.component_type.value] = comp.max_score or Decimal("100")
+
+        subject_results: list[dict] = []
+
+        for subject in subjects:
+            component_scores: dict[str, Decimal | None] = {}
+
+            # Collect CA scores (mapped to CA components)
+            ca_components = [c for c in components if c.maps_to_ca]
+            if ca_components:
+                ca_result = await self.db.execute(
+                    select(
+                        func.sum(ContinuousAssessment.score),
+                        func.sum(ContinuousAssessment.max_score),
+                    ).where(
+                        and_(
+                            ContinuousAssessment.tenant_id == tenant_id,
+                            ContinuousAssessment.term_id == term_id,
+                            ContinuousAssessment.student_id == student_id,
+                            ContinuousAssessment.subject_id == subject.id,
+                            ContinuousAssessment.class_id == class_id,
+                            ContinuousAssessment.score.isnot(None),
+                        )
+                    )
+                )
+                ca_row = ca_result.one()
+                if ca_row[0] is not None:
+                    for comp in ca_components:
+                        component_scores[comp.component_type.value] = ca_row[0]
+                        max_scores[comp.component_type.value] = ca_row[1] or Decimal("10")
+
+            # Collect exam scores (mapped to exam components)
+            exam_components = [c for c in components if c.maps_to_exam]
+            if exam_components:
+                end_term_exam_ids = [e[0] for e in exams if e[1] == ExamType.END_TERM]
+                if end_term_exam_ids:
+                    exam_result = await self.db.execute(
+                        select(ExamScore.score, ExamSubject.max_score)
+                        .join(ExamSubject, ExamScore.exam_subject_id == ExamSubject.id)
+                        .where(
+                            and_(
+                                ExamScore.tenant_id == tenant_id,
+                                ExamScore.student_id == student_id,
+                                ExamSubject.exam_id.in_(end_term_exam_ids),
+                                ExamSubject.subject_id == subject.id,
+                                ExamSubject.class_id == class_id,
+                                or_(
+                                    ExamSubject.section_id.is_(None),
+                                    ExamSubject.section_id == section_id,
+                                ),
+                                ExamScore.is_absent == False,
+                                ExamScore.score.isnot(None),
+                            )
+                        )
+                    )
+                    exam_total = Decimal("0")
+                    exam_max_total = Decimal("0")
+                    for score, max_score in exam_result.all():
+                        if score is not None:
+                            exam_total += score
+                            exam_max_total += max_score
+                    if exam_max_total > 0:
+                        for comp in exam_components:
+                            component_scores[comp.component_type.value] = exam_total
+                            max_scores[comp.component_type.value] = exam_max_total
+
+            # Run through strategy
+            score_result = strategy.calculate_subject_score(
+                component_scores, components, max_scores
+            )
+
+            # Determine grade from the score
+            grade_label, grade_point, grade_remark = strategy.determine_grade(
+                score_result.final_score, grades
+            )
+
+            has_scores = score_result.final_score is not None
+
+            subject_results.append({
+                "subject_id": str(subject.id),
+                "subject_name": subject.name,
+                "subject_code": subject.code,
+                # Per-component scores for template rendering
+                "component_scores": {
+                    k: float(v) if v is not None else None
+                    for k, v in component_scores.items()
+                },
+                # Strategy-computed scores
+                "class_score": float(score_result.class_score.quantize(Decimal("0.01"))) if score_result.class_score else None,
+                "exams_score": float(score_result.exams_score.quantize(Decimal("0.01"))) if score_result.exams_score else None,
+                "total_score": float(score_result.final_score.quantize(Decimal("0.01"))) if has_scores else None,
+                "grade": grade_label,
+                "grade_remark": grade_remark,
+                "grade_point": float(grade_point) if grade_point is not None else None,
+                # Curriculum-specific extras
+                "narrative": score_result.narrative,
+                "effort_grade": score_result.effort_grade,
+                # Position not calculated in curriculum path (yet); will be added in Phase 3
+                "subject_position": None,
+            })
+
+        return subject_results
+
+    async def _get_student_subject_results_legacy(
+        self,
+        tenant_id: UUID,
+        term_id: UUID,
+        student_id: UUID,
+        class_id: UUID,
+        academic_year_id: Optional[UUID] = None,
+        section_id: Optional[UUID] = None,
+    ) -> list[dict]:
+        """
+        Legacy GES subject results -- UNCHANGED from original.
 
         Returns a list of subject results with CA, midterm, end_term breakdown.
         Includes subject_position ranking at the class/section level.

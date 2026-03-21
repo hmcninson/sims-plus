@@ -104,11 +104,41 @@ TENANT_SCOPED_TABLES = [
     "user_schools",
     # Email log (messaging module)
     "email_log",
+    # Admissions (Sprint 19-20)
+    "admission_periods",
+    "admission_form_configs",
+    "applications",
+    "application_guardians",
+    "application_documents",
+    "application_payments",
+    "application_status_history",
+    "application_notes",
+    "entrance_exams",
+    "entrance_exam_registrations",
+    "entrance_exam_results",
+    "admission_decisions",
+    "class_promotions",
+    "class_promotion_entries",
+    "return_intent_campaigns",
+    "return_intents",
+    # Multi-Curriculum (Phase 1)
+    "curriculum_profiles",
+    "assessment_structures",
+    "assessment_components",
+    "report_card_configs",
+    # Multi-Curriculum (Phase 2)
+    "grade_equivalencies",
+    "subject_curriculum_mappings",
+    # Multi-Curriculum (Phase 3)
+    "external_exam_registrations",
+    "student_credit_accumulations",
+    "predicted_grades",
 ]
 
 # Tables with tenant_id that intentionally do NOT use RLS.
 # audit_logs: platform admins need cross-tenant access for security monitoring.
-RLS_EXEMPT_TABLES = {"audit_logs"}
+# subscription_intents: accessed via UnscopedDatabaseSession for Paystack webhook validation.
+RLS_EXEMPT_TABLES = {"audit_logs", "subscription_intents"}
 
 
 # --- Engine fixtures ---
@@ -194,6 +224,118 @@ async def _fix_schema_mismatches():
                 await conn.execute(
                     text(f"ALTER TYPE userstatus RENAME VALUE '{old}' TO '{new}'")
                 )
+
+        # ---- Add 'applicant' value to userrole enum if missing (Sprint 19-20) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM pg_enum
+                JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+                WHERE pg_type.typname = 'userrole'
+                AND pg_enum.enumlabel = 'applicant'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(
+                text("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'applicant'")
+            )
+            await conn.commit()
+            # Must re-enter transaction after ALTER TYPE ADD VALUE outside txn
+            # asyncpg requires the new enum value to be committed before use
+
+        # ---- Add 'archived' value to academicyearstatus enum if missing (Sprint tenant-setup Phase 3B) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM pg_enum
+                JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+                WHERE pg_type.typname = 'academicyearstatus'
+                AND pg_enum.enumlabel = 'archived'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(
+                text("ALTER TYPE academicyearstatus ADD VALUE IF NOT EXISTS 'archived'")
+            )
+            await conn.commit()
+
+        # ---- Add applicant_user_id column to applications if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'applications'
+                AND column_name = 'applicant_user_id'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE applications
+                ADD COLUMN applicant_user_id UUID REFERENCES users(id) ON DELETE SET NULL
+            """))
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_applications_applicant_user
+                ON applications (tenant_id, applicant_user_id)
+                WHERE applicant_user_id IS NOT NULL
+            """))
+
+        # ---- Make date_of_birth, gender, target_class_id nullable on applications ----
+        for col in ["date_of_birth", "gender", "target_class_id"]:
+            await conn.execute(text(f"""
+                ALTER TABLE applications ALTER COLUMN {col} DROP NOT NULL
+            """))
+
+        # ---- Add require_applicant_account to admission_periods if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'admission_periods'
+                AND column_name = 'require_applicant_account'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE admission_periods
+                ADD COLUMN require_applicant_account BOOLEAN NOT NULL DEFAULT false
+            """))
+
+        # ---- Add locked_until column to users if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'users'
+                AND column_name = 'locked_until'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE users ADD COLUMN locked_until TIMESTAMPTZ
+            """))
+
+        # ---- Add last_login column to users if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'users'
+                AND column_name = 'last_login'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE users ADD COLUMN last_login TIMESTAMPTZ
+            """))
+
+        # ---- Convert users.email unique constraint to tenant-scoped ----
+        # Drop global unique if it exists, create tenant-scoped composite unique
+        await conn.execute(text("DROP INDEX IF EXISTS ix_users_email"))
+        await conn.execute(text("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key"))
+        # Create tenant-scoped unique if not exists
+        result = await conn.execute(text("""
+            SELECT 1 FROM pg_indexes
+            WHERE indexname = 'uq_users_tenant_email'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_users_tenant_email
+                ON users(tenant_id, email) WHERE deleted_at IS NULL
+            """))
 
         # ---- Fix tenanttype enum casing (SINGLE_SCHOOL → single_school) ----
         result = await conn.execute(

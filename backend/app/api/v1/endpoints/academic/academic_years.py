@@ -68,7 +68,12 @@ async def create_academic_year(
             updated_at=academic_year.updated_at,
         )
     except AcademicServiceError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+        # 409 Conflict for overlapping date ranges; 400 for other validation errors
+        status_code = (
+            status.HTTP_409_CONFLICT if e.code == "DATE_OVERLAP"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=e.message)
 
 
 @router.get(
@@ -180,11 +185,20 @@ async def update_academic_year(
 ) -> AcademicYearResponse:
     """Update an academic year."""
     service = AcademicService(db)
-    year = await service.update_academic_year(
-        academic_year_id,
-        tenant.tenant_id,
-        **data.model_dump(exclude_unset=True),
-    )
+    try:
+        year = await service.update_academic_year(
+            academic_year_id,
+            tenant.tenant_id,
+            **data.model_dump(exclude_unset=True),
+        )
+    except AcademicServiceError as e:
+        # 409 Conflict for overlapping date ranges; 400 for other validation errors
+        status_code = (
+            status.HTTP_409_CONFLICT if e.code == "DATE_OVERLAP"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=e.message)
+
     if not year:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic year not found")
 
@@ -218,6 +232,49 @@ async def delete_academic_year(
     deleted = await service.delete_academic_year(tenant.tenant_id, academic_year_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic year not found")
+
+
+@router.post(
+    "/academic-years/{academic_year_id}/archive",
+    response_model=AcademicYearResponse,
+    summary="Archive academic year",
+    dependencies=[Depends(require_permissions("academics.update"))],
+)
+async def archive_academic_year(
+    academic_year_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> AcademicYearResponse:
+    """
+    Archive an academic year.
+
+    Requirements:
+    - Academic year must be in 'completed' status
+    - All terms within the year must be in 'completed' status
+    - Cannot archive the current academic year (is_current=True)
+
+    Once archived, the academic year and all associated data become read-only.
+    """
+    service = AcademicService(db)
+    try:
+        year = await service.archive_academic_year(
+            tenant_id=tenant.tenant_id,
+            academic_year_id=academic_year_id,
+        )
+        return AcademicYearResponse(
+            id=year.id,
+            name=year.name,
+            description=year.description,
+            start_date=year.start_date,
+            end_date=year.end_date,
+            status=year.status.value,
+            is_current=year.is_current,
+            created_at=year.created_at,
+            updated_at=year.updated_at,
+        )
+    except AcademicServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 
 
 # =========================

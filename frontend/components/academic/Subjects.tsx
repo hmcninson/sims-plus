@@ -53,13 +53,15 @@ import {
   updateSubject,
   deleteSubject,
 } from "@/actions/academic.action";
+import { SubjectTemplateSelector } from "@/components/academic/SubjectTemplateSelector";
 import type { Subject, SubjectCreate, SubjectUpdate, SubjectCategory } from "@/types";
 
 interface SubjectsProps {
   initialData?: Subject[];
+  schoolType?: string;
 }
 
-export function Subjects({ initialData }: SubjectsProps) {
+export function Subjects({ initialData, schoolType }: SubjectsProps) {
   const [subjects, setSubjects] = useState<Subject[]>(initialData || []);
   const [loading, setLoading] = useState(!initialData);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -208,6 +210,13 @@ export function Subjects({ initialData }: SubjectsProps) {
   }
 
   return (
+    <>
+      {schoolType && subjects.length < 5 && (
+        <SubjectTemplateSelector
+          schoolType={schoolType}
+          onComplete={() => loadSubjects()}
+        />
+      )}
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -419,5 +428,6 @@ export function Subjects({ initialData }: SubjectsProps) {
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+    </>
   );
 }

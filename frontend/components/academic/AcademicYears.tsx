@@ -38,22 +38,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Plus, Settings2, Trash2, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar, Plus, Settings2, Trash2, Loader2, Archive } from "lucide-react";
+import { toast } from "sonner";
 import {
   getAcademicYears,
   createAcademicYear,
   updateAcademicYear,
   deleteAcademicYear,
+  archiveAcademicYear,
 } from "@/actions/academic.action";
 import type { AcademicYear, AcademicYearCreate, AcademicYearUpdate } from "@/types";
 
 interface AcademicYearsProps {
   initialData?: AcademicYear[];
+  /** Pre-fetched academic years from the parent page to avoid duplicate API calls */
+  initialAcademicYears?: AcademicYear[];
+  /** Callback to notify parent when the years list changes (create/update/delete) */
+  onYearsChange?: (years: AcademicYear[]) => void;
 }
 
-export function AcademicYears({ initialData }: AcademicYearsProps) {
-  const [years, setYears] = useState<AcademicYear[]>(initialData || []);
-  const [loading, setLoading] = useState(!initialData);
+export function AcademicYears({ initialData, initialAcademicYears, onYearsChange }: AcademicYearsProps) {
+  // Prefer parent-provided data over component-level initialData
+  const providedData = initialAcademicYears ?? initialData;
+  const [years, setYears] = useState<AcademicYear[]>(providedData || []);
+  const [loading, setLoading] = useState(!providedData);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingYear, setEditingYear] = useState<AcademicYear | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -61,6 +70,10 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [yearToDelete, setYearToDelete] = useState<AcademicYear | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [yearToArchive, setYearToArchive] = useState<AcademicYear | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -69,14 +82,22 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
     start_date: "",
     end_date: "",
     is_current: false,
-    status: "planning" as "planning" | "active" | "completed",
+    status: "planning" as "planning" | "active" | "completed" | "archived",
   });
 
+  // Sync from parent when initialAcademicYears changes (e.g., after parent re-fetches)
   useEffect(() => {
-    if (!initialData) {
+    if (initialAcademicYears) {
+      setYears(initialAcademicYears);
+      setLoading(false);
+    }
+  }, [initialAcademicYears]);
+
+  useEffect(() => {
+    if (!providedData) {
       loadYears();
     }
-  }, [initialData]);
+  }, [providedData]);
 
   const loadYears = async () => {
     setLoading(true);
@@ -115,7 +136,7 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
       start_date: year.start_date,
       end_date: year.end_date,
       is_current: year.is_current,
-      status: year.status as "planning" | "active" | "completed",
+      status: year.status as "planning" | "active" | "completed" | "archived",
     });
     setIsDialogOpen(true);
   };
@@ -137,7 +158,9 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
         };
         const result = await updateAcademicYear(editingYear.id, updateData);
         if (result.success && result.data) {
-          setYears(years.map((y) => (y.id === editingYear.id ? result.data! : y)));
+          const updatedYears = years.map((y) => (y.id === editingYear.id ? result.data! : y));
+          setYears(updatedYears);
+          onYearsChange?.(updatedYears);
           setIsDialogOpen(false);
           resetForm();
         } else {
@@ -153,7 +176,9 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
         };
         const result = await createAcademicYear(createData);
         if (result.success && result.data) {
-          setYears([...years, result.data]);
+          const updatedYears = [...years, result.data];
+          setYears(updatedYears);
+          onYearsChange?.(updatedYears);
           setIsDialogOpen(false);
           resetForm();
         } else {
@@ -176,7 +201,9 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
     setIsDeleting(true);
     const result = await deleteAcademicYear(yearToDelete.id);
     if (result.success) {
-      setYears(years.filter((y) => y.id !== yearToDelete.id));
+      const updatedYears = years.filter((y) => y.id !== yearToDelete.id);
+      setYears(updatedYears);
+      onYearsChange?.(updatedYears);
       setDeleteDialogOpen(false);
       setYearToDelete(null);
     } else {
@@ -184,6 +211,41 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
     }
     setIsDeleting(false);
   };
+
+  const openArchiveDialog = (year: AcademicYear) => {
+    setYearToArchive(year);
+    setArchiveDialogOpen(true);
+  };
+
+  const handleArchive = async () => {
+    if (!yearToArchive) return;
+
+    setIsArchiving(true);
+    const result = await archiveAcademicYear(yearToArchive.id);
+    if (result.success && result.data) {
+      const updatedYears = years.map((y) =>
+        y.id === yearToArchive.id ? result.data! : y,
+      );
+      setYears(updatedYears);
+      onYearsChange?.(updatedYears);
+      toast.success("Academic year archived", {
+        description: `"${yearToArchive.name}" has been archived successfully.`,
+      });
+      setArchiveDialogOpen(false);
+      setYearToArchive(null);
+    } else {
+      toast.error("Failed to archive", {
+        description: result.error || "An error occurred while archiving.",
+      });
+    }
+    setIsArchiving(false);
+  };
+
+  const filteredYears = years.filter((y) =>
+    showArchived ? true : y.status !== "archived",
+  );
+
+  const archivedCount = years.filter((y) => y.status === "archived").length;
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -201,6 +263,8 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
         return <Badge variant="default">Active</Badge>;
       case "completed":
         return <Badge variant="secondary">Completed</Badge>;
+      case "archived":
+        return <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:bg-amber-950">Archived</Badge>;
       default:
         return <Badge variant="outline">Planning</Badge>;
     }
@@ -360,16 +424,36 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
         </div>
       </CardHeader>
       <CardContent>
-        {years.length === 0 ? (
+        {archivedCount > 0 && (
+          <div className="flex items-center gap-2 mb-4">
+            <Checkbox
+              id="show-archived"
+              checked={showArchived}
+              onCheckedChange={(v) => setShowArchived(!!v)}
+            />
+            <label
+              htmlFor="show-archived"
+              className="text-sm text-muted-foreground cursor-pointer select-none"
+            >
+              Show archived years ({archivedCount})
+            </label>
+          </div>
+        )}
+
+        {filteredYears.length === 0 ? (
           <div className="py-8 text-center text-muted-foreground">
-            No academic years found. Create your first academic year to get started.
+            {years.length === 0
+              ? "No academic years found. Create your first academic year to get started."
+              : "No academic years to display. Toggle \"Show archived years\" to see archived entries."}
           </div>
         ) : (
           <div className="space-y-3">
-            {years.map((year) => (
+            {filteredYears.map((year) => (
               <div
                 key={year.id}
-                className="flex items-center justify-between rounded-lg border p-4"
+                className={`flex items-center justify-between rounded-lg border p-4 ${
+                  year.status === "archived" ? "opacity-60" : ""
+                }`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -381,21 +465,38 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEditDialog(year)}
-                  >
-                    <Settings2 className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openDeleteDialog(year)}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {year.status === "archived" ? (
+                    <span className="text-xs text-muted-foreground px-2">Read-only</span>
+                  ) : (
+                    <>
+                      {year.status === "completed" && !year.is_current && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openArchiveDialog(year)}
+                          title="Archive this academic year"
+                        >
+                          <Archive className="mr-1 h-4 w-4" />
+                          Archive
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(year)}
+                      >
+                        <Settings2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openDeleteDialog(year)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -427,6 +528,39 @@ export function AcademicYears({ initialData }: AcademicYearsProps) {
                 </>
               ) : (
                 "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive Academic Year</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to archive &quot;{yearToArchive?.name}&quot;?
+              Once archived, all records for this academic year will become read-only.
+              This includes terms, exams, scores, and attendance data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isArchiving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleArchive}
+              disabled={isArchiving}
+            >
+              {isArchiving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Archiving...
+                </>
+              ) : (
+                <>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

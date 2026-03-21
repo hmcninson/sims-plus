@@ -1,22 +1,37 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Building2,
   Calendar,
   GraduationCap,
   Users,
+  UserPlus,
+  DollarSign,
+  Settings,
+  BookOpen,
+  ClipboardList,
   ArrowRight,
   ArrowLeft,
   Check,
+  CheckCircle2,
   Loader2,
   Sparkles,
+  Plus,
+  Minus,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,22 +44,37 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 
+import { SubjectTemplateSelector } from "@/components/academic/SubjectTemplateSelector";
 import { updateSchoolProfile } from "@/actions/school.action";
-import { createAcademicYear, createClass, createSection } from "@/actions/academic.action";
-import { createUser } from "@/actions/users.action";
-import type { SchoolProfile, UserRole } from "@/types";
+import {
+  createAcademicYear,
+  createClass,
+  createSection,
+  createTerm,
+} from "@/actions/academic.action";
+import type { SchoolProfile } from "@/types";
 
 const STEPS = [
   { id: "welcome", title: "Welcome", icon: Sparkles },
-  { id: "school", title: "School Profile", icon: Building2 },
+  { id: "school-profile", title: "School Profile", icon: Building2 },
   { id: "academic-year", title: "Academic Year", icon: Calendar },
+  { id: "terms", title: "Terms", icon: ClipboardList },
   { id: "classes", title: "Classes", icon: GraduationCap },
+  { id: "subjects", title: "Subjects", icon: BookOpen },
   { id: "complete", title: "Complete", icon: Check },
 ];
 
 interface SetupWizardProps {
-  schoolProfile: SchoolProfile;
+  schoolProfile: SchoolProfile | null;
   onComplete: () => void;
+}
+
+interface TermData {
+  name: string;
+  short_name: string;
+  sequence: number;
+  start_date: string;
+  end_date: string;
 }
 
 export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
@@ -52,14 +82,22 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isPending, startTransition] = useTransition();
 
+  // Context passed between steps
+  const [createdAcademicYear, setCreatedAcademicYear] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
   // School profile state
   const [schoolData, setSchoolData] = useState({
-    motto: schoolProfile.motto || "",
-    description: schoolProfile.description || "",
-    phone: schoolProfile.phone || "",
-    email: schoolProfile.email || "",
-    address: schoolProfile.address || "",
-    city: schoolProfile.city || "",
+    motto: schoolProfile?.motto || "",
+    description: schoolProfile?.description || "",
+    phone: schoolProfile?.phone || "",
+    email: schoolProfile?.email || "",
+    address: schoolProfile?.address || "",
+    city: schoolProfile?.city || "",
+    category: schoolProfile?.category || "",
+    boarding_type: schoolProfile?.boarding_type || "",
   });
 
   // Academic year state
@@ -68,6 +106,32 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
     start_date: `${new Date().getFullYear()}-09-01`,
     end_date: `${new Date().getFullYear() + 1}-07-31`,
   });
+
+  // Terms state — pre-filled with Ghana standard 3 terms
+  const [termsData, setTermsData] = useState<TermData[]>([
+    {
+      name: "First Term",
+      short_name: "T1",
+      sequence: 1,
+      start_date: "",
+      end_date: "",
+    },
+    {
+      name: "Second Term",
+      short_name: "T2",
+      sequence: 2,
+      start_date: "",
+      end_date: "",
+    },
+    {
+      name: "Third Term",
+      short_name: "T3",
+      sequence: 3,
+      start_date: "",
+      end_date: "",
+    },
+  ]);
+  const [termsLoading, setTermsLoading] = useState(false);
 
   // Classes state
   const [classesData, setClassesData] = useState([
@@ -81,6 +145,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
   const handleNext = async () => {
     if (currentStep === 1) {
       // Save school profile
+      if (!schoolProfile) {
+        setCurrentStep(currentStep + 1);
+        return;
+      }
       startTransition(async () => {
         const result = await updateSchoolProfile({
           motto: schoolData.motto || undefined,
@@ -89,6 +157,17 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
           email: schoolData.email || undefined,
           address: schoolData.address || undefined,
           city: schoolData.city || undefined,
+          category: (schoolData.category || undefined) as
+            | "public"
+            | "private"
+            | "international"
+            | "faith_based"
+            | undefined,
+          boarding_type: (schoolData.boarding_type || undefined) as
+            | "day_only"
+            | "boarding_only"
+            | "mixed"
+            | undefined,
         });
 
         if (result.success) {
@@ -109,7 +188,11 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
           is_current: true,
         });
 
-        if (result.success) {
+        if (result.success && result.data) {
+          setCreatedAcademicYear({
+            id: result.data.id,
+            name: result.data.name,
+          });
           setCurrentStep(currentStep + 1);
         } else {
           toast.error("Failed to create academic year", {
@@ -117,11 +200,8 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
           });
         }
       });
-    } else if (currentStep === 3) {
-      // Create classes and sections.
-      // This loop is resilient to partial failures: if a class already exists
-      // (e.g., from a previous interrupted attempt), we skip it and continue
-      // creating the remaining classes. Only truly fatal errors abort the loop.
+    } else if (currentStep === 4) {
+      // Create classes and sections (step index 4 now)
       startTransition(async () => {
         let createdCount = 0;
         let skippedCount = 0;
@@ -137,7 +217,6 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
 
           if (classResult.success && classResult.data) {
             createdCount++;
-            // Create sections for this class
             for (const sectionName of classItem.sections) {
               await createSection({
                 class_id: classResult.data.id,
@@ -146,7 +225,6 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
             }
           } else {
             const errorMsg = classResult.error || "Unknown error";
-            // If the class already exists (duplicate), skip and continue
             const isDuplicate =
               errorMsg.toLowerCase().includes("already exists") ||
               errorMsg.toLowerCase().includes("duplicate");
@@ -154,27 +232,25 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
               skippedCount++;
               continue;
             }
-            // For non-duplicate errors (auth, network, etc.), record and continue
-            // trying the remaining classes instead of aborting everything
             errors.push(`${classItem.name}: ${errorMsg}`);
           }
         }
 
         if (errors.length === 0) {
-          // All classes created or already existed
           if (skippedCount > 0) {
-            toast.info(`${skippedCount} class(es) already existed and were skipped.`);
+            toast.info(
+              `${skippedCount} class(es) already existed and were skipped.`
+            );
           }
           setCurrentStep(currentStep + 1);
         } else {
-          // Some classes failed for non-duplicate reasons
-          toast.error(
-            `Failed to create ${errors.length} class(es)`,
-            { description: errors.join("; ") },
-          );
-          // Still advance if at least some classes were created
+          toast.error(`Failed to create ${errors.length} class(es)`, {
+            description: errors.join("; "),
+          });
           if (createdCount > 0 || skippedCount > 0) {
-            toast.info("You can add the remaining classes later from the Classes page.");
+            toast.info(
+              "You can add the remaining classes later from the Classes page."
+            );
             setCurrentStep(currentStep + 1);
           }
         }
@@ -196,11 +272,88 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
     router.refresh();
   };
 
+  // --- Terms step handlers ---
+
+  const handleCreateTerms = async () => {
+    if (!createdAcademicYear) {
+      toast.error("No academic year found. Please go back and create one.");
+      return;
+    }
+
+    setTermsLoading(true);
+    try {
+      let created = 0;
+      for (const term of termsData) {
+        if (!term.start_date || !term.end_date) continue;
+
+        const result = await createTerm({
+          academic_year_id: createdAcademicYear.id,
+          name: term.name,
+          short_name: term.short_name,
+          sequence: term.sequence,
+          start_date: term.start_date,
+          end_date: term.end_date,
+        });
+
+        if (!result.success) {
+          if (!result.error?.includes("already exists")) {
+            toast.error(`Failed to create ${term.name}: ${result.error}`);
+          }
+        } else {
+          created++;
+        }
+      }
+
+      if (created > 0) {
+        toast.success(`${created} term(s) created successfully`);
+      }
+      setCurrentStep(currentStep + 1);
+    } finally {
+      setTermsLoading(false);
+    }
+  };
+
+  const addTerm = () => {
+    setTermsData([
+      ...termsData,
+      {
+        name: `Term ${termsData.length + 1}`,
+        short_name: `T${termsData.length + 1}`,
+        sequence: termsData.length + 1,
+        start_date: "",
+        end_date: "",
+      },
+    ]);
+  };
+
+  const removeTerm = () => {
+    if (termsData.length > 1) {
+      setTermsData(termsData.slice(0, -1));
+    }
+  };
+
+  const updateTermField = (
+    index: number,
+    field: keyof TermData,
+    value: string | number
+  ) => {
+    const updated = [...termsData];
+    updated[index] = { ...updated[index], [field]: value };
+    setTermsData(updated);
+  };
+
+  // --- Classes step handlers ---
+
   const addClass = () => {
     const newIndex = classesData.length + 1;
     setClassesData([
       ...classesData,
-      { name: `Class ${newIndex}`, short_name: `P${newIndex}`, level: "primary", sections: ["A"] },
+      {
+        name: `Class ${newIndex}`,
+        short_name: `P${newIndex}`,
+        level: "primary",
+        sections: ["A"],
+      },
     ]);
   };
 
@@ -214,8 +367,11 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
     setClassesData(updated);
   };
 
+  // Determine whether we're on a step with custom navigation (Terms, Subjects, Complete)
+  const isCustomNavStep = currentStep === 3 || currentStep === 5 || currentStep === 6;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm overflow-y-auto">
       <div className="w-full max-w-2xl mx-auto p-6">
         {/* Progress Bar */}
         <div className="mb-8">
@@ -230,8 +386,8 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
           <Progress value={progress} className="h-2" />
         </div>
 
-        {/* Step Indicators */}
-        <div className="flex items-center justify-center gap-2 mb-8">
+        {/* Step Indicators — hidden on mobile for 7 steps */}
+        <div className="hidden sm:flex items-center justify-center gap-2 mb-8">
           {STEPS.map((step, index) => {
             const StepIcon = step.icon;
             const isActive = index === currentStep;
@@ -244,8 +400,8 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                   isActive
                     ? "border-primary bg-primary text-primary-foreground"
                     : isComplete
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-muted text-muted-foreground"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-muted text-muted-foreground"
                 }`}
               >
                 {isComplete ? (
@@ -267,7 +423,9 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                   <Sparkles className="h-8 w-8 text-primary" />
                 </div>
-                <CardTitle className="text-2xl">Welcome to SIMS Plus!</CardTitle>
+                <CardTitle className="text-2xl">
+                  Welcome to SIMS Plus!
+                </CardTitle>
                 <CardDescription className="text-base">
                   Let&apos;s set up your school in just a few steps.
                 </CardDescription>
@@ -287,12 +445,16 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       <span className="text-sm">Academic Year</span>
                     </div>
                     <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30">
+                      <ClipboardList className="h-5 w-5 text-primary" />
+                      <span className="text-sm">Terms</span>
+                    </div>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30">
                       <GraduationCap className="h-5 w-5 text-primary" />
                       <span className="text-sm">Classes</span>
                     </div>
-                    <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30">
-                      <Users className="h-5 w-5 text-primary" />
-                      <span className="text-sm">Staff</span>
+                    <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30 col-span-2 justify-center">
+                      <BookOpen className="h-5 w-5 text-primary" />
+                      <span className="text-sm">Subjects</span>
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground pt-2">
@@ -316,15 +478,17 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="school_name">School Name</Label>
-                  <Input
-                    id="school_name"
-                    value={schoolProfile.name}
-                    disabled
-                    className="bg-muted"
-                  />
-                </div>
+                {schoolProfile && (
+                  <div className="space-y-2">
+                    <Label htmlFor="school_name">School Name</Label>
+                    <Input
+                      id="school_name"
+                      value={schoolProfile.name}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="motto">School Motto</Label>
                   <Input
@@ -332,7 +496,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     placeholder="Enter your school's motto"
                     value={schoolData.motto}
                     onChange={(e) =>
-                      setSchoolData((prev) => ({ ...prev, motto: e.target.value }))
+                      setSchoolData((prev) => ({
+                        ...prev,
+                        motto: e.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -343,7 +510,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     placeholder="A short description of your school..."
                     value={schoolData.description}
                     onChange={(e) =>
-                      setSchoolData((prev) => ({ ...prev, description: e.target.value }))
+                      setSchoolData((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -356,7 +526,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       placeholder="+233 XX XXX XXXX"
                       value={schoolData.phone}
                       onChange={(e) =>
-                        setSchoolData((prev) => ({ ...prev, phone: e.target.value }))
+                        setSchoolData((prev) => ({
+                          ...prev,
+                          phone: e.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -368,7 +541,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       placeholder="school@example.com"
                       value={schoolData.email}
                       onChange={(e) =>
-                        setSchoolData((prev) => ({ ...prev, email: e.target.value }))
+                        setSchoolData((prev) => ({
+                          ...prev,
+                          email: e.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -381,7 +557,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       placeholder="e.g., Accra"
                       value={schoolData.city}
                       onChange={(e) =>
-                        setSchoolData((prev) => ({ ...prev, city: e.target.value }))
+                        setSchoolData((prev) => ({
+                          ...prev,
+                          city: e.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -392,11 +571,72 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       placeholder="Street address"
                       value={schoolData.address}
                       onChange={(e) =>
-                        setSchoolData((prev) => ({ ...prev, address: e.target.value }))
+                        setSchoolData((prev) => ({
+                          ...prev,
+                          address: e.target.value,
+                        }))
                       }
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>School Category</Label>
+                    <Select
+                      value={schoolData.category}
+                      onValueChange={(val) =>
+                        setSchoolData((prev) => ({ ...prev, category: val }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="public">
+                          Public (Government)
+                        </SelectItem>
+                        <SelectItem value="private">Private</SelectItem>
+                        <SelectItem value="international">
+                          International
+                        </SelectItem>
+                        <SelectItem value="faith_based">
+                          Faith-Based
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Boarding Type</Label>
+                    <Select
+                      value={schoolData.boarding_type}
+                      onValueChange={(val) =>
+                        setSchoolData((prev) => ({
+                          ...prev,
+                          boarding_type: val,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select boarding type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="day_only">
+                          Day School Only
+                        </SelectItem>
+                        <SelectItem value="boarding_only">
+                          Boarding School Only
+                        </SelectItem>
+                        <SelectItem value="mixed">
+                          Mixed (Day & Boarding)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Category and boarding type are optional. You can set these
+                  later in Settings.
+                </p>
               </CardContent>
             </>
           )}
@@ -421,7 +661,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     placeholder="e.g., 2025/2026 Academic Year"
                     value={academicYearData.name}
                     onChange={(e) =>
-                      setAcademicYearData((prev) => ({ ...prev, name: e.target.value }))
+                      setAcademicYearData((prev) => ({
+                        ...prev,
+                        name: e.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -433,7 +676,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       type="date"
                       value={academicYearData.start_date}
                       onChange={(e) =>
-                        setAcademicYearData((prev) => ({ ...prev, start_date: e.target.value }))
+                        setAcademicYearData((prev) => ({
+                          ...prev,
+                          start_date: e.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -444,20 +690,147 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                       type="date"
                       value={academicYearData.end_date}
                       onChange={(e) =>
-                        setAcademicYearData((prev) => ({ ...prev, end_date: e.target.value }))
+                        setAcademicYearData((prev) => ({
+                          ...prev,
+                          end_date: e.target.value,
+                        }))
                       }
                     />
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  You can add terms and customize the academic calendar later in Settings.
-                </p>
               </CardContent>
             </>
           )}
 
-          {/* Step 3: Classes */}
+          {/* Step 3: Terms */}
           {currentStep === 3 && (
+            <>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5" />
+                  Set Up Terms
+                </CardTitle>
+                <CardDescription>
+                  Define the terms for{" "}
+                  {createdAcademicYear?.name || "your academic year"}. Ghana
+                  typically uses 3 terms.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                  {termsData.map((term, index) => (
+                    <div
+                      key={index}
+                      className="rounded-lg border p-4 space-y-3"
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Term Name</Label>
+                          <Input
+                            value={term.name}
+                            onChange={(e) =>
+                              updateTermField(index, "name", e.target.value)
+                            }
+                            placeholder="e.g., First Term"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Short Name</Label>
+                          <Input
+                            value={term.short_name}
+                            onChange={(e) =>
+                              updateTermField(
+                                index,
+                                "short_name",
+                                e.target.value
+                              )
+                            }
+                            placeholder="e.g., T1"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Start Date</Label>
+                          <Input
+                            type="date"
+                            value={term.start_date}
+                            onChange={(e) =>
+                              updateTermField(
+                                index,
+                                "start_date",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">End Date</Label>
+                          <Input
+                            type="date"
+                            value={term.end_date}
+                            onChange={(e) =>
+                              updateTermField(
+                                index,
+                                "end_date",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addTerm}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add Term
+                  </Button>
+                  {termsData.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={removeTerm}
+                    >
+                      <Minus className="mr-1 h-4 w-4" />
+                      Remove Last
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex justify-between pt-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => setCurrentStep(currentStep + 1)}
+                  >
+                    Skip for now
+                  </Button>
+                  <Button
+                    onClick={handleCreateTerms}
+                    disabled={termsLoading}
+                  >
+                    {termsLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating terms...
+                      </>
+                    ) : (
+                      "Create Terms & Continue"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          )}
+
+          {/* Step 4: Classes */}
+          {currentStep === 4 && (
             <>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -473,23 +846,29 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                   {classesData.map((classItem, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
+                      className="flex flex-wrap items-center gap-3 p-3 rounded-lg border bg-muted/30"
                     >
                       <Input
                         placeholder="Class name"
                         value={classItem.name}
-                        onChange={(e) => updateClass(index, "name", e.target.value)}
-                        className="flex-1"
+                        onChange={(e) =>
+                          updateClass(index, "name", e.target.value)
+                        }
+                        className="flex-1 min-w-[120px]"
                       />
                       <Input
                         placeholder="Short"
                         value={classItem.short_name}
-                        onChange={(e) => updateClass(index, "short_name", e.target.value)}
+                        onChange={(e) =>
+                          updateClass(index, "short_name", e.target.value)
+                        }
                         className="w-20"
                       />
                       <Select
                         value={classItem.level}
-                        onValueChange={(value) => updateClass(index, "level", value)}
+                        onValueChange={(value) =>
+                          updateClass(index, "level", value)
+                        }
                       >
                         <SelectTrigger className="w-28">
                           <SelectValue />
@@ -513,91 +892,185 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                     </div>
                   ))}
                 </div>
-                <Button type="button" variant="outline" onClick={addClass} className="w-full">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addClass}
+                  className="w-full"
+                >
                   Add Another Class
                 </Button>
                 <p className="text-sm text-muted-foreground">
-                  Each class will be created with a default section &quot;A&quot;. You can add more sections later.
+                  Each class will be created with a default section &quot;A&quot;.
+                  You can add more sections later.
                 </p>
               </CardContent>
             </>
           )}
 
-          {/* Step 4: Complete */}
-          {currentStep === 4 && (
+          {/* Step 5: Subjects */}
+          {currentStep === 5 && (
+            <>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5" />
+                  Set Up Subjects
+                </CardTitle>
+                <CardDescription>
+                  Load standard GES curriculum subjects for your school, or skip
+                  to add them later.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <SubjectTemplateSelector
+                  schoolType={
+                    schoolProfile?.school_type || "primary"
+                  }
+                  onComplete={() => setCurrentStep(currentStep + 1)}
+                />
+                <Button
+                  variant="ghost"
+                  onClick={() => setCurrentStep(currentStep + 1)}
+                  className="w-full"
+                >
+                  Skip -- I&apos;ll add subjects later
+                </Button>
+              </CardContent>
+            </>
+          )}
+
+          {/* Step 6: Complete */}
+          {currentStep === 6 && (
             <>
               <CardHeader className="text-center pb-2">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/20">
-                  <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+                  <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
                 </div>
-                <CardTitle className="text-2xl">You&apos;re All Set!</CardTitle>
+                <CardTitle className="text-2xl">Setup Complete!</CardTitle>
                 <CardDescription className="text-base">
-                  Your school has been configured successfully.
+                  Your school is ready. Here are your recommended next steps:
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-4">
-                <div className="space-y-4 text-center">
-                  <div className="space-y-2">
-                    <p className="font-medium">{schoolProfile.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {classesData.length} classes created
-                    </p>
-                  </div>
-                  <div className="pt-4">
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Next steps you might want to take:
-                    </p>
-                    <div className="grid grid-cols-1 gap-2 max-w-xs mx-auto text-left">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span>Upload your school logo</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span>Invite your staff members</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span>Add subjects</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span>Enroll students</span>
-                      </div>
-                    </div>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <NextStepCard
+                    icon={<Users className="h-5 w-5" />}
+                    title="Import Students"
+                    description="Upload student data from CSV/Excel"
+                    href="/students?import=true"
+                  />
+                  <NextStepCard
+                    icon={<UserPlus className="h-5 w-5" />}
+                    title="Add Staff"
+                    description="Create teacher and staff accounts"
+                    href="/staff"
+                  />
+                  <NextStepCard
+                    icon={<DollarSign className="h-5 w-5" />}
+                    title="Fee Structures"
+                    description="Set up tuition and fee schedules"
+                    href="/finance/fee-structures"
+                  />
+                  <NextStepCard
+                    icon={<Settings className="h-5 w-5" />}
+                    title="School Settings"
+                    description="Logo, branding, and preferences"
+                    href="/settings/school"
+                  />
                 </div>
               </CardContent>
             </>
           )}
 
-          {/* Navigation Buttons */}
-          <div className="flex items-center justify-between p-6 pt-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentStep === 0 || isPending}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
+          {/* Navigation Buttons — hidden on steps with custom nav */}
+          {!isCustomNavStep && (
+            <div className="flex items-center justify-between p-6 pt-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePrevious}
+                disabled={currentStep === 0 || isPending}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
 
-            {currentStep < STEPS.length - 1 ? (
               <Button onClick={handleNext} disabled={isPending}>
-                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 {currentStep === 0 ? "Get Started" : "Continue"}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            ) : (
+            </div>
+          )}
+
+          {/* Terms step: show back + skip/create buttons are inline above */}
+          {currentStep === 3 && (
+            <div className="flex items-center justify-start p-6 pt-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePrevious}
+                disabled={termsLoading}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+            </div>
+          )}
+
+          {/* Subjects step: back button */}
+          {currentStep === 5 && (
+            <div className="flex items-center justify-start p-6 pt-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePrevious}
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+            </div>
+          )}
+
+          {/* Complete step: Go to Dashboard */}
+          {currentStep === 6 && (
+            <div className="flex items-center justify-center p-6 pt-0">
               <Button onClick={handleComplete}>
                 Go to Dashboard
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </Card>
       </div>
     </div>
+  );
+}
+
+function NextStepCard({
+  icon,
+  title,
+  description,
+  href,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  href: string;
+}) {
+  return (
+    <Link href={href}>
+      <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
+        <CardContent className="pt-4 flex items-start gap-3">
+          <div className="text-muted-foreground mt-0.5">{icon}</div>
+          <div>
+            <p className="font-medium text-sm">{title}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

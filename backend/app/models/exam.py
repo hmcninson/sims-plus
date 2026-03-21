@@ -25,7 +25,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
@@ -405,6 +405,11 @@ class ExamScore(Base, TenantMixin, SoftDeleteMixin):
         nullable=True,
         comment="Grade remark (Excellent, Good, etc.)",
     )
+    effort_grade: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+        comment="Effort grade (Cambridge: 1-5 or A-E)",
+    )
 
     # Teacher Remark (for report card)
     teacher_remark: Mapped[str | None] = mapped_column(
@@ -775,6 +780,41 @@ class TermReport(Base, TenantMixin, SoftDeleteMixin):
         Text,
         nullable=True,
         comment="Headmaster's remark",
+    )
+
+    # Curriculum-specific fields (Phase 2)
+    curriculum_profile_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("curriculum_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Curriculum profile used to generate this report",
+    )
+    gpa: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 2), nullable=True, comment="Term GPA (American, IB)",
+    )
+    weighted_gpa: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 2), nullable=True, comment="Weighted GPA",
+    )
+    cumulative_gpa: Mapped[Decimal | None] = mapped_column(
+        Numeric(4, 2), nullable=True, comment="Cumulative GPA across terms",
+    )
+    total_credits_earned: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 1), nullable=True, comment="Credits earned this term",
+    )
+    cumulative_credits: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 1), nullable=True, comment="Total credits to date",
+    )
+    honor_roll: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, comment="Honor roll status",
+    )
+    ib_total_points: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="IB total points (out of 45)",
+    )
+    french_mention: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="French mention category",
+    )
+    extra_data: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, comment="Curriculum-specific report data",
     )
 
     # Publishing

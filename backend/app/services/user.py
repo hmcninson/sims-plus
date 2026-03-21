@@ -139,7 +139,13 @@ class UserService:
 
         Raises:
             UserServiceError: If email already exists
+            LimitExceededError: If user account limit is reached
         """
+        # Check plan limit before creating (raises LimitExceededError if exceeded)
+        from app.services.subscription import SubscriptionService
+        sub_service = SubscriptionService(self.db)
+        await sub_service.check_user_limit(tenant_id)
+
         # Check if email already exists
         existing = await self.get_user_by_email(email, tenant_id)
         if existing:

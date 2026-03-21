@@ -122,6 +122,35 @@ TENANT_SCOPED_TABLES: list[str] = [
     "user_schools",
     # Email log (messaging module)
     "email_log",
+    # Admissions (Sprint 19-20)
+    "admission_periods",
+    "admission_form_configs",
+    "applications",
+    "application_guardians",
+    "application_documents",
+    "application_payments",
+    "application_status_history",
+    "application_notes",
+    "entrance_exams",
+    "entrance_exam_registrations",
+    "entrance_exam_results",
+    "admission_decisions",
+    "class_promotions",
+    "class_promotion_entries",
+    "return_intent_campaigns",
+    "return_intents",
+    # Multi-Curriculum (Phase 1)
+    "curriculum_profiles",
+    "assessment_structures",
+    "assessment_components",
+    "report_card_configs",
+    # Multi-Curriculum (Phase 2)
+    "grade_equivalencies",
+    "subject_curriculum_mappings",
+    # Multi-Curriculum (Phase 3)
+    "external_exam_registrations",
+    "student_credit_accumulations",
+    "predicted_grades",
 ]
 
 DEFAULT_DATABASE_URL = (

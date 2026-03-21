@@ -13,6 +13,7 @@ This middleware:
 import json
 import re
 from contextvars import ContextVar
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -118,6 +119,8 @@ PUBLIC_PATH_PREFIXES = (
     "/api/v1/auth/reset-password",  # Password reset uses token for tenant context
     "/api/v1/onboarding/",  # Onboarding is public
     "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
+    "/api/v1/admissions/public/webhook/",  # Paystack webhook — tenant from metadata, not subdomain
+    "/api/v1/subscription/webhook/",  # Subscription webhook — tenant from metadata, not subdomain
 )
 
 
@@ -264,6 +267,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
             request.state.tenant_subdomain = tenant["subdomain"]
             request.state.tenant_name = tenant["name"]
 
+            # Subscription enforcement fields — used by enforce_subscription dependency
+            request.state.tenant_status = tenant.get("status")
+            request.state.tenant_trial_ends_at = tenant.get("trial_ends_at")
+            request.state.tenant_subscription_end = tenant.get("subscription_end")
+
         # Process request
         try:
             response = await call_next(request)
@@ -306,16 +314,23 @@ class TenantMiddleware(BaseHTTPMiddleware):
             try:
                 cached = await redis_client.get(cache_key)
                 if cached:
-                    return json.loads(cached)
+                    data = json.loads(cached)
+                    # Deserialize ISO datetime strings back to native types (C5)
+                    if data.get("trial_ends_at"):
+                        data["trial_ends_at"] = datetime.fromisoformat(data["trial_ends_at"])
+                    if data.get("subscription_end"):
+                        data["subscription_end"] = date.fromisoformat(data["subscription_end"])
+                    return data
             except Exception:
                 # Redis failure should not break tenant lookup.
                 # Fall through to database query.
                 logger.warning("redis_cache_read_failed", action="tenant_lookup")
 
-        # Cache miss -- query database
+        # Cache miss -- query database (includes subscription fields for enforcement)
         result = await db.execute(
             text("""
-                SELECT id, subdomain, name, is_active
+                SELECT id, subdomain, name, is_active,
+                       status, trial_ends_at, subscription_end
                 FROM tenants
                 WHERE subdomain = :subdomain
                 AND deleted_at IS NULL
@@ -332,6 +347,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "subdomain": row.subdomain,
             "name": row.name,
             "is_active": row.is_active,
+            "status": row.status,
+            # Serialize datetimes as ISO strings for Redis cache compatibility (C5)
+            "trial_ends_at": row.trial_ends_at.isoformat() if row.trial_ends_at else None,
+            "subscription_end": row.subscription_end.isoformat() if row.subscription_end else None,
         }
 
         # Write to cache (best effort -- don't fail request if Redis is down)

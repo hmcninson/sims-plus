@@ -51,6 +51,43 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Subscription/limit error thrown when the backend returns a 403
+ * with a subscription-related error code (e.g., TRIAL_EXPIRED,
+ * STUDENT_LIMIT_EXCEEDED). Frontend can catch this to show appropriate UI.
+ */
+export class SubscriptionError extends ApiError {
+  public readonly code: string;
+  public readonly graceDaysRemaining?: number;
+
+  constructor(
+    message: string,
+    status: number,
+    code: string,
+    graceDaysRemaining?: number,
+  ) {
+    super(message, status);
+    this.name = "SubscriptionError";
+    this.code = code;
+    this.graceDaysRemaining = graceDaysRemaining;
+  }
+}
+
+/** Subscription/limit 403 error codes that trigger SubscriptionError */
+const SUBSCRIPTION_ERROR_CODES = new Set([
+  "TRIAL_EXPIRED",
+  "SUBSCRIPTION_EXPIRED",
+  "TRIAL_GRACE_PERIOD",
+  "SUBSCRIPTION_GRACE_PERIOD",
+  "TENANT_SUSPENDED",
+  "STUDENT_LIMIT_EXCEEDED",
+  "USER_LIMIT_EXCEEDED",
+  "SMS_LIMIT_EXCEEDED",
+  "STAFF_LIMIT_EXCEEDED",
+  "FEATURE_NOT_AVAILABLE",
+  "ADDON_NOT_PURCHASED",
+]);
+
 /** Parse FastAPI error response body into a human-readable message. */
 function parseErrorDetail(
   body: Record<string, unknown>,
@@ -108,16 +145,43 @@ export async function apiFetch<T>(
 
   const url = `${API_BASE_URL}${endpoint}`;
 
+  // Caching strategy:
+  // - GET requests use next.revalidate=0: always revalidates with the server
+  //   but still allows Next.js per-request deduplication within a single render pass.
+  // - Mutation requests (POST/PUT/PATCH/DELETE) use cache:"no-store" to bypass
+  //   all caching and deduplication, since mutations must always execute.
+  const method = (fetchOptions.method ?? "GET").toUpperCase();
+  const isMutation = method !== "GET" && method !== "HEAD";
+
   const response = await fetch(url, {
     ...fetchOptions,
     headers,
-    cache: "no-store", // Disable Next.js fetch caching
+    ...(isMutation
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: 0 } }),
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    const errorMessage = parseErrorDetail(error, `API Error: ${response.status}`);
+
+    // Detect subscription/limit-related 403 errors and throw SubscriptionError
+    if (response.status === 403) {
+      const code = typeof error.code === "string" ? error.code : "";
+      if (SUBSCRIPTION_ERROR_CODES.has(code)) {
+        throw new SubscriptionError(
+          errorMessage,
+          response.status,
+          code,
+          typeof error.grace_days_remaining === "number"
+            ? error.grace_days_remaining
+            : undefined,
+        );
+      }
+    }
+
     throw new ApiError(
-      parseErrorDetail(error, `API Error: ${response.status}`),
+      errorMessage,
       response.status,
       requestId,
     );

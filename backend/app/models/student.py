@@ -27,6 +27,7 @@ from app.models.base import Base, TenantMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.models.academic import Class, ClassSection
+    from app.models.curriculum import CurriculumProfile
     from app.models.school import School
 
 
@@ -149,6 +150,18 @@ class Student(Base, TenantMixin, SoftDeleteMixin):
         comment="Available credit balance from credit notes",
     )
 
+    # Curriculum tracking
+    curriculum_profile_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("curriculum_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Student's current curriculum (inherited from class if NULL)",
+    )
+    previous_curriculum_type: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="For transfer students -- records origin curriculum type",
+    )
+
     # Relationships
     # lazy="raise" prevents accidental lazy loading in async context.
     # Use selectinload()/joinedload() explicitly in queries that need these.
@@ -171,6 +184,10 @@ class Student(Base, TenantMixin, SoftDeleteMixin):
         "StudentGuardian",
         back_populates="student_rel",
         cascade="all, delete-orphan",
+        lazy="raise",
+    )
+    curriculum_profile: Mapped[Optional["CurriculumProfile"]] = relationship(
+        "CurriculumProfile",
         lazy="raise",
     )
 

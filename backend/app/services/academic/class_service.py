@@ -18,6 +18,7 @@ from app.models.academic import (
     Class,
     ClassSection,
 )
+from app.models.curriculum import CurriculumProfile
 
 from app.services.academic._shared import AcademicServiceError
 
@@ -34,6 +35,28 @@ class ClassMixin:
     # Class Methods
     # =========================
 
+    async def _validate_curriculum_profile_fk(
+        self, tenant_id: UUID, curriculum_profile_id: UUID
+    ) -> None:
+        """
+        Validate that curriculum_profile_id belongs to the same tenant.
+
+        PostgreSQL FK constraints bypass RLS, so cross-tenant FK references
+        must be prevented at the application layer.
+        """
+        result = await self.db.execute(
+            select(CurriculumProfile.id).where(
+                CurriculumProfile.id == curriculum_profile_id,
+                CurriculumProfile.tenant_id == tenant_id,
+                CurriculumProfile.deleted_at.is_(None),
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise AcademicServiceError(
+                "Curriculum profile not found",
+                code="curriculum_profile_not_found",
+            )
+
     async def create_class(
         self,
         tenant_id: UUID,
@@ -43,8 +66,13 @@ class ClassMixin:
         sequence: int = 1,
         capacity: Optional[int] = None,
         school_id: Optional[UUID] = None,
+        curriculum_profile_id: Optional[UUID] = None,
     ) -> Class:
         """Create a new class."""
+        # Validate curriculum profile FK if provided
+        if curriculum_profile_id:
+            await self._validate_curriculum_profile_fk(tenant_id, curriculum_profile_id)
+
         # Check for duplicate name
         existing = await self.db.execute(
             select(Class).where(
@@ -69,6 +97,7 @@ class ClassMixin:
             sequence=sequence,
             capacity=capacity,
             school_id=school_id,
+            curriculum_profile_id=curriculum_profile_id,
             is_active=True,
         )
         self.db.add(class_)
@@ -138,6 +167,25 @@ class ClassMixin:
         class_ = await self.get_class(tenant_id, class_id)
         if not class_:
             return None
+
+        # Validate curriculum profile FK if being updated
+        if "curriculum_profile_id" in kwargs and kwargs["curriculum_profile_id"] is not None:
+            await self._validate_curriculum_profile_fk(
+                tenant_id, kwargs["curriculum_profile_id"]
+            )
+            # Log when switching curriculum mid-term -- scores may need recalculation
+            if (
+                class_.curriculum_profile_id
+                and class_.curriculum_profile_id != kwargs["curriculum_profile_id"]
+            ):
+                logger.warning(
+                    "class_curriculum_profile_changed",
+                    class_id=str(class_id),
+                    tenant_id=str(tenant_id),
+                    old_profile_id=str(class_.curriculum_profile_id),
+                    new_profile_id=str(kwargs["curriculum_profile_id"]),
+                    note="Scores may need recalculation after curriculum change",
+                )
 
         for key, value in kwargs.items():
             if value is not None and hasattr(class_, key):

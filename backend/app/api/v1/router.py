@@ -4,11 +4,16 @@ SIMS Plus - API v1 Router
 Aggregates all API endpoints under /api/v1.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain, communication_settings, messaging
+from app.api.deps import enforce_subscription
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain, communication_settings, messaging, admissions, subscription
+from app.api.v1.endpoints.curriculum import router as curriculum_router
 
-api_router = APIRouter()
+# C1: enforce_subscription is a global dependency on api_router.
+# Unauthenticated routes are automatically exempt (the dependency
+# requires get_validated_current_user which won't resolve for them).
+api_router = APIRouter(dependencies=[Depends(enforce_subscription)])
 
 
 # =========================
@@ -173,3 +178,21 @@ api_router.include_router(communication_settings.router, prefix="/communication-
 # Messaging (SMS, Email, Recipients)
 # =========================
 api_router.include_router(messaging.router, prefix="/messaging", tags=["Messaging"])
+
+
+# =========================
+# Admissions Portal
+# =========================
+api_router.include_router(admissions.router, prefix="/admissions", tags=["Admissions"])
+
+
+# =========================
+# Curriculum (Multi-Curriculum Support)
+# =========================
+api_router.include_router(curriculum_router)
+
+
+# =========================
+# Subscription Management
+# =========================
+api_router.include_router(subscription.router)

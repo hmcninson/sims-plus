@@ -45,7 +45,7 @@ export function Hero() {
 
           {/* Trust Indicators */}
           <p className="mt-8 text-sm text-muted-foreground">
-            No credit card required. 14-day free trial.
+            No credit card required. 90-day free trial.
           </p>
         </div>
 

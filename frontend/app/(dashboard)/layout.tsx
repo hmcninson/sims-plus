@@ -1,10 +1,11 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUserContext } from "@/actions/auth.action";
 import { getAccessibleSchools } from "@/actions/chain.action";
 import { ApiError } from "@/lib/api";
-import { getSchoolProfile } from "@/actions/school.action";
-import { getAcademicYears, getClasses } from "@/actions/academic.action";
+import { getCachedSchoolProfile } from "@/actions/school.action";
+import { getCachedAcademicYears, getCachedClasses, getTerms, getSubjects } from "@/actions/academic.action";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { SetupCheck } from "@/components/setup-wizard";
@@ -16,6 +17,12 @@ import {
 } from "@/components/ui/sidebar";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { OfflineBanner } from "@/components/offline/offline-banner";
+import { TrialBanner } from "@/components/subscription/trial-banner";
+import { ExpiredGate } from "@/components/subscription/expired-gate";
+import { getSubscriptionStatus } from "@/actions/subscription.action";
+
+// Accessible schools is only used in the layout, so a local cache wrapper is fine
+const getCachedAccessibleSchools = cache(() => getAccessibleSchools());
 
 /**
  * Helper to wait a fixed number of milliseconds.
@@ -83,23 +90,44 @@ export default async function DashboardLayout({
   const isPotentiallyChain = session.user.role === "chain_admin"
     || session.user.role === "platform_admin";
 
-  // Fetch data for setup check and chain schools in parallel
-  // TODO: Consider caching getAccessibleSchools — it runs on every page load for chain admins
-  const [schoolResult, academicYearsResult, classesResult, schoolsResult] = await Promise.all([
-    getSchoolProfile(),
-    getAcademicYears(),
-    getClasses(),
+  // Fetch data for setup check and chain schools in parallel.
+  // Uses React.cache()-wrapped versions so any child server component
+  // calling the same action during this render reuses the result.
+  const [schoolResult, academicYearsResult, classesResult, termsResult, subjectsResult, schoolsResult, subscriptionResult] = await Promise.all([
+    getCachedSchoolProfile(),
+    getCachedAcademicYears(),
+    getCachedClasses(),
+    getTerms(),
+    getSubjects(),
     // Only fetch accessible schools for chain admin roles
-    isPotentiallyChain ? getAccessibleSchools() : Promise.resolve({ success: true as const, data: [] }),
+    isPotentiallyChain ? getCachedAccessibleSchools() : Promise.resolve({ success: true as const, data: [] }),
+    // M7: Fetch subscription status server-side to pass to TrialBanner
+    getSubscriptionStatus(),
   ]);
 
   const schoolProfile = schoolResult.success ? schoolResult.data : null;
   const academicYears = academicYearsResult.success ? academicYearsResult.data || [] : [];
   const classes = classesResult.success ? classesResult.data || [] : [];
+  const terms = termsResult.success ? termsResult.data || [] : [];
+  const subjects = subjectsResult.success ? subjectsResult.data || [] : [];
   const accessibleSchools = schoolsResult.success ? schoolsResult.data || [] : [];
+  const subscriptionStatus = subscriptionResult.success ? subscriptionResult.data : null;
 
   // A tenant is truly a chain only if it has multiple schools
   const isTrueChain = accessibleSchools.length > 1;
+
+  // Determine if we need to show an expired gate overlay
+  const isExpired =
+    subscriptionStatus &&
+    subscriptionStatus.status === "trial" &&
+    subscriptionStatus.days_remaining !== null &&
+    subscriptionStatus.days_remaining <= 0;
+
+  // Detect grace period vs hard block for expired trials
+  // Grace period: trial expired but within 7-day window (status still "trial", days_remaining <= 0)
+  // The backend returns specific error codes on API calls;
+  // here we use the subscription status to show a preemptive overlay
+  const expiredCode = isExpired ? "TRIAL_EXPIRED" as const : null;
 
   return (
     <SessionProvider session={session}>
@@ -108,19 +136,27 @@ export default async function DashboardLayout({
           <AppSidebar user={session.user} isChain={isTrueChain} />
           <SidebarInset className="flex flex-col min-h-svh">
             <DashboardHeader user={session.user} />
+            {subscriptionStatus && (
+              <TrialBanner
+                initialStatus={{
+                  plan: subscriptionStatus.plan,
+                  status: subscriptionStatus.status,
+                  days_remaining: subscriptionStatus.days_remaining,
+                }}
+              />
+            )}
             <OfflineBanner />
+            {expiredCode && <ExpiredGate code={expiredCode} />}
             <div className="flex-1 p-4 md:p-6">
-              {schoolProfile ? (
-                <SetupCheck
-                  schoolProfile={schoolProfile}
-                  academicYears={academicYears}
-                  classes={classes}
-                >
-                  {children}
-                </SetupCheck>
-              ) : (
-                children
-              )}
+              <SetupCheck
+                schoolProfile={schoolProfile}
+                academicYears={academicYears}
+                classes={classes}
+                terms={terms}
+                subjects={subjects}
+              >
+                {children}
+              </SetupCheck>
             </div>
           </SidebarInset>
         </SidebarProvider>
