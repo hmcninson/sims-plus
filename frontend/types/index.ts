@@ -12,8 +12,10 @@ export type UserRole =
   | "school_admin"
   | "academic_head"
   | "finance_officer"
+  | "hr_officer"
   | "teacher"
   | "house_parent"
+  | "transport_officer"
   | "parent"
   | "student"
   | "applicant";
@@ -32,10 +34,23 @@ export interface User {
   school_id?: string;
   avatar_url?: string;
   email_verified: boolean;
+  phone_verified: boolean;
+  phone_verified_at: string | null;
   mfa_enabled: boolean;
   last_login?: string;
+  custom_role_id?: string | null;
+  custom_role_name?: string | null;
+  school_roles?: Record<string, string>;
   created_at: string;
   updated_at: string;
+}
+
+export interface MySchoolRole {
+  school_id: string;
+  school_name: string;
+  role_at_school: string | null;
+  is_primary: boolean;
+  is_active: boolean;
 }
 
 export interface UserCreate {
@@ -68,6 +83,25 @@ export interface UserListResponse {
 export interface LoginCredentials {
   email: string;
   password: string;
+  remember_me?: boolean;
+}
+
+// =========================
+// Session Management
+// =========================
+
+export interface UserSession {
+  id: string;
+  device_info: string | null;
+  ip_address: string | null;
+  last_activity_at: string;
+  created_at: string;
+  is_current: boolean;
+}
+
+export interface SessionListResponse {
+  sessions: UserSession[];
+  count: number;
 }
 
 export interface RegisterData {
@@ -164,6 +198,7 @@ export interface TenantValidationResponse {
   valid: boolean;
   tenant: TenantPublic | null;
   error: string | null;
+  code?: string | null;
 }
 
 export interface School {
@@ -187,6 +222,11 @@ export interface School {
   uses_transport?: boolean;
   category?: "public" | "private" | "international" | "faith_based" | null;
   boarding_type?: "day_only" | "boarding_only" | "mixed" | null;
+  school_type: string;
+  setup_completed: boolean;
+  setup_wizard_step: number;
+  calendar_type: string;
+  ges_registration_number: string | null;
   is_active: boolean;
 }
 
@@ -2098,6 +2138,41 @@ export interface UserInviteResponse {
   role: UserRole;
   status: UserStatus;
   created_at: string;
+}
+
+// =========================
+// Bulk User Import Types
+// =========================
+
+export interface UserImportRowError {
+  row: number;
+  field: string;
+  error: string;
+}
+
+export interface UserImportRow {
+  row_number: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  phone: string | null;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface UserImportCredential {
+  email: string;
+  temporary_password: string;
+}
+
+export interface UserImportResult {
+  total: number;
+  valid: number;
+  created: number;
+  errors: UserImportRowError[];
+  preview: UserImportRow[];
+  credentials: UserImportCredential[] | null;
 }
 
 // =========================

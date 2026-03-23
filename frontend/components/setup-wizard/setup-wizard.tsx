@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,6 +21,7 @@ import {
   Sparkles,
   Plus,
   Minus,
+  FileUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,12 +46,13 @@ import {
 import { Progress } from "@/components/ui/progress";
 
 import { SubjectTemplateSelector } from "@/components/academic/SubjectTemplateSelector";
-import { updateSchoolProfile } from "@/actions/school.action";
+import { updateSchoolProfile, updateWizardStep } from "@/actions/school.action";
 import {
   createAcademicYear,
   createClass,
   createSection,
   createTerm,
+  getCurrentAcademicYear,
 } from "@/actions/academic.action";
 import type { SchoolProfile } from "@/types";
 
@@ -66,6 +68,7 @@ const STEPS = [
 
 interface SetupWizardProps {
   schoolProfile: SchoolProfile | null;
+  initialStep?: number;
   onComplete: () => void;
 }
 
@@ -77,9 +80,9 @@ interface TermData {
   end_date: string;
 }
 
-export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
+export function SetupWizard({ schoolProfile, initialStep = 0, onComplete }: SetupWizardProps) {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(initialStep);
   const [isPending, startTransition] = useTransition();
 
   // Context passed between steps
@@ -133,6 +136,36 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
   ]);
   const [termsLoading, setTermsLoading] = useState(false);
 
+  // Hydrate in-memory state when resuming past a completed step.
+  // Without this, resuming at step 3+ leaves createdAcademicYear null,
+  // causing the Terms step to show "No academic year found".
+  useEffect(() => {
+    if (initialStep < 3) return;
+
+    let cancelled = false;
+
+    async function hydrateFromBackend() {
+      // Step 3+ requires the academic year created in step 2
+      const yearResult = await getCurrentAcademicYear();
+      if (cancelled) return;
+
+      if (yearResult.success && yearResult.data) {
+        setCreatedAcademicYear({
+          id: yearResult.data.id,
+          name: yearResult.data.name,
+        });
+
+        // Step 4+ means terms were already created in step 3 — no further hydration needed
+        // (terms are only consumed during step 3's handleCreateTerms, which won't re-run)
+      }
+    }
+
+    void hydrateFromBackend();
+    return () => { cancelled = true; };
+    // Only run on mount — initialStep is stable from the parent
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Classes state
   const [classesData, setClassesData] = useState([
     { name: "Class 1", short_name: "P1", level: "primary", sections: ["A"] },
@@ -142,11 +175,24 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
+  /**
+   * Persist wizard progress to the backend after a step completes.
+   * Non-blocking: failures are silently ignored so the user can continue.
+   */
+  const persistStep = async (step: number, completed?: boolean) => {
+    try {
+      await updateWizardStep(step, completed);
+    } catch {
+      // Wizard step persistence is best-effort — don't block the user
+    }
+  };
+
   const handleNext = async () => {
     if (currentStep === 1) {
       // Save school profile
       if (!schoolProfile) {
         setCurrentStep(currentStep + 1);
+        void persistStep(currentStep + 1);
         return;
       }
       startTransition(async () => {
@@ -172,6 +218,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
 
         if (result.success) {
           setCurrentStep(currentStep + 1);
+          void persistStep(currentStep + 1);
         } else {
           toast.error("Failed to save school profile", {
             description: result.error,
@@ -194,6 +241,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
             name: result.data.name,
           });
           setCurrentStep(currentStep + 1);
+          void persistStep(currentStep + 1);
         } else {
           toast.error("Failed to create academic year", {
             description: result.error,
@@ -243,6 +291,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
             );
           }
           setCurrentStep(currentStep + 1);
+          void persistStep(currentStep + 1);
         } else {
           toast.error(`Failed to create ${errors.length} class(es)`, {
             description: errors.join("; "),
@@ -252,11 +301,13 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
               "You can add the remaining classes later from the Classes page."
             );
             setCurrentStep(currentStep + 1);
+            void persistStep(currentStep + 1);
           }
         }
       });
     } else {
       setCurrentStep(currentStep + 1);
+      void persistStep(currentStep + 1);
     }
   };
 
@@ -267,6 +318,8 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
   };
 
   const handleComplete = () => {
+    // Mark wizard as fully completed (step 7 = final, completed=true)
+    void persistStep(STEPS.length, true);
     onComplete();
     router.push("/dashboard");
     router.refresh();
@@ -308,6 +361,7 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
         toast.success(`${created} term(s) created successfully`);
       }
       setCurrentStep(currentStep + 1);
+      void persistStep(currentStep + 1);
     } finally {
       setTermsLoading(false);
     }
@@ -807,7 +861,10 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                 <div className="flex justify-between pt-2">
                   <Button
                     variant="ghost"
-                    onClick={() => setCurrentStep(currentStep + 1)}
+                    onClick={() => {
+                      setCurrentStep(currentStep + 1);
+                      void persistStep(currentStep + 1);
+                    }}
                   >
                     Skip for now
                   </Button>
@@ -926,11 +983,17 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
                   schoolType={
                     schoolProfile?.school_type || "primary"
                   }
-                  onComplete={() => setCurrentStep(currentStep + 1)}
+                  onComplete={() => {
+                    setCurrentStep(currentStep + 1);
+                    void persistStep(currentStep + 1);
+                  }}
                 />
                 <Button
                   variant="ghost"
-                  onClick={() => setCurrentStep(currentStep + 1)}
+                  onClick={() => {
+                    setCurrentStep(currentStep + 1);
+                    void persistStep(currentStep + 1);
+                  }}
                   className="w-full"
                 >
                   Skip -- I&apos;ll add subjects later
@@ -954,14 +1017,20 @@ export function SetupWizard({ schoolProfile, onComplete }: SetupWizardProps) {
               <CardContent className="pt-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <NextStepCard
-                    icon={<Users className="h-5 w-5" />}
+                    icon={<FileUp className="h-5 w-5" />}
                     title="Import Students"
                     description="Upload student data from CSV/Excel"
                     href="/students?import=true"
                   />
                   <NextStepCard
+                    icon={<FileUp className="h-5 w-5" />}
+                    title="Import Staff"
+                    description="Upload staff data from CSV/Excel"
+                    href="/staff?import=true"
+                  />
+                  <NextStepCard
                     icon={<UserPlus className="h-5 w-5" />}
-                    title="Add Staff"
+                    title="Add Staff Manually"
                     description="Create teacher and staff accounts"
                     href="/staff"
                   />

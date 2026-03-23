@@ -119,6 +119,16 @@ class SchoolProfileResponse(BaseSchema):
     # Preschool Settings
     preschool_settings: Optional[PreschoolSettings] = None
 
+    # GES Registration
+    ges_registration_number: Optional[str] = None
+
+    # Setup Wizard
+    setup_completed: bool = False
+    setup_wizard_step: int = 0
+
+    # Calendar
+    calendar_type: str = "term"
+
     # Status
     is_active: bool = True
     created_at: datetime
@@ -160,8 +170,40 @@ class SchoolProfileUpdate(BaseSchema):
     student_id_prefix: Optional[str] = Field(None, min_length=1, max_length=10)
     staff_id_prefix: Optional[str] = Field(None, min_length=1, max_length=10)
 
+    # School Type (changeable by school admin)
+    school_type: Optional[str] = Field(None, max_length=30)
+
+    # GES Registration
+    ges_registration_number: Optional[str] = Field(None, max_length=100)
+
+    # Calendar
+    calendar_type: Optional[str] = Field(None, max_length=20)
+
     # Preschool Settings
     preschool_settings: Optional[PreschoolSettingsUpdate] = None
+
+    @field_validator("school_type")
+    @classmethod
+    def validate_school_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        valid = [
+            "preschool", "primary", "preschool_primary", "jhs", "shs",
+            "basic", "basic_preschool", "basic_shs", "international", "technical",
+        ]
+        if v not in valid:
+            raise ValueError(f"Invalid school type. Must be one of: {', '.join(valid)}")
+        return v
+
+    @field_validator("calendar_type")
+    @classmethod
+    def validate_calendar_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        valid = ["term", "semester", "quarter"]
+        if v not in valid:
+            raise ValueError(f"Invalid calendar type. Must be one of: {', '.join(valid)}")
+        return v
 
     @field_validator("student_id_prefix", "staff_id_prefix")
     @classmethod
@@ -237,3 +279,20 @@ class SchoolBrandingUpdate(BaseSchema):
         if not re.match(r"^#[0-9A-Fa-f]{6}$", v):
             raise ValueError("Invalid hex color format (use #RRGGBB)")
         return v.upper()
+
+
+class WizardStepUpdate(BaseSchema):
+    """Update the setup wizard progress for the current school."""
+
+    step: int = Field(..., ge=0, le=7, description="The wizard step just completed (0-7)")
+    completed: Optional[bool] = Field(
+        None,
+        description="If true, marks the entire setup wizard as completed",
+    )
+
+
+class WizardStepResponse(BaseSchema):
+    """Response after updating wizard step."""
+
+    setup_wizard_step: int
+    setup_completed: bool

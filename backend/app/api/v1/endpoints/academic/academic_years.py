@@ -46,6 +46,13 @@ async def create_academic_year(
     current_user: ValidatedUser,
 ) -> AcademicYearResponse:
     """Create a new academic year."""
+    # Only admin roles may override date-overlap validation — silently
+    # ignore the flag for non-admin users rather than returning a 403,
+    # because the flag defaults to False and non-admins should never
+    # need to know it exists.
+    _ADMIN_ROLES = {"platform_admin", "chain_admin", "school_admin"}
+    allow_overlap = data.allow_overlap and current_user.get("role") in _ADMIN_ROLES
+
     service = AcademicService(db)
     try:
         academic_year = await service.create_academic_year(
@@ -55,6 +62,8 @@ async def create_academic_year(
             start_date=data.start_date,
             end_date=data.end_date,
             is_current=data.is_current,
+            allow_overlap=allow_overlap,
+            school_id=data.school_id,
         )
         return AcademicYearResponse(
             id=academic_year.id,
@@ -184,12 +193,18 @@ async def update_academic_year(
     current_user: ValidatedUser,
 ) -> AcademicYearResponse:
     """Update an academic year."""
+    # Only admin roles may override date-overlap validation
+    _ADMIN_ROLES = {"platform_admin", "chain_admin", "school_admin"}
+    update_data = data.model_dump(exclude_unset=True)
+    if "allow_overlap" in update_data and current_user.get("role") not in _ADMIN_ROLES:
+        update_data["allow_overlap"] = False
+
     service = AcademicService(db)
     try:
         year = await service.update_academic_year(
             academic_year_id,
             tenant.tenant_id,
-            **data.model_dump(exclude_unset=True),
+            **update_data,
         )
     except AcademicServiceError as e:
         # 409 Conflict for overlapping date ranges; 400 for other validation errors

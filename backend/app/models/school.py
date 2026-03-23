@@ -62,6 +62,14 @@ class BoardingType(str, Enum):
     MIXED = "mixed"  # Both day and boarding students
 
 
+class CalendarType(str, Enum):
+    """Academic calendar structure for the school."""
+
+    TERM = "term"          # 3 terms per year (GES standard)
+    SEMESTER = "semester"  # 2 semesters per year
+    QUARTER = "quarter"    # 4 quarters per year
+
+
 class School(Base, TenantMixin, SoftDeleteMixin):
     """
     School model - represents an individual school within a tenant.
@@ -230,6 +238,42 @@ class School(Base, TenantMixin, SoftDeleteMixin):
 
     # Active flags
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # GES Registration
+    ges_registration_number: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Ghana Education Service registration number",
+    )
+
+    # Setup Wizard Tracking
+    setup_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="Whether the school has completed the setup wizard",
+    )
+    setup_wizard_step: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        comment="Last completed wizard step (0 = not started)",
+    )
+
+    # Calendar Configuration
+    calendar_type: Mapped[CalendarType] = mapped_column(
+        SQLEnum(
+            CalendarType,
+            name="calendartype",
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        default=CalendarType.TERM,
+        server_default="term",
+        nullable=False,
+        comment="Academic calendar type: term, semester, or quarter",
+    )
 
     # Relationships
     # lazy="raise" prevents accidental lazy loading in async context.

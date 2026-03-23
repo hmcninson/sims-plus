@@ -142,6 +142,52 @@ export async function uploadSchoolLogo(
 }
 
 /**
+ * Response from wizard step update endpoint
+ */
+interface WizardStepResponse {
+  setup_wizard_step: number;
+  setup_completed: boolean;
+}
+
+/**
+ * Persist wizard progress (step number and optional completion flag).
+ * Called after each wizard step completes successfully.
+ * Failures are non-blocking — the wizard continues even if persistence fails.
+ */
+export async function updateWizardStep(
+  step: number,
+  completed?: boolean
+): Promise<ActionResult<WizardStepResponse>> {
+  const { token, subdomain } = await getAuthContext();
+
+  if (!token) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    const payload: { step: number; completed?: boolean } = { step };
+    if (completed !== undefined) {
+      payload.completed = completed;
+    }
+
+    const response = await apiPut<WizardStepResponse>(
+      "/schools/current/wizard-step",
+      payload,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to update wizard step",
+    };
+  }
+}
+
+/**
  * Get preschool settings
  */
 export async function getPreschoolSettings(): Promise<ActionResult<PreschoolSettings>> {

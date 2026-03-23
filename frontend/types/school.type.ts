@@ -67,6 +67,14 @@ export interface SchoolProfile {
   // Preschool Settings
   preschool_settings?: PreschoolSettings;
 
+  // Setup Wizard State
+  setup_completed: boolean;
+  setup_wizard_step: number;
+
+  // Calendar & Registration
+  calendar_type: string;
+  ges_registration_number: string | null;
+
   // Status
   is_active: boolean;
   created_at: string;
@@ -78,6 +86,9 @@ export interface SchoolProfileUpdate {
   motto?: string;
   description?: string;
   year_established?: number;
+
+  // School Type
+  school_type?: string;
 
   // Contact Information
   email?: string;
@@ -105,6 +116,12 @@ export interface SchoolProfileUpdate {
   // ID Prefix Settings
   student_id_prefix?: string;
   staff_id_prefix?: string;
+
+  // GES Registration
+  ges_registration_number?: string | null;
+
+  // Calendar
+  calendar_type?: string;
 }
 
 export interface SchoolBrandingUpdate {

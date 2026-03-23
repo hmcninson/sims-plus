@@ -12,15 +12,18 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.api.deps import (
     DatabaseSession,
     RequestTenant,
+    ValidatedUser,
     require_permissions,
 )
-from app.models.school import School, SchoolCategory, BoardingType
+from app.models.school import School, SchoolCategory, SchoolType, BoardingType, CalendarType
 from app.schemas.school import (
     PreschoolSettings,
     PreschoolSettingsUpdate,
     SchoolProfileResponse,
     SchoolProfileUpdate,
     SchoolBrandingUpdate,
+    WizardStepUpdate,
+    WizardStepResponse,
 )
 
 
@@ -57,6 +60,10 @@ def _build_school_response(school: School) -> SchoolProfileResponse:
         student_id_prefix=school.student_id_prefix,
         staff_id_prefix=school.staff_id_prefix,
         preschool_settings=preschool_settings,
+        ges_registration_number=school.ges_registration_number,
+        setup_completed=school.setup_completed,
+        setup_wizard_step=school.setup_wizard_step,
+        calendar_type=school.calendar_type.value if school.calendar_type else "term",
         is_active=school.is_active,
         created_at=school.created_at,
         updated_at=school.updated_at,
@@ -104,6 +111,7 @@ async def _get_current_school(db: AsyncSession, tenant_id) -> School:
 async def get_current_school(
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> SchoolProfileResponse:
     """Get the current school's profile."""
     school = await _get_current_school(db, tenant.tenant_id)
@@ -121,12 +129,20 @@ async def update_current_school(
     tenant: RequestTenant,
     db: DatabaseSession,
     data: SchoolProfileUpdate,
+    current_user: ValidatedUser,
 ) -> SchoolProfileResponse:
     """Update the current school's profile."""
     school = await _get_current_school(db, tenant.tenant_id)
 
     # Update fields that are provided
     update_data = data.model_dump(exclude_unset=True)
+
+    # Defense-in-depth: block immutable/sensitive columns even if a future
+    # schema change accidentally exposes them via SchoolProfileUpdate.
+    PROTECTED_FIELDS = {
+        "id", "tenant_id", "slug", "created_at", "deleted_at",
+        "setup_completed", "setup_wizard_step",
+    }
 
     # Handle preschool_settings separately (merge with existing)
     if "preschool_settings" in update_data and update_data["preschool_settings"]:
@@ -135,14 +151,22 @@ async def update_current_school(
         school.preschool_settings = existing_settings
 
     # Convert string values to enums for enum columns
+    if "school_type" in update_data:
+        val = update_data.pop("school_type")
+        school.school_type = SchoolType(val) if val else school.school_type
     if "category" in update_data:
         val = update_data.pop("category")
         school.category = SchoolCategory(val) if val else None
     if "boarding_type" in update_data:
         val = update_data.pop("boarding_type")
         school.boarding_type = BoardingType(val) if val else None
+    if "calendar_type" in update_data:
+        val = update_data.pop("calendar_type")
+        school.calendar_type = CalendarType(val) if val else school.calendar_type
 
     for field, value in update_data.items():
+        if field in PROTECTED_FIELDS:
+            continue
         setattr(school, field, value)
 
     await db.flush()
@@ -162,6 +186,7 @@ async def update_school_branding(
     tenant: RequestTenant,
     db: DatabaseSession,
     data: SchoolBrandingUpdate,
+    current_user: ValidatedUser,
 ) -> SchoolProfileResponse:
     """Update the current school's branding."""
     school = await _get_current_school(db, tenant.tenant_id)
@@ -187,6 +212,7 @@ async def update_school_branding(
 async def get_preschool_settings(
     tenant: RequestTenant,
     db: DatabaseSession,
+    current_user: ValidatedUser,
 ) -> PreschoolSettings:
     """Get the current school's preschool settings."""
     school = await _get_current_school(db, tenant.tenant_id)
@@ -208,6 +234,7 @@ async def update_preschool_settings(
     tenant: RequestTenant,
     db: DatabaseSession,
     data: PreschoolSettingsUpdate,
+    current_user: ValidatedUser,
 ) -> PreschoolSettings:
     """Update the current school's preschool settings."""
     school = await _get_current_school(db, tenant.tenant_id)
@@ -230,3 +257,43 @@ async def update_preschool_settings(
     await db.refresh(school)
 
     return PreschoolSettings(**school.preschool_settings)
+
+
+@router.put(
+    "/current/wizard-step",
+    response_model=WizardStepResponse,
+    summary="Update setup wizard progress",
+    description=(
+        "Update the setup wizard step for the current school. "
+        "Used by the frontend to persist wizard progress across sessions."
+    ),
+    dependencies=[Depends(require_permissions("school.update"))],
+)
+async def update_wizard_step(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    data: WizardStepUpdate,
+    current_user: ValidatedUser,
+) -> WizardStepResponse:
+    """
+    Update the current school's setup wizard progress.
+
+    The step field indicates the wizard step just completed.
+    If completed=true, the setup_completed flag is also set.
+    """
+    school = await _get_current_school(db, tenant.tenant_id)
+
+    # Only allow forward progress — prevent accidentally going backwards
+    if data.step > school.setup_wizard_step:
+        school.setup_wizard_step = data.step
+
+    if data.completed is True:
+        school.setup_completed = True
+
+    await db.flush()
+    await db.refresh(school)
+
+    return WizardStepResponse(
+        setup_wizard_step=school.setup_wizard_step,
+        setup_completed=school.setup_completed,
+    )

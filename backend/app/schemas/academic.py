@@ -34,6 +34,20 @@ class AcademicYearCreate(BaseSchema):
     start_date: date
     end_date: date
     is_current: bool = False
+    school_id: Optional[UUID] = Field(
+        None,
+        description=(
+            "School UUID for chain tenants. Scopes the overlap check "
+            "to a single school so different schools can have independent calendars."
+        ),
+    )
+    allow_overlap: bool = Field(
+        False,
+        description=(
+            "Allow overlapping dates with other academic years. "
+            "Useful for concurrent programmes (e.g. regular + sandwich)."
+        ),
+    )
 
     @field_validator("end_date")
     @classmethod
@@ -52,6 +66,13 @@ class AcademicYearUpdate(BaseSchema):
     end_date: Optional[date] = None
     status: Optional[str] = Field(None, pattern="^(planning|active|completed)$")
     is_current: Optional[bool] = None
+    allow_overlap: bool = Field(
+        False,
+        description=(
+            "Allow overlapping dates with other academic years. "
+            "Useful for concurrent programmes (e.g. regular + sandwich)."
+        ),
+    )
 
 
 class AcademicYearResponse(BaseSchema):

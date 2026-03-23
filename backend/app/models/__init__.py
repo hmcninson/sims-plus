@@ -3,9 +3,10 @@
 from app.models.base import Base, TenantMixin, SoftDeleteMixin, AuditMixin
 from app.models.tenant import Tenant, TenantType, SubscriptionTier
 from app.models.user import User, UserRole, UserStatus
-from app.models.school import School, SchoolType, SchoolStatus
+from app.models.school import School, SchoolType, SchoolStatus, SchoolCategory, BoardingType, CalendarType
 from app.models.reserved_subdomain import ReservedSubdomain, DEFAULT_RESERVED_SUBDOMAINS
 from app.models.audit_log import AuditLog
+from app.models.user_session import UserSession
 from app.models.academic import (
     AcademicYear,
     AcademicYearStatus,
@@ -129,6 +130,8 @@ from app.models.parent import (
 from app.models.user_school import UserSchool
 from app.models.email_log import EmailLog, EmailStatus
 from app.models.subscription_intent import SubscriptionIntent
+from app.models.custom_role import CustomRole
+from app.models.platform_audit import PlatformAuditLog
 from app.models.curriculum import (
     CurriculumType,
     AssessmentComponentType,
@@ -184,6 +187,9 @@ __all__ = [
     "School",
     "SchoolType",
     "SchoolStatus",
+    "SchoolCategory",
+    "BoardingType",
+    "CalendarType",
     "ReservedSubdomain",
     "DEFAULT_RESERVED_SUBDOMAINS",
     "AuditLog",
@@ -304,6 +310,10 @@ __all__ = [
     "EmailStatus",
     # Subscription
     "SubscriptionIntent",
+    # Custom roles
+    "CustomRole",
+    # Platform admin
+    "PlatformAuditLog",
     # Curriculum models
     "CurriculumType",
     "AssessmentComponentType",

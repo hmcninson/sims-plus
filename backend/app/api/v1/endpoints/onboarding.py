@@ -14,6 +14,7 @@ from app.schemas.onboarding import (
     SchoolRegistrationRequest,
     SchoolRegistrationResponse,
 )
+from app.config import get_settings
 from app.services.onboarding import OnboardingService, OnboardingError
 from app.services.email_verification import (
     EmailVerificationService,
@@ -224,6 +225,8 @@ async def get_plans() -> dict:
 
     Returns pricing and feature information for each plan.
     """
+    settings = get_settings()
+
     return {
         "plans": [
             {
@@ -231,7 +234,7 @@ async def get_plans() -> dict:
                 "name": "Free Trial",
                 "price": 0,
                 "currency": "GHS",
-                "period": "30 days",
+                "period": f"{settings.TRIAL_DAYS} days",
                 "max_students": 100,
                 "features": [
                     "Student Management",
@@ -294,6 +297,6 @@ async def get_plans() -> dict:
                 "popular": False,
             },
         ],
-        "trial_days": 30,
+        "trial_days": settings.TRIAL_DAYS,
         "currency": "GHS",
     }

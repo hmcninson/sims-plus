@@ -20,17 +20,26 @@ import {
 import { updateSchoolProfile, updateSchoolBranding, uploadSchoolLogo } from "@/actions/school.action";
 import type { SchoolProfile, SchoolProfileUpdate } from "@/types/school.type";
 
-// School type display names
-const SCHOOL_TYPE_LABELS: Record<string, string> = {
-  basic_preschool: "Basic - Preschool",
-  basic_primary: "Basic - Primary",
-  basic_jhs: "Basic - Junior High School",
-  basic_combined: "Basic - Combined (Primary + JHS)",
-  shs: "Senior High School",
-  technical: "Technical/Vocational",
-  international: "International School",
-  special_needs: "Special Needs School",
-};
+// School type options matching backend SchoolType enum
+const SCHOOL_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "preschool", label: "Preschool" },
+  { value: "primary", label: "Primary School" },
+  { value: "preschool_primary", label: "Preschool + Primary" },
+  { value: "jhs", label: "Junior High School (JHS)" },
+  { value: "shs", label: "Senior High School (SHS)" },
+  { value: "basic", label: "Basic (Primary + JHS)" },
+  { value: "basic_preschool", label: "Basic with Preschool (Preschool to JHS)" },
+  { value: "basic_shs", label: "Full K-12 (Preschool to SHS)" },
+  { value: "international", label: "International School" },
+  { value: "technical", label: "Technical/Vocational" },
+];
+
+// Calendar type options matching backend CalendarType enum
+const CALENDAR_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "term", label: "Term (3 per year)" },
+  { value: "semester", label: "Semester (2 per year)" },
+  { value: "quarter", label: "Quarter (4 per year)" },
+];
 
 // Ghana regions
 const GHANA_REGIONS = [
@@ -64,6 +73,7 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
     motto: initialData.motto || "",
     description: initialData.description || "",
     year_established: initialData.year_established?.toString() || "",
+    school_type: initialData.school_type || "basic",
     email: initialData.email || "",
     phone: initialData.phone || "",
     website: initialData.website || "",
@@ -79,6 +89,8 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
     boarding_type: initialData.boarding_type || "",
     student_id_prefix: initialData.student_id_prefix || "STU",
     staff_id_prefix: initialData.staff_id_prefix || "STF",
+    ges_registration_number: initialData.ges_registration_number || "",
+    calendar_type: initialData.calendar_type || "term",
   });
 
   const handleInputChange = (
@@ -181,6 +193,7 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
         year_established: formData.year_established
           ? parseInt(formData.year_established, 10)
           : undefined,
+        school_type: formData.school_type || undefined,
         email: formData.email || undefined,
         phone: formData.phone || undefined,
         website: formData.website || undefined,
@@ -196,6 +209,8 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
         boarding_type: (formData.boarding_type || undefined) as SchoolProfileUpdate["boarding_type"],
         student_id_prefix: formData.student_id_prefix || undefined,
         staff_id_prefix: formData.staff_id_prefix || undefined,
+        ges_registration_number: formData.ges_registration_number || undefined,
+        calendar_type: formData.calendar_type || undefined,
       };
 
       const result = await updateSchoolProfile(updateData);
@@ -249,7 +264,24 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>School Type</Label>
-              <Input value={SCHOOL_TYPE_LABELS[initialData.school_type] || initialData.school_type} disabled className="bg-muted" />
+              <Select
+                value={formData.school_type}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, school_type: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select school type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCHOOL_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The level(s) of education your school offers
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="year_established">Year Established</Label>
@@ -261,6 +293,43 @@ export function SchoolProfileForm({ initialData }: SchoolProfileFormProps) {
                 value={formData.year_established}
                 onChange={handleInputChange}
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="ges_registration_number">GES Registration Number</Label>
+              <Input
+                id="ges_registration_number"
+                name="ges_registration_number"
+                placeholder="e.g., GES/AR/001/2020"
+                value={formData.ges_registration_number}
+                onChange={handleInputChange}
+              />
+              <p className="text-xs text-muted-foreground">
+                Ghana Education Service registration number
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Calendar Type</Label>
+              <Select
+                value={formData.calendar_type}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, calendar_type: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select calendar type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CALENDAR_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                How your academic year is divided into periods
+              </p>
             </div>
           </div>
 

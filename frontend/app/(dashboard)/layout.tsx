@@ -5,11 +5,11 @@ import { getCurrentUserContext } from "@/actions/auth.action";
 import { getAccessibleSchools } from "@/actions/chain.action";
 import { ApiError } from "@/lib/api";
 import { getCachedSchoolProfile } from "@/actions/school.action";
-import { getCachedAcademicYears, getCachedClasses, getTerms, getSubjects } from "@/actions/academic.action";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { SetupCheck } from "@/components/setup-wizard";
 import { SessionProvider } from "@/components/providers/SessionProvider";
+import { SessionTimeoutProvider } from "@/components/providers/SessionTimeoutProvider";
 import { SchoolProvider } from "@/contexts/school-context";
 import {
   SidebarInset,
@@ -19,6 +19,8 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { OfflineBanner } from "@/components/offline/offline-banner";
 import { TrialBanner } from "@/components/subscription/trial-banner";
 import { ExpiredGate } from "@/components/subscription/expired-gate";
+import { MFAEnforcementBanner } from "@/components/mfa/mfa-enforcement-banner";
+import { ImpersonationBanner } from "@/components/platform/impersonation-banner";
 import { getSubscriptionStatus } from "@/actions/subscription.action";
 
 // Accessible schools is only used in the layout, so a local cache wrapper is fine
@@ -40,6 +42,29 @@ export default async function DashboardLayout({
   // This lets us show a "session expired" message instead of a bare login redirect.
   const cookieStore = await cookies();
   const hadSession = !!cookieStore.get("refresh_token")?.value;
+
+  // Detect platform admin impersonation by decoding the JWT payload (server-side).
+  // The JWT payload is the second base64url segment; we only need is_impersonation
+  // and tenant_subdomain claims. This avoids installing a JWT library for a single check.
+  let isImpersonation = false;
+  let impersonationSubdomain = "";
+  const accessToken = cookieStore.get("access_token")?.value;
+  if (accessToken) {
+    try {
+      const parts = accessToken.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], "base64url").toString("utf-8"),
+        );
+        if (payload.is_impersonation === true) {
+          isImpersonation = true;
+          impersonationSubdomain = payload.tenant_subdomain || "";
+        }
+      }
+    } catch {
+      // JWT decode failed -- not impersonating
+    }
+  }
 
   let session;
   try {
@@ -93,12 +118,8 @@ export default async function DashboardLayout({
   // Fetch data for setup check and chain schools in parallel.
   // Uses React.cache()-wrapped versions so any child server component
   // calling the same action during this render reuses the result.
-  const [schoolResult, academicYearsResult, classesResult, termsResult, subjectsResult, schoolsResult, subscriptionResult] = await Promise.all([
+  const [schoolResult, schoolsResult, subscriptionResult] = await Promise.all([
     getCachedSchoolProfile(),
-    getCachedAcademicYears(),
-    getCachedClasses(),
-    getTerms(),
-    getSubjects(),
     // Only fetch accessible schools for chain admin roles
     isPotentiallyChain ? getCachedAccessibleSchools() : Promise.resolve({ success: true as const, data: [] }),
     // M7: Fetch subscription status server-side to pass to TrialBanner
@@ -106,10 +127,6 @@ export default async function DashboardLayout({
   ]);
 
   const schoolProfile = schoolResult.success ? schoolResult.data : null;
-  const academicYears = academicYearsResult.success ? academicYearsResult.data || [] : [];
-  const classes = classesResult.success ? classesResult.data || [] : [];
-  const terms = termsResult.success ? termsResult.data || [] : [];
-  const subjects = subjectsResult.success ? subjectsResult.data || [] : [];
   const accessibleSchools = schoolsResult.success ? schoolsResult.data || [] : [];
   const subscriptionStatus = subscriptionResult.success ? subscriptionResult.data : null;
 
@@ -131,37 +148,45 @@ export default async function DashboardLayout({
 
   return (
     <SessionProvider session={session}>
-      <SchoolProvider schools={accessibleSchools} isChain={isTrueChain}>
-        <SidebarProvider defaultOpen={true}>
-          <AppSidebar user={session.user} isChain={isTrueChain} />
-          <SidebarInset className="flex flex-col min-h-svh">
-            <DashboardHeader user={session.user} />
-            {subscriptionStatus && (
-              <TrialBanner
-                initialStatus={{
-                  plan: subscriptionStatus.plan,
-                  status: subscriptionStatus.status,
-                  days_remaining: subscriptionStatus.days_remaining,
-                }}
+      <SessionTimeoutProvider>
+        <SchoolProvider schools={accessibleSchools} isChain={isTrueChain}>
+          {isImpersonation && (
+            <ImpersonationBanner tenantSubdomain={impersonationSubdomain} />
+          )}
+          <SidebarProvider defaultOpen={true}>
+            <AppSidebar user={session.user} isChain={isTrueChain} />
+            <SidebarInset className="flex flex-col min-h-svh">
+              <DashboardHeader user={session.user} />
+              {subscriptionStatus && (
+                <TrialBanner
+                  initialStatus={{
+                    plan: subscriptionStatus.plan,
+                    status: subscriptionStatus.status,
+                    days_remaining: subscriptionStatus.days_remaining,
+                  }}
+                />
+              )}
+              <OfflineBanner />
+              <MFAEnforcementBanner
+                requireMfa={
+                  subscriptionStatus?.features?.require_mfa_admin_roles === true
+                }
+                userRole={session.user.role}
+                mfaEnabled={session.user.mfa_enabled}
               />
-            )}
-            <OfflineBanner />
-            {expiredCode && <ExpiredGate code={expiredCode} />}
-            <div className="flex-1 p-4 md:p-6">
-              <SetupCheck
-                schoolProfile={schoolProfile}
-                academicYears={academicYears}
-                classes={classes}
-                terms={terms}
-                subjects={subjects}
-              >
-                {children}
-              </SetupCheck>
-            </div>
-          </SidebarInset>
-        </SidebarProvider>
-        <InstallPrompt />
-      </SchoolProvider>
+              {expiredCode && <ExpiredGate code={expiredCode} />}
+              <div className="flex-1 p-4 md:p-6">
+                <SetupCheck
+                  schoolProfile={schoolProfile}
+                >
+                  {children}
+                </SetupCheck>
+              </div>
+            </SidebarInset>
+          </SidebarProvider>
+          <InstallPrompt />
+        </SchoolProvider>
+      </SessionTimeoutProvider>
     </SessionProvider>
   );
 }

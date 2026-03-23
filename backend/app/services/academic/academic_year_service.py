@@ -104,8 +104,19 @@ class AcademicYearMixin:
         end_date,
         description: Optional[str] = None,
         is_current: bool = False,
+        allow_overlap: bool = False,
+        school_id: UUID | None = None,
     ) -> AcademicYear:
-        """Create a new academic year."""
+        """Create a new academic year.
+
+        Args:
+            allow_overlap: When True, skip the date overlap check. This supports
+                concurrent academic years for different programmes (e.g. regular
+                and sandwich programmes running in parallel).
+            school_id: Optional school UUID for chain tenants. Scopes the overlap
+                check to a single school so different schools within the same
+                tenant can maintain independent academic calendars.
+        """
         # Check for duplicate name
         existing = await self.db.execute(
             select(AcademicYear).where(
@@ -129,12 +140,17 @@ class AcademicYearMixin:
                 code="INVALID_DATES",
             )
 
-        # Prevent overlapping date ranges with other non-archived years
-        await self._validate_no_date_overlap(
-            tenant_id=tenant_id,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        # Prevent overlapping date ranges unless explicitly allowed
+        # (allow_overlap supports concurrent programmes with different calendars)
+        if not allow_overlap:
+            # For chain tenants, scope overlap check to the target school so
+            # different schools can have independent academic calendars
+            await self._validate_no_date_overlap(
+                tenant_id=tenant_id,
+                start_date=start_date,
+                end_date=end_date,
+                school_id=school_id,
+            )
 
         # If setting as current, unset other current years
         if is_current:
@@ -148,6 +164,7 @@ class AcademicYearMixin:
             end_date=end_date,
             status=AcademicYearStatus.PLANNING,
             is_current=is_current,
+            school_id=school_id,
         )
         self.db.add(academic_year)
         await self.db.flush()
@@ -192,6 +209,9 @@ class AcademicYearMixin:
         self, academic_year_id: UUID, tenant_id: UUID, **kwargs
     ) -> Optional[AcademicYear]:
         """Update an academic year."""
+        # Extract allow_overlap before processing field updates — it's not a model field
+        allow_overlap = kwargs.pop("allow_overlap", False)
+
         # Defense-in-depth: tenant_id verified in get_academic_year
         academic_year = await self.get_academic_year(tenant_id, academic_year_id)
         if not academic_year:
@@ -222,14 +242,15 @@ class AcademicYearMixin:
                     code="INVALID_DATES",
                 )
 
-            # Prevent overlapping date ranges (exclude self so we don't conflict with our own dates)
-            await self._validate_no_date_overlap(
-                tenant_id=tenant_id,
-                start_date=new_start,
-                end_date=new_end,
-                school_id=academic_year.school_id,
-                exclude_id=academic_year_id,
-            )
+            # Prevent overlapping date ranges unless explicitly allowed
+            if not allow_overlap:
+                await self._validate_no_date_overlap(
+                    tenant_id=tenant_id,
+                    start_date=new_start,
+                    end_date=new_end,
+                    school_id=academic_year.school_id,
+                    exclude_id=academic_year_id,
+                )
 
         # Handle is_current specially
         if kwargs.get("is_current"):
