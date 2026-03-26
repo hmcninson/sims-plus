@@ -72,7 +72,7 @@ import {
 } from "@/components/ui/select";
 import { getInvoice, issueInvoice, cancelInvoice, getInvoicePdfAuthContext, emailInvoice, syncSingleInvoice, getStudentScholarships, getStudentCreditBalance, applyCreditNote, getCreditNotes } from "@/actions/finance.action";
 import type { InvoiceWithDetails, CreditNoteWithDetails } from "@/types";
-import type { StudentScholarship, StudentCreditBalance } from "@/types/finance.type";
+import type { StudentScholarshipWithDetails, StudentCreditBalance } from "@/types/finance.type";
 import { RefreshCw, Award } from "lucide-react";
 import { formatCurrency, formatDate, formatNumber } from "@/lib/format";
 import { Progress } from "@/components/ui/progress";
@@ -133,7 +133,7 @@ export default function InvoiceDetailPage() {
   const [cancelReason, setCancelReason] = useState("");
 
   // Student scholarships state
-  const [studentScholarships, setStudentScholarships] = useState<StudentScholarship[]>([]);
+  const [studentScholarships, setStudentScholarships] = useState<StudentScholarshipWithDetails[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Email dialog state
@@ -760,7 +760,7 @@ export default function InvoiceDetailPage() {
                   <p className="text-sm text-muted-foreground">
                     {creditBalance.student_name} has{" "}
                     <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      {formatCurrency(creditBalance.available_balance)}
+                      {formatCurrency(creditBalance.available_balance ?? 0)}
                     </span>{" "}
                     in available credit from {availableCreditNotes.length} issued credit note{availableCreditNotes.length !== 1 ? "s" : ""}.
                   </p>

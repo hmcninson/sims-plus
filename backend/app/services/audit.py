@@ -27,6 +27,10 @@ class AuditEventType:
     PASSWORD_RESET_REQUEST = "auth.password.reset_request"
     PASSWORD_RESET_COMPLETE = "auth.password.reset_complete"
 
+    # Cross-tenant / access events
+    CROSS_TENANT_REJECTED = "auth.cross_tenant.rejected"
+    SCHOOL_ACCESS_DENIED = "auth.school_access.denied"
+
     # Account events
     ACCOUNT_CREATED = "account.created"
     ACCOUNT_ACTIVATED = "account.activated"
@@ -37,6 +41,12 @@ class AuditEventType:
     # Data access events
     DATA_EXPORT = "data.export"
     DATA_BULK_DELETE = "data.bulk_delete"
+
+    # MFA events
+    MFA_ENABLED = "auth.mfa.enabled"
+    MFA_DISABLED = "auth.mfa.disabled"
+    MFA_VERIFIED = "auth.mfa.verified"
+    MFA_BACKUP_CODES_REGENERATED = "auth.mfa.backup_codes_regenerated"
 
     # Admin events
     SETTINGS_CHANGED = "admin.settings.changed"

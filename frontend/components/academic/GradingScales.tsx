@@ -97,7 +97,7 @@ export function GradingScales({ initialData }: GradingScalesProps) {
       const defaultScale = scales.find((s) => s.is_default) || scales[0];
       setSelectedScale(defaultScale);
     }
-  }, [scales, selectedScale]);
+  }, [scales]); // Only re-run when scales data changes
 
   const loadScales = async () => {
     setLoading(true);

@@ -114,17 +114,19 @@ def create_refresh_token(
     subject: str,
     tenant_id: str | None = None,
     expires_delta: timedelta | None = None,
-) -> str:
+    extra_claims: dict[str, Any] | None = None,
+) -> tuple[str, str, datetime]:
     """
-    Create a JWT refresh token.
+    Create a JWT refresh token with a unique JTI for session tracking.
 
     Args:
         subject: Token subject (usually user ID)
         tenant_id: Tenant ID for cross-tenant validation
         expires_delta: Custom expiration time
+        extra_claims: Additional claims to include (e.g., remember_me)
 
     Returns:
-        Encoded JWT refresh token string
+        Tuple of (encoded_token, jti, expires_at)
     """
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
@@ -133,18 +135,24 @@ def create_refresh_token(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS
         )
 
+    jti = str(uuid4())
+
     to_encode: dict[str, Any] = {
         "sub": subject,
         "exp": expire,
         "iat": datetime.now(UTC),
-        "jti": str(uuid4()),  # Unique ID prevents identical tokens within same second
+        "jti": jti,
         "type": "refresh",
     }
 
     if tenant_id:
         to_encode["tenant_id"] = tenant_id
 
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    if extra_claims:
+        to_encode.update(extra_claims)
+
+    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return token, jti, expire
 
 
 def decode_token(token: str) -> dict[str, Any]:

@@ -35,6 +35,9 @@ import {
 import { getTermReport } from "@/actions/exams.action";
 import { getAssessmentWeights } from "@/actions/academic.action";
 import { PrintButton } from "./print-button";
+import { MontessoriReportView } from "@/components/curriculum/MontessoriReportView";
+import { DualTrackReportViewer } from "@/components/curriculum/DualTrackReportViewer";
+import type { DualTrackReportData, MontessoriAssessmentData } from "@/types/curriculum.type";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -67,6 +70,10 @@ export default async function ReportCardDetailPage({ params }: PageProps) {
     ? Number(weightsResult.data.exam_total_weight)
     : 50;
 
+  // Detect report type
+  const isMontessori = report.curriculum_type === "montessori";
+  const isDualTrack = report.template_key === "dual_track";
+
   const getPositionBadge = (position: number | undefined) => {
     if (!position) return "-";
     const config = POSITION_ICONS[position];
@@ -94,7 +101,11 @@ export default async function ReportCardDetailPage({ params }: PageProps) {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Report Card
+              {isMontessori
+                ? "Montessori Progress Report"
+                : isDualTrack
+                ? "Dual-Track Report Card"
+                : "Report Card"}
             </h1>
             <p className="text-muted-foreground">
               {report.academic_year_name} - {report.term_name}
@@ -113,12 +124,14 @@ export default async function ReportCardDetailPage({ params }: PageProps) {
               <><Clock className="mr-1 h-3 w-3" /> Draft</>
             )}
           </Badge>
-          <Link href={`/exams/report-cards/${id}/edit`}>
-            <Button variant="outline">
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit Remarks
-            </Button>
-          </Link>
+          {!isMontessori && (
+            <Link href={`/exams/report-cards/${id}/edit`}>
+              <Button variant="outline">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Remarks
+              </Button>
+            </Link>
+          )}
           <PrintButton reportId={id} />
         </div>
       </div>
@@ -126,7 +139,7 @@ export default async function ReportCardDetailPage({ params }: PageProps) {
       {/* Student Info */}
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-center gap-4">
               <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
                 <User className="h-8 w-8 text-muted-foreground" />
@@ -150,147 +163,210 @@ export default async function ReportCardDetailPage({ params }: PageProps) {
                 <Calendar className="h-4 w-4" />
                 <span>{report.term_name}, {report.academic_year_name}</span>
               </div>
+              {isMontessori && (
+                <Badge variant="secondary" className="mt-2">
+                  Montessori
+                </Badge>
+              )}
+              {isDualTrack && (
+                <Badge variant="secondary" className="mt-2">
+                  Dual-Track
+                </Badge>
+              )}
             </div>
           </div>
         </CardHeader>
       </Card>
 
-      {/* Summary Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Score</CardDescription>
-            <CardTitle className="text-3xl">
-              {Number(report.total_score || 0).toFixed(0)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Average</CardDescription>
-            <CardTitle className="text-3xl flex items-center gap-2">
-              <Badge
-                variant={
-                  Number(report.average_score) >= 70
-                    ? "default"
-                    : Number(report.average_score) >= 50
-                    ? "secondary"
-                    : "destructive"
-                }
-                className="text-lg px-3 py-1"
-              >
-                {Number(report.average_score || 0).toFixed(1)}%
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Class Position</CardDescription>
-            <CardTitle className="text-3xl flex items-center gap-2">
-              {getPositionBadge(report.class_position)}
-              <span className="text-sm font-normal text-muted-foreground">
-                / {report.class_size || "-"}
-              </span>
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Attendance</CardDescription>
-            <CardTitle className="text-3xl">
-              {report.attendance_percentage
-                ? `${Number(report.attendance_percentage).toFixed(0)}%`
-                : "-"}
-              <span className="text-sm font-normal text-muted-foreground ml-2">
-                ({report.days_present || 0}/{report.total_school_days || 0} days)
-              </span>
-            </CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
+      {/* Montessori Report View */}
+      {isMontessori && report.extra_data && (
+        <MontessoriReportView
+          data={report.extra_data as unknown as MontessoriAssessmentData}
+        />
+      )}
 
-      {/* Subject Results */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Subject Results
-          </CardTitle>
-          <CardDescription>
-            {report.subjects_count || 0} subjects
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {report.subject_results && report.subject_results.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Subject</TableHead>
-                  <TableHead className="text-center">Class Score ({caWeight}%)</TableHead>
-                  <TableHead className="text-center">Exams Score ({examWeight}%)</TableHead>
-                  <TableHead className="text-center">Total (100%)</TableHead>
-                  <TableHead className="text-center">Grade</TableHead>
-                  <TableHead className="text-center">Position</TableHead>
-                  <TableHead>Remark</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.subject_results.map((subject) => (
-                  <TableRow key={subject.subject_id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{subject.subject_name}</p>
-                        {subject.subject_code && (
-                          <p className="text-sm text-muted-foreground">
-                            {subject.subject_code}
-                          </p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {subject.class_score !== undefined
-                        ? Number(subject.class_score).toFixed(1)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {subject.exams_score !== undefined
-                        ? Number(subject.exams_score).toFixed(1)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-center font-semibold">
-                      {subject.total_score !== undefined
-                        ? Number(subject.total_score).toFixed(1)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {subject.grade ? (
-                        <Badge variant="outline">{subject.grade}</Badge>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {subject.subject_position || "-"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {subject.grade_remark || subject.teacher_remark || "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-12">
-              <BarChart3 className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-semibold">No subject results</h3>
-              <p className="text-muted-foreground">
-                Subject scores have not been entered for this term yet.
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Dual-Track Report View */}
+      {isDualTrack && report.extra_data && (
+        <DualTrackReportViewer
+          data={report.extra_data as unknown as DualTrackReportData}
+          caWeight={caWeight}
+          examWeight={examWeight}
+        />
+      )}
+
+      {/* Standard GES Report (non-Montessori, non-dual-track) */}
+      {!isMontessori && !isDualTrack && (
+        <>
+          {/* Summary Stats */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total Score</CardDescription>
+                <CardTitle className="text-3xl">
+                  {Number(report.total_score || 0).toFixed(0)}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Average</CardDescription>
+                <CardTitle className="text-3xl flex items-center gap-2">
+                  <Badge
+                    variant={
+                      Number(report.average_score) >= 70
+                        ? "default"
+                        : Number(report.average_score) >= 50
+                        ? "secondary"
+                        : "destructive"
+                    }
+                    className="text-lg px-3 py-1"
+                  >
+                    {Number(report.average_score || 0).toFixed(1)}%
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Class Position</CardDescription>
+                <CardTitle className="text-3xl flex items-center gap-2">
+                  {getPositionBadge(report.class_position)}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    / {report.class_size || "-"}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Attendance</CardDescription>
+                <CardTitle className="text-3xl">
+                  {report.attendance_percentage
+                    ? `${Number(report.attendance_percentage).toFixed(0)}%`
+                    : "-"}
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    ({report.days_present || 0}/{report.total_school_days || 0} days)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          {/* Subject Results */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Subject Results
+              </CardTitle>
+              <CardDescription>
+                {report.subjects_count || 0} subjects
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {report.subject_results && report.subject_results.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Subject</TableHead>
+                      <TableHead className="text-center">Class Score ({caWeight}%)</TableHead>
+                      <TableHead className="text-center">Exams Score ({examWeight}%)</TableHead>
+                      <TableHead className="text-center">Total (100%)</TableHead>
+                      <TableHead className="text-center">Grade</TableHead>
+                      <TableHead className="text-center">Position</TableHead>
+                      <TableHead>Remark</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.subject_results.map((subject) => (
+                      <TableRow key={subject.subject_id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{subject.subject_name}</p>
+                            {subject.subject_code && (
+                              <p className="text-sm text-muted-foreground">
+                                {subject.subject_code}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {subject.class_score !== undefined
+                            ? Number(subject.class_score).toFixed(1)
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {subject.exams_score !== undefined
+                            ? Number(subject.exams_score).toFixed(1)
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          {subject.total_score !== undefined
+                            ? Number(subject.total_score).toFixed(1)
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {subject.grade ? (
+                            <Badge variant="outline">{subject.grade}</Badge>
+                          ) : (
+                            "-"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {subject.subject_position || "-"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {subject.grade_remark || subject.teacher_remark || "-"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-12">
+                  <BarChart3 className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <h3 className="mt-4 text-lg font-semibold">No subject results</h3>
+                  <p className="text-muted-foreground">
+                    Subject scores have not been entered for this term yet.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Attendance (shown for all report types) */}
+      {(isMontessori || isDualTrack) && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Days Present</CardDescription>
+              <CardTitle className="text-2xl">
+                {report.days_present || 0}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Days Absent</CardDescription>
+              <CardTitle className="text-2xl">
+                {report.days_absent || 0}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Attendance Rate</CardDescription>
+              <CardTitle className="text-2xl">
+                {report.attendance_percentage
+                  ? `${Number(report.attendance_percentage).toFixed(0)}%`
+                  : "-"}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
 
       {/* Remarks */}
       <div className="grid gap-4 md:grid-cols-2">

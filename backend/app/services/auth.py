@@ -7,7 +7,7 @@ Business logic for user authentication and authorization.
 import secrets
 import string
 from datetime import UTC, datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from uuid import UUID
 
 import structlog
@@ -27,6 +27,8 @@ from app.models.tenant import Tenant, TenantType
 from app.models.user_school import UserSchool
 from app.services.audit import AuditService, AuditEventType
 from app.services.email import email_service
+from app.services.session import SessionService, parse_user_agent
+from app.services.token_blacklist import get_token_blacklist_service
 
 logger = structlog.get_logger()
 
@@ -73,6 +75,22 @@ class AuthService:
             "admissions.*",
             "curriculum.*",
             "subscription.*",
+            "hr.leave.read",
+            "hr.leave.request",
+            "hr.leave.approve",
+            "hr.leave.manage",
+            "payroll.read",
+            "payroll.configure",
+            "payroll.manage",
+            "payroll.process",
+            "payroll.approve",
+            "payroll.audit",
+            "payroll.loans.read",
+            "payroll.loans.request",
+            "payroll.loans.approve",
+            "payroll.loans.disburse",
+            "payroll.loans.manage",
+            "payroll.loans.write_off",
         ],
         "school_admin": [
             "school.read",
@@ -95,6 +113,22 @@ class AuthService:
             "admissions.*",
             "curriculum.*",
             "subscription.*",
+            "hr.leave.read",
+            "hr.leave.request",
+            "hr.leave.approve",
+            "hr.leave.manage",
+            "payroll.read",
+            "payroll.configure",
+            "payroll.manage",
+            "payroll.process",
+            "payroll.approve",
+            "payroll.audit",
+            "payroll.loans.read",
+            "payroll.loans.request",
+            "payroll.loans.approve",
+            "payroll.loans.disburse",
+            "payroll.loans.manage",
+            "payroll.loans.write_off",
             # School admins have full teacher portal access (head teacher view)
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -127,6 +161,8 @@ class AuthService:
             "admissions.read",
             "admissions.review",
             "curriculum.read",
+            "hr.leave.read",
+            "hr.leave.request",
             # Academic heads have full teacher portal access including head teacher features
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -150,6 +186,32 @@ class AuthService:
             "finance.*",
             "transport.read",
             "reports.financial",
+            "payroll.read",
+            "payroll.audit",
+            "payroll.loans.read",
+            "payroll.loans.disburse",
+            "payroll.loans.manage",
+        ],
+        "hr_officer": [
+            "staff.*",
+            "students.read",
+            "attendance.read",
+            "reports.hr",
+            "users.read",
+            "boarding.read",
+            "hr.leave.read",
+            "hr.leave.request",
+            "hr.leave.approve",
+            "hr.leave.manage",
+            "payroll.read",
+            "payroll.configure",
+            "payroll.manage",
+            "payroll.process",
+            "payroll.audit",
+            "payroll.loans.read",
+            "payroll.loans.request",
+            "payroll.loans.approve",
+            "payroll.loans.manage",
         ],
         "teacher": [
             "students.read",
@@ -169,6 +231,8 @@ class AuthService:
             "boarding.write",
             "transport.read",
             "curriculum.read",
+            "hr.leave.read",
+            "hr.leave.request",
             # Teacher portal permissions
             "teacher.dashboard.read",
             "teacher.schedule.read",
@@ -190,6 +254,12 @@ class AuthService:
             "boarding.read",
             "boarding.write",
             "boarding.exeat.approve",
+        ],
+        "transport_officer": [
+            "transport.*",
+            "students.read",
+            "self.read",
+            "self.update",
         ],
         "parent": [
             "children.read",
@@ -219,11 +289,50 @@ class AuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.audit = AuditService(db)
+        self.session_service = SessionService(db)
 
     @classmethod
     def get_role_permissions(cls, role: str) -> list[str]:
         """Get permissions for a role."""
         return cls.ROLE_PERMISSIONS.get(role, [])
+
+    @classmethod
+    async def get_effective_permissions(
+        cls, user: "User", db: AsyncSession
+    ) -> list[str]:
+        """
+        Get the effective permissions for a user.
+
+        If user has a custom_role_id, load permissions from the custom_roles
+        table. Otherwise, use the static ROLE_PERMISSIONS dict.
+
+        This method is called during token creation (login and refresh).
+        The resolved permissions are embedded in the JWT — no per-request
+        DB lookup is needed at runtime.
+        """
+        if user.custom_role_id:
+            from app.models.custom_role import CustomRole
+
+            result = await db.execute(
+                select(CustomRole.permissions).where(
+                    CustomRole.id == user.custom_role_id,
+                    # Defense-in-depth: tenant_id filter even though RLS handles isolation
+                    CustomRole.tenant_id == user.tenant_id,
+                    CustomRole.deleted_at.is_(None),
+                )
+            )
+            custom_perms = result.scalar_one_or_none()
+            if custom_perms is not None:
+                return custom_perms
+            # Fallback to base role if custom role was deleted or not found.
+            # The ondelete=SET NULL FK should prevent this, but defense-in-depth.
+            logger.warning(
+                "custom_role_not_found_fallback",
+                user_id=str(user.id),
+                custom_role_id=str(user.custom_role_id),
+            )
+
+        return cls.get_role_permissions(user.role.value)
 
     async def authenticate(
         self,
@@ -232,7 +341,8 @@ class AuthService:
         tenant_id: UUID,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-    ) -> Tuple[User, str, str]:
+        remember_me: bool = False,
+    ) -> Union[Tuple[User, str, str, int], dict]:
         """
         Authenticate a user with email and password.
 
@@ -242,9 +352,12 @@ class AuthService:
             tenant_id: Tenant UUID for isolation
             ip_address: Client IP address for audit logging
             user_agent: Client user agent for audit logging
+            remember_me: If True, extend refresh token lifetime for persistent sessions
 
         Returns:
-            Tuple of (User, access_token, refresh_token)
+            Tuple of (User, access_token, refresh_token, refresh_token_expires_in_seconds) for normal login,
+            or dict with {"mfa_required": True, "mfa_pending_token": str}
+            when the user has MFA enabled.
 
         Raises:
             AuthenticationError: If authentication fails
@@ -349,13 +462,63 @@ class AuthService:
             user_agent=user_agent,
         )
 
-        # Get permissions for user's role
-        permissions = self.get_role_permissions(user.role.value)
+        # MFA check: if user has MFA enabled, issue a short-lived pending
+        # token instead of full access/refresh tokens. The frontend must
+        # then call /auth/mfa/verify with this token + a TOTP code.
+        if user.mfa_enabled:
+            from jose import jwt as jose_jwt
+            from uuid import uuid4
+
+            mfa_pending_token = jose_jwt.encode(
+                {
+                    "sub": str(user.id),
+                    "tenant_id": str(user.tenant_id),
+                    "type": "mfa_pending",
+                    "exp": datetime.now(UTC)
+                    + timedelta(minutes=settings.MFA_PENDING_TOKEN_EXPIRY_MINUTES),
+                    "iat": datetime.now(UTC),
+                    "jti": str(uuid4()),
+                },
+                settings.SECRET_KEY,
+                algorithm=settings.ALGORITHM,
+            )
+            logger.info(
+                "mfa_pending_token_issued",
+                user_id=str(user.id),
+                tenant_id=str(tenant_id),
+            )
+            return {
+                "mfa_required": True,
+                "mfa_pending_token": mfa_pending_token,
+            }
+
+        # Get permissions — from custom role if assigned, otherwise static ROLE_PERMISSIONS
+        permissions = await self.get_effective_permissions(user, self.db)
 
         # Build chain-aware extra claims for JWT
         extra_claims = await self._build_extra_claims(user, tenant_id)
 
-        # Generate tokens with full claims
+        # Extend refresh token lifetime when "Remember Me" is checked
+        refresh_days = (
+            settings.REMEMBER_ME_REFRESH_TOKEN_DAYS
+            if remember_me
+            else settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        refresh_expires = timedelta(days=refresh_days)
+
+        # Generate refresh token first to get JTI for session tracking
+        refresh_token, jti, expires_at = create_refresh_token(
+            subject=str(user.id),
+            tenant_id=str(user.tenant_id),
+            expires_delta=refresh_expires,
+            # Persist remember_me preference so token rotation preserves it
+            extra_claims={"remember_me": True} if remember_me else None,
+        )
+
+        # Include JTI in access token so session endpoints can identify current session
+        extra_claims["jti"] = jti
+
+        # Generate access token with full claims
         access_token = create_access_token(
             subject=str(user.id),
             tenant_id=str(user.tenant_id),
@@ -364,12 +527,21 @@ class AuthService:
             permissions=permissions,
             extra_claims=extra_claims,
         )
-        refresh_token = create_refresh_token(
-            subject=str(user.id),
-            tenant_id=str(user.tenant_id),
+
+        refresh_expires_in_seconds = refresh_days * 24 * 60 * 60
+
+        # Track the session for device management
+        device_info = parse_user_agent(user_agent)
+        await self.session_service.create_session(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            jti=jti,
+            device_info=device_info,
+            ip_address=ip_address,
+            expires_at=expires_at,
         )
 
-        return user, access_token, refresh_token
+        return user, access_token, refresh_token, refresh_expires_in_seconds
 
     async def register_user(
         self,
@@ -433,16 +605,22 @@ class AuthService:
         self,
         refresh_token: str,
         tenant_id: UUID,
-    ) -> Tuple[str, str]:
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Tuple[str, str, int]:
         """
         Refresh access and refresh tokens.
+
+        Deactivates the old session and creates a new one with the new JTI.
 
         Args:
             refresh_token: Current refresh token
             tenant_id: Tenant UUID for validation
+            ip_address: Client IP for new session record
+            user_agent: Client user-agent for new session record
 
         Returns:
-            Tuple of (new_access_token, new_refresh_token)
+            Tuple of (new_access_token, new_refresh_token, refresh_token_expires_in_seconds)
 
         Raises:
             AuthenticationError: If refresh fails
@@ -468,6 +646,21 @@ class AuthService:
                 "Invalid token payload",
                 code="invalid_token",
             )
+
+        # Reject refresh tokens whose JTI has been blacklisted (terminated sessions)
+        # Pass db session so the blacklist check can fall back to user_sessions
+        # table when Redis is unavailable (fail-closed security)
+        token_jti = payload.get("jti")
+        if token_jti:
+            blacklist_service = await get_token_blacklist_service()
+            # Defense-in-depth: pass tenant_id so DB fallback query is tenant-scoped
+            if await blacklist_service.is_jti_blacklisted(
+                token_jti, db=self.db, tenant_id=str(tenant_id)
+            ):
+                raise AuthenticationError(
+                    "Token has been revoked",
+                    code="token_revoked",
+                )
 
         # Get user
         user = await self._get_user_by_id(UUID(user_id))
@@ -499,13 +692,62 @@ class AuthService:
                 code="tenant_mismatch",
             )
 
-        # Get permissions for user's role
-        permissions = self.get_role_permissions(user.role.value)
+        # Defense-in-depth: reject refresh if user has been inactive beyond the timeout.
+        # The frontend should handle timeout gracefully before this check is triggered;
+        # this catches edge cases like frozen browser tabs or disabled JavaScript.
+        if user.last_activity_at:
+            inactive_seconds = (
+                datetime.now(UTC) - user.last_activity_at
+            ).total_seconds()
+            inactive_minutes = inactive_seconds / 60
+
+            if inactive_minutes > settings.SESSION_TIMEOUT_MINUTES:
+                logger.info(
+                    "token_refresh_rejected_inactivity",
+                    user_id=str(user.id),
+                    tenant_id=str(tenant_id),
+                    inactive_minutes=round(inactive_minutes, 1),
+                )
+                raise AuthenticationError(
+                    "Session expired due to inactivity",
+                    code="session_inactive",
+                )
+        # If last_activity_at is NULL (legacy user), allow refresh to avoid
+        # breaking existing sessions that predate the heartbeat feature.
+
+        # Deactivate the old session tied to the previous refresh token
+        old_jti = payload.get("jti")
+        if old_jti:
+            await self.session_service.deactivate_by_jti(old_jti, tenant_id=tenant_id)
+
+        # Get permissions — from custom role if assigned, otherwise static ROLE_PERMISSIONS
+        permissions = await self.get_effective_permissions(user, self.db)
 
         # Build chain-aware extra claims for JWT
         extra_claims = await self._build_extra_claims(user, tenant_id)
 
-        # Generate new tokens with full claims
+        # Preserve remember_me state across token rotations so the extended
+        # session lifetime survives refresh cycles
+        remember_me = payload.get("remember_me", False)
+        refresh_days = (
+            settings.REMEMBER_ME_REFRESH_TOKEN_DAYS
+            if remember_me
+            else settings.REFRESH_TOKEN_EXPIRE_DAYS
+        )
+        refresh_expires = timedelta(days=refresh_days)
+
+        # Generate new refresh token first to get JTI for session tracking
+        new_refresh_token, new_jti, new_expires_at = create_refresh_token(
+            subject=str(user.id),
+            tenant_id=str(user.tenant_id),
+            expires_delta=refresh_expires,
+            extra_claims={"remember_me": True} if remember_me else None,
+        )
+
+        # Include JTI in access token
+        extra_claims["jti"] = new_jti
+
+        # Generate new access token with full claims
         access_token = create_access_token(
             subject=str(user.id),
             tenant_id=str(user.tenant_id),
@@ -514,12 +756,21 @@ class AuthService:
             permissions=permissions,
             extra_claims=extra_claims,
         )
-        new_refresh_token = create_refresh_token(
-            subject=str(user.id),
-            tenant_id=str(user.tenant_id),
+
+        refresh_expires_in_seconds = refresh_days * 24 * 60 * 60
+
+        # Create new session for the rotated refresh token
+        device_info = parse_user_agent(user_agent)
+        await self.session_service.create_session(
+            user_id=user.id,
+            tenant_id=tenant_id,
+            jti=new_jti,
+            device_info=device_info,
+            ip_address=ip_address,
+            expires_at=new_expires_at,
         )
 
-        return access_token, new_refresh_token
+        return access_token, new_refresh_token, refresh_expires_in_seconds
 
     async def get_user_by_id(self, user_id: UUID) -> Optional[User]:
         """Get user by ID."""
@@ -718,22 +969,33 @@ class AuthService:
         subdomain = result.scalar_one_or_none()
         return subdomain or ""
 
-    async def _get_accessible_school_ids(self, user_id: UUID, tenant_id: UUID) -> list[str]:
+    async def _get_accessible_school_ids(
+        self, user_id: UUID, tenant_id: UUID
+    ) -> tuple[list[str], dict[str, str]]:
         """
-        Query user_schools to find all schools this user can access.
+        Query user_schools to find all schools this user can access
+        and the role assigned at each school.
 
-        Returns a list of school UUID strings. For chain tenants this
-        determines which schools appear in the JWT accessible_school_ids
-        claim and which X-Active-School values are accepted.
+        Returns:
+            A tuple of (accessible_school_ids, school_roles) where:
+            - accessible_school_ids: list of school UUID strings
+            - school_roles: dict mapping school UUID string to role_at_school
+              (only entries where role_at_school is not None)
         """
         result = await self.db.execute(
-            select(UserSchool.school_id)
+            select(UserSchool.school_id, UserSchool.role_at_school)
             .where(UserSchool.tenant_id == tenant_id)
             .where(UserSchool.user_id == user_id)
             .where(UserSchool.is_active.is_(True))
         )
-        school_ids = result.scalars().all()
-        return [str(sid) for sid in school_ids]
+        rows = result.all()
+
+        school_ids = [str(row[0]) for row in rows]
+        # Only include entries where a school-specific role is explicitly set
+        school_roles = {
+            str(row[0]): row[1] for row in rows if row[1] is not None
+        }
+        return school_ids, school_roles
 
     async def _build_extra_claims(self, user: User, tenant_id: UUID) -> dict:
         """
@@ -780,7 +1042,9 @@ class AuthService:
 
         # Add chain-specific claims when tenant is a school chain
         if tenant_type == "school_chain":
-            accessible_ids = await self._get_accessible_school_ids(user.id, tenant_id)
+            accessible_ids, school_roles = await self._get_accessible_school_ids(
+                user.id, tenant_id
+            )
             extra_claims["tenant_type"] = tenant_type
 
             # Keep JWT compact for large chains: when the user has access to
@@ -799,6 +1063,13 @@ class AuthService:
                 )
             else:
                 extra_claims["accessible_school_ids"] = accessible_ids
+
+            # Include per-school role mapping so that switching schools
+            # in the frontend can update permissions without a DB round-trip.
+            # The dict is keyed by school UUID string; only schools where an
+            # explicit role_at_school is set are included.
+            if school_roles:
+                extra_claims["school_roles"] = school_roles
 
         return extra_claims
 
@@ -829,4 +1100,6 @@ class AuthService:
         user.failed_login_attempts = 0
         user.locked_until = None
         user.last_login = datetime.now(UTC)
+        # Initialize the session inactivity timer from login time
+        user.last_activity_at = datetime.now(UTC)
         await self.db.flush()

@@ -48,6 +48,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # decode_responses=True so callers get str instead of bytes from GET commands.
     app.state.redis = aioredis.from_url(str(settings.REDIS_URL), decode_responses=True)
 
+    # Check that the platform tenant seed row exists. If it is missing,
+    # platform admin login will silently fail ("Invalid email or password")
+    # because user queries return zero rows. This surfaces the problem at
+    # startup so operators notice immediately in logs.
+    try:
+        async with async_session_maker() as session:
+            result = await session.execute(
+                text("SELECT id FROM tenants WHERE id = CAST(:tid AS uuid)"),
+                {"tid": settings.PLATFORM_TENANT_ID},
+            )
+            if not result.scalar_one_or_none():
+                logger.warning(
+                    "platform_tenant_missing",
+                    platform_tenant_id=settings.PLATFORM_TENANT_ID,
+                    message="Platform tenant row not found. Platform admin features will not work. "
+                    "Run 'alembic upgrade head' to create it.",
+                )
+    except Exception:
+        # DB may be unreachable at startup (e.g., during container orchestration).
+        # Log but do not crash -- the /health endpoint will surface DB issues.
+        logger.warning("platform_tenant_check_failed", exc_info=True)
+
     yield
 
     # Shutdown

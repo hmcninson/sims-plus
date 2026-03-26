@@ -163,6 +163,14 @@ class TermGradesOverall(BaseSchema):
     average: Optional[Decimal] = None
     class_position: Optional[int] = None
     class_size: Optional[int] = None
+    # Curriculum-specific aggregate metrics (read from TermReport)
+    gpa: Optional[Decimal] = None
+    weighted_gpa: Optional[Decimal] = None
+    cumulative_gpa: Optional[Decimal] = None
+    honor_roll: Optional[bool] = None
+    total_credits_earned: Optional[Decimal] = None
+    ib_total_points: Optional[int] = None
+    french_mention: Optional[str] = None
 
 
 class TermGrades(BaseSchema):
@@ -174,6 +182,11 @@ class TermGrades(BaseSchema):
     academic_year: Optional[str] = None
     subjects: list[SubjectGrade] = []
     overall: TermGradesOverall
+    # Curriculum context — allows frontend to switch display modes
+    curriculum_type: str = "ges"
+    score_display_mode: str = "grade_and_score"
+    # True when aggregate metrics come from a published TermReport
+    report_generated: bool = False
 
 
 class GradeTrend(BaseSchema):
@@ -184,6 +197,10 @@ class GradeTrend(BaseSchema):
     average: Optional[Decimal] = None
     position: Optional[int] = None
     class_size: Optional[int] = None
+    # Curriculum-appropriate metric (e.g. "gpa", "ib_total_points", "average_score")
+    metric: str = "average_score"
+    value: Optional[float] = None
+    label: str = ""
 
 
 class AssessmentScore(BaseSchema):

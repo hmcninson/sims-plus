@@ -7,6 +7,29 @@
  */
 
 // =========================
+// Curriculum Types (shared with grades)
+// =========================
+
+export type CurriculumType =
+  | "ges"
+  | "cambridge"
+  | "american"
+  | "ib"
+  | "french"
+  | "montessori"
+  | "edexcel"
+  | "custom";
+
+export type ScoreDisplayMode =
+  | "percentage"
+  | "grade_only"
+  | "gpa"
+  | "level"
+  | "narrative"
+  | "mention"
+  | "grade_and_score";
+
+// =========================
 // Child / Student Types (parent read-only view)
 // =========================
 
@@ -78,6 +101,16 @@ export interface TermGrades {
     class_position: number;
     class_size: number;
   };
+  /** Curriculum-specific fields (populated by backend when curriculum != GES) */
+  curriculum_type: CurriculumType;
+  score_display_mode: ScoreDisplayMode;
+  gpa: number | null;
+  weighted_gpa: number | null;
+  cumulative_gpa: number | null;
+  honor_roll: boolean | null;
+  total_credits_earned: number | null;
+  ib_total_points: number | null;
+  french_mention: string | null;
 }
 
 export interface GradeTrend {
@@ -86,6 +119,10 @@ export interface GradeTrend {
   average: number;
   position: number;
   class_size: number;
+  /** Curriculum-aware trend fields */
+  metric: string;
+  value: number | null;
+  label: string;
 }
 
 export interface AssessmentScore {

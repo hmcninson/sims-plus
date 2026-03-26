@@ -34,6 +34,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/api/v1/tenant/check-subdomain": ("subdomain", "subdomain"),
         "/api/v1/tenant/validate": ("subdomain", "subdomain"),
         "/api/v1/onboarding/suggest-subdomain": ("subdomain", "subdomain"),
+        "/api/v1/tenant/search": ("search", "search"),
+        # OTP and MFA endpoints — auth-tier limits to prevent brute-force
+        "/api/v1/auth/forgot-password-sms": ("auth", "auth"),
+        "/api/v1/auth/reset-password-sms": ("auth", "auth"),
+        "/api/v1/auth/mfa/verify": ("auth", "auth"),
+        "/api/v1/auth/send-phone-otp": ("auth", "auth"),
+        "/api/v1/auth/verify-phone": ("auth", "auth"),
         # Admissions — strict limits on public application submission
         "/api/v1/admissions/public/applications": ("admissions_submit", "admissions_submit"),
         # Applicant account rate limits — separate from general auth limits
@@ -50,6 +57,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # M4: Webhook rate-limited to auth tier — signature verification is
         # expensive (HMAC-SHA512), so cap invalid request volume
         "/api/v1/subscription/webhook/paystack": ("auth", "subscription_webhook"),
+        # Platform admin endpoints
+        "/api/v1/platform/login": ("auth", "auth"),
+        "/api/v1/platform/refresh": ("auth", "auth"),
+        "/api/v1/platform/mfa/verify": ("auth", "auth"),
+        "/api/v1/platform/mfa/setup": ("auth", "auth"),
+        "/api/v1/platform/mfa/generate": ("auth", "auth"),  # Prevent brute-force secret generation
+        # Impersonation: bulk tier (10/min). A compromised admin at higher rates
+        # could impersonate many tenants quickly. Audit log alerts can trigger.
+        "/api/v1/platform/impersonate": ("bulk", "bulk"),
+        "/api/v1/platform/tenants": ("default", "default"),
+        "/api/v1/platform/analytics": ("bulk", "bulk"),
     }
 
     # Endpoints that should be excluded from rate limiting.
@@ -138,6 +156,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     settings.RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW,
                     key_prefix,
                 )
+            elif limit_type == "search":
+                return (
+                    settings.RATE_LIMIT_SEARCH_REQUESTS,
+                    settings.RATE_LIMIT_SEARCH_WINDOW,
+                    key_prefix,
+                )
             elif limit_type == "admissions_submit":
                 return (
                     settings.RATE_LIMIT_ADMISSIONS_SUBMIT_REQUESTS,
@@ -162,6 +186,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     settings.RATE_LIMIT_SUBSCRIPTION_WINDOW,
                     key_prefix,
                 )
+            elif limit_type == "bulk":
+                return (
+                    settings.RATE_LIMIT_BULK_REQUESTS,
+                    settings.RATE_LIMIT_BULK_WINDOW,
+                    key_prefix,
+                )
 
         # Check for prefix matches
         for endpoint, (limit_type, key_prefix) in self.ENDPOINT_LIMITS.items():
@@ -176,6 +206,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     return (
                         settings.RATE_LIMIT_SUBDOMAIN_CHECK_REQUESTS,
                         settings.RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "search":
+                    return (
+                        settings.RATE_LIMIT_SEARCH_REQUESTS,
+                        settings.RATE_LIMIT_SEARCH_WINDOW,
                         key_prefix,
                     )
                 elif limit_type == "admissions_submit":
@@ -200,6 +236,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     return (
                         settings.RATE_LIMIT_SUBSCRIPTION_REQUESTS,
                         settings.RATE_LIMIT_SUBSCRIPTION_WINDOW,
+                        key_prefix,
+                    )
+                elif limit_type == "bulk":
+                    return (
+                        settings.RATE_LIMIT_BULK_REQUESTS,
+                        settings.RATE_LIMIT_BULK_WINDOW,
                         key_prefix,
                     )
 

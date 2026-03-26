@@ -36,7 +36,6 @@ class PasswordResetService:
     """
 
     TOKEN_PREFIX = "password_reset:"
-    TOKEN_EXPIRY_MINUTES = 30
     MAX_RESET_ATTEMPTS = 5  # Per email per hour
 
     def __init__(self, db: AsyncSession, redis_client: Optional[redis.Redis] = None):
@@ -135,7 +134,7 @@ class PasswordResetService:
             # Store token in Redis
             token_key = f"{self.TOKEN_PREFIX}{token}"
             token_data = f"{user.id}:{tenant_id}"
-            expiry = self.TOKEN_EXPIRY_MINUTES * 60
+            expiry = settings.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES * 60
 
             await redis_client.setex(token_key, expiry, token_data)
 

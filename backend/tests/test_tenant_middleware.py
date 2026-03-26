@@ -37,7 +37,8 @@ class TestSubdomainExtraction:
     def test_reserved_subdomain_returns_none(self):
         assert extract_subdomain_from_host("www.simsplus.io") is None
         assert extract_subdomain_from_host("api.simsplus.io") is None
-        assert extract_subdomain_from_host("admin.simsplus.io") is None
+        # "admin" is NOT reserved — it's used by the platform admin portal
+        assert extract_subdomain_from_host("admin.simsplus.io") == "admin"
 
     def test_reserved_subdomain_localhost_returns_none(self):
         assert extract_subdomain_from_host("www.localhost") is None
@@ -91,5 +92,6 @@ class TestReservedSubdomains:
         assert len(RESERVED_SUBDOMAINS) >= 35
 
     def test_critical_subdomains_reserved(self):
-        critical = {"www", "api", "admin", "app", "mail", "cdn", "status"}
+        # "admin" is NOT reserved — it's used by the platform admin portal
+        critical = {"www", "api", "app", "mail", "cdn", "status"}
         assert critical.issubset(RESERVED_SUBDOMAINS)

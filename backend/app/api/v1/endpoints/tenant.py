@@ -14,6 +14,8 @@ from fastapi import APIRouter, Path, Query
 
 from app.api.deps import UnscopedDatabaseSession
 from app.schemas.tenant import (
+    SchoolSearchResponse,
+    SchoolSearchResult,
     SubdomainCheckRequest,
     SubdomainCheckResponse,
     TenantBranding,
@@ -24,6 +26,49 @@ from app.services.tenant import TenantService
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/search",
+    response_model=SchoolSearchResponse,
+    summary="Search schools",
+    description="Public endpoint to search for registered schools by name or subdomain.",
+)
+async def search_schools(
+    q: Annotated[
+        str,
+        Query(
+            min_length=2,
+            max_length=100,
+            description="Search query (school name or subdomain, min 2 characters)",
+        ),
+    ],
+    db: UnscopedDatabaseSession,
+) -> SchoolSearchResponse:
+    """
+    Search for registered schools.
+
+    This is a public endpoint used by the SchoolFinder on the landing page.
+    Returns only safe public fields (name, subdomain, logo_url, primary_color).
+
+    - **q**: Search query (minimum 2 characters)
+
+    Returns matching schools ordered by name, limited to 10 results.
+    """
+    service = TenantService(db)
+    tenants = await service.search_tenants(q)
+
+    results = [
+        SchoolSearchResult(
+            name=t.name,
+            subdomain=t.subdomain,
+            logo_url=t.logo_url,
+            primary_color=t.primary_color,
+        )
+        for t in tenants
+    ]
+
+    return SchoolSearchResponse(results=results, count=len(results))
 
 
 @router.get(
@@ -118,13 +163,14 @@ async def validate_tenant(
     - **error**: Error message if invalid
     """
     service = TenantService(db)
-    is_valid, tenant, error = await service.validate_tenant(subdomain)
+    is_valid, tenant, error, code = await service.validate_tenant(subdomain)
 
     if not is_valid or tenant is None:
         return TenantValidationResponse(
             valid=False,
             tenant=None,
             error=error,
+            code=code,
         )
 
     return TenantValidationResponse(
@@ -183,13 +229,14 @@ async def get_current_tenant(
         )
 
     service = TenantService(db)
-    is_valid, tenant, error = await service.validate_tenant(subdomain)
+    is_valid, tenant, error, code = await service.validate_tenant(subdomain)
 
     if not is_valid or tenant is None:
         return TenantValidationResponse(
             valid=False,
             tenant=None,
             error=error,
+            code=code,
         )
 
     return TenantValidationResponse(

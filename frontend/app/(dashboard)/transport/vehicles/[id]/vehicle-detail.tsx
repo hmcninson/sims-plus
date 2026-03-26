@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -128,7 +128,7 @@ export function VehicleDetailView({ vehicle, maintenanceHistory }: Props) {
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
 
   const editForm = useForm<EditVehicleFormData>({
-    resolver: zodResolver(editVehicleSchema),
+    resolver: zodResolver(editVehicleSchema) as Resolver<EditVehicleFormData>,
     defaultValues: {
       registration_number: vehicle.registration_number,
       vehicle_type: vehicle.vehicle_type,
@@ -149,7 +149,7 @@ export function VehicleDetailView({ vehicle, maintenanceHistory }: Props) {
   const [isMaintenanceSubmitting, setIsMaintenanceSubmitting] = useState(false);
 
   const maintenanceForm = useForm<MaintenanceFormData>({
-    resolver: zodResolver(maintenanceSchema),
+    resolver: zodResolver(maintenanceSchema) as Resolver<MaintenanceFormData>,
     defaultValues: {
       maintenance_type: "routine",
       description: "",

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Enrollment Confirmation</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm 2.5cm;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #333;
+        }
+        .letterhead {
+            text-align: center;
+            margin-bottom: 2cm;
+            border-bottom: 3px solid {{ school_color }};
+            padding-bottom: 1cm;
+        }
+        .letterhead .logo {
+            max-height: 80px;
+            max-width: 200px;
+            margin-bottom: 0.5cm;
+        }
+        .letterhead .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            color: {{ school_color }};
+            margin: 0;
+        }
+        .letterhead .school-motto {
+            font-style: italic;
+            color: #666;
+            margin: 0.2cm 0 0 0;
+        }
+        .letterhead .school-address {
+            font-size: 10pt;
+            color: #666;
+            margin: 0.3cm 0 0 0;
+        }
+        .title {
+            text-align: center;
+            font-size: 16pt;
+            font-weight: bold;
+            color: {{ school_color }};
+            margin: 1cm 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .date-line {
+            text-align: right;
+            margin-bottom: 1cm;
+        }
+        .reference-line {
+            margin-bottom: 1cm;
+            font-weight: bold;
+        }
+        .salutation {
+            margin-bottom: 0.5cm;
+        }
+        .body-text {
+            margin-bottom: 0.5cm;
+            text-align: justify;
+        }
+        .student-details {
+            background: #f0f7ff;
+            border-left: 4px solid {{ school_color }};
+            padding: 0.8cm;
+            margin: 1cm 0;
+        }
+        .student-details p {
+            margin: 0.2cm 0;
+        }
+        .student-details .label {
+            font-weight: bold;
+            color: {{ school_color }};
+            display: inline-block;
+            min-width: 160px;
+        }
+        .checklist-section {
+            margin: 1cm 0;
+        }
+        .checklist-section h3 {
+            font-size: 13pt;
+            color: {{ school_color }};
+            margin-bottom: 0.4cm;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 0.2cm;
+        }
+        .checklist-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10pt;
+            margin-bottom: 0.5cm;
+        }
+        .checklist-table th {
+            background: {{ school_color }};
+            color: white;
+            padding: 0.3cm 0.4cm;
+            text-align: left;
+            font-weight: bold;
+        }
+        .checklist-table td {
+            padding: 0.25cm 0.4cm;
+            border-bottom: 1px solid #eee;
+        }
+        .checklist-table tr:nth-child(even) td {
+            background: #f9f9f9;
+        }
+        .status-complete {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .status-pending {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .deposit-box {
+            border: 2px solid #27ae60;
+            background: #eafaf1;
+            padding: 0.6cm;
+            margin: 0.8cm 0;
+            border-radius: 4px;
+        }
+        .deposit-box .label {
+            font-weight: bold;
+            color: #27ae60;
+        }
+        .deposit-pending {
+            border-color: #f39c12;
+            background: #fef9e7;
+        }
+        .deposit-pending .label {
+            color: #f39c12;
+        }
+        .next-steps {
+            margin: 1cm 0;
+        }
+        .next-steps h3 {
+            font-size: 13pt;
+            color: {{ school_color }};
+            margin-bottom: 0.4cm;
+        }
+        .next-steps ol {
+            padding-left: 1.5cm;
+        }
+        .next-steps li {
+            margin-bottom: 0.3cm;
+        }
+        .boarding-info {
+            background: #fef9e7;
+            border-left: 4px solid #f39c12;
+            padding: 0.6cm;
+            margin: 0.8cm 0;
+        }
+        .boarding-info .label {
+            font-weight: bold;
+            color: #f39c12;
+        }
+        .signature-block {
+            margin-top: 2cm;
+        }
+        .signature-block .role {
+            font-weight: bold;
+        }
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #ddd;
+            padding-top: 0.3cm;
+        }
+    </style>
+</head>
+<body>
+    <div class="letterhead">
+        {% if safe_logo_url %}
+        <img src="{{ safe_logo_url }}" alt="{{ school.name }}" class="logo">
+        {% endif %}
+        <p class="school-name">{{ school.name }}</p>
+        {% if school.motto %}
+        <p class="school-motto">&ldquo;{{ school.motto }}&rdquo;</p>
+        {% endif %}
+        {% if school.address %}
+        <p class="school-address">{{ school.address }}</p>
+        {% endif %}
+    </div>
+
+    <div class="title">Enrollment Confirmation</div>
+
+    <div class="date-line">
+        {{ generated_date.strftime('%d %B %Y') }}
+    </div>
+
+    <div class="reference-line">
+        Ref: ENR/{{ tracking_code[:12] | upper }}
+    </div>
+
+    <div class="salutation">
+        Dear Parent/Guardian,
+    </div>
+
+    <div class="body-text">
+        We are pleased to confirm the enrollment of <strong>{{ applicant_name }}</strong>
+        at {{ school.name }}. Please review the details below and ensure all
+        requirements are met before the start of the academic year.
+    </div>
+
+    <div class="student-details">
+        <p><span class="label">Student Name:</span> {{ applicant_name }}</p>
+        <p><span class="label">Tracking Code:</span> {{ tracking_code }}</p>
+        {% if date_of_birth %}
+        <p><span class="label">Date of Birth:</span> {{ date_of_birth.strftime('%d %B %Y') }}</p>
+        {% endif %}
+        {% if gender %}
+        <p><span class="label">Gender:</span> {{ gender | capitalize }}</p>
+        {% endif %}
+        <p><span class="label">Assigned Class:</span> {{ class_name }}</p>
+        {% if boarding_status %}
+        <p><span class="label">Residential Status:</span> {{ boarding_status | capitalize }}</p>
+        {% endif %}
+    </div>
+
+    {% if boarding_status == "boarding" %}
+    <div class="boarding-info">
+        <p><span class="label">Boarding Student Notice:</span></p>
+        <p>As a boarding student, please ensure you have completed all boarding-related
+        requirements including medical clearance, boarding fee payment, and dormitory
+        preference submission. Contact the boarding house master for further details.</p>
+    </div>
+    {% endif %}
+
+    {% if checklist %}
+    <div class="checklist-section">
+        <h3>Enrollment Checklist Summary</h3>
+        <p>{{ checklist.completed }} of {{ checklist.total }} items completed.</p>
+        <table class="checklist-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Required</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in checklist.items %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.type | capitalize }}</td>
+                    <td>{{ "Yes" if item.required else "No" }}</td>
+                    <td>
+                        {% if item.completed %}
+                        <span class="status-complete">&#10003; Complete</span>
+                        {% else %}
+                        <span class="status-pending">&#10007; Pending</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% if deposit_paid %}
+    <div class="deposit-box">
+        <p><span class="label">Enrollment Deposit:</span> Received</p>
+        {% if deposit_amount %}
+        <p>Amount: GHS {{ "%.2f" | format(deposit_amount) }}</p>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="deposit-box deposit-pending">
+        <p><span class="label">Enrollment Deposit:</span> Pending</p>
+        <p>Please ensure the enrollment deposit is paid before the commencement of the academic year.</p>
+    </div>
+    {% endif %}
+
+    <div class="next-steps">
+        <h3>Next Steps</h3>
+        <ol>
+            <li>Complete any pending checklist items listed above.</li>
+            <li>Pay any outstanding fees before the registration deadline.</li>
+            <li>Attend the orientation programme (date and time will be communicated separately).</li>
+            <li>Collect your student ID card and class timetable on the first day of school.</li>
+            {% if boarding_status == "boarding" %}
+            <li>Report to the boarding house on the designated move-in date with all required items.</li>
+            {% endif %}
+            <li>Contact the school office if you have any questions or require further assistance.</li>
+        </ol>
+    </div>
+
+    <div class="body-text">
+        We look forward to welcoming {{ applicant_name }} to the {{ school.name }} family.
+    </div>
+
+    <div class="signature-block">
+        <p>Yours sincerely,</p>
+        <br><br>
+        <p class="role">Head of Admissions</p>
+        <p>{{ school.name }}</p>
+    </div>
+
+    <div class="footer">
+        This is an official enrollment confirmation from {{ school.name }}.
+        Tracking Code: {{ tracking_code }} &bull; Generated: {{ generated_date.strftime('%d/%m/%Y') }}
+    </div>
+</body>
+</html>

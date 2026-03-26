@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { getExam, getScoreEntryForm } from "@/actions/exams.action";
 import { getGradingScales } from "@/actions/academic.action";
 import { ScoreEntryForm } from "./score-entry-form";
+import { MontessoriAssessmentForm } from "@/components/curriculum/MontessoriAssessmentForm";
 
 interface PageProps {
   params: Promise<{ id: string; subjectId: string }>;
@@ -31,6 +32,27 @@ export default async function ScoreEntryPage({ params }: PageProps) {
   const exam = examResult.data;
   const scoreForm = formResult.data;
   const gradingScales = gradingScalesResult.success ? gradingScalesResult.data || [] : [];
+
+  // Detect Montessori curriculum: show narrative form instead of numeric score grid
+  if (scoreForm.curriculum_type === "montessori") {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex h-96 items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        <MontessoriAssessmentForm
+          exam={exam}
+          classId={scoreForm.class_id}
+          sectionId={scoreForm.section_id}
+          students={scoreForm.students || []}
+          backHref={`/exams/${exam.id}/scores`}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <Suspense
@@ -60,8 +82,15 @@ export async function generateMetadata({ params }: PageProps) {
   const subjectName =
     formResult.success && formResult.data ? formResult.data.subject_name : "Subject";
 
+  const isMontessori =
+    formResult.success && formResult.data?.curriculum_type === "montessori";
+
   return {
-    title: `${subjectName} - ${examName} - Score Entry - SIMS Plus`,
-    description: `Enter scores for ${subjectName}`,
+    title: isMontessori
+      ? `Montessori Assessment - ${examName} - SIMS Plus`
+      : `${subjectName} - ${examName} - Score Entry - SIMS Plus`,
+    description: isMontessori
+      ? `Montessori narrative assessment for ${examName}`
+      : `Enter scores for ${subjectName}`,
   };
 }

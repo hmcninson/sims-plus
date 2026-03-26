@@ -521,3 +521,207 @@ class ExamService:
         await self.db.delete(exam_subject)
         await self.db.flush()
         return True
+
+    # =========================
+    # Mock → Predicted Grades
+    # =========================
+
+    async def generate_predicted_grades_from_mock(
+        self,
+        tenant_id: UUID,
+        exam_id: UUID,
+        predicted_by: UUID,
+    ) -> dict:
+        """Generate predicted grades from mock exam results.
+
+        For each student-subject score in the mock exam:
+        1. Look up the curriculum profile from the exam subject's class
+        2. Resolve the grading scale and score strategy for that curriculum
+        3. Determine the grade from the raw score
+        4. Upsert a PredictedGrade record (skip manually-set predictions)
+
+        Returns: {"created": int, "updated": int, "skipped": int}
+        """
+        from app.models.academic import Class, Grade, GradingScale
+        from app.models.curriculum import CurriculumProfile, PredictedGrade
+        from app.services.exam.score_strategies import get_score_strategy
+
+        # 1. Fetch exam and validate it's a published mock
+        exam = await self.get_exam(tenant_id, exam_id)
+        if not exam:
+            raise ExamServiceError("Exam not found", "not_found")
+        if exam.exam_type != ExamType.MOCK:
+            raise ExamServiceError(
+                "Only mock exams can generate predicted grades",
+                "invalid_type",
+            )
+        if exam.status != ExamStatus.RESULTS_PUBLISHED:
+            raise ExamServiceError(
+                "Results must be published before generating predicted grades",
+                "invalid_status",
+            )
+
+        # 2. Load all exam subjects with their scores for this exam
+        exam_subjects_result = await self.db.execute(
+            select(ExamSubject)
+            .where(
+                and_(
+                    ExamSubject.tenant_id == tenant_id,
+                    ExamSubject.exam_id == exam_id,
+                )
+            )
+            .options(
+                selectinload(ExamSubject.scores),
+            )
+        )
+        exam_subjects = exam_subjects_result.scalars().unique().all()
+
+        if not exam_subjects:
+            raise ExamServiceError(
+                "No subjects found for this exam",
+                "no_subjects",
+            )
+
+        # 3. Collect unique class IDs and resolve their curriculum profiles
+        class_ids = list({es.class_id for es in exam_subjects})
+        class_result = await self.db.execute(
+            select(Class).where(
+                and_(
+                    Class.tenant_id == tenant_id,
+                    Class.id.in_(class_ids),
+                )
+            )
+        )
+        classes = {c.id: c for c in class_result.scalars().all()}
+
+        # Resolve curriculum profiles from classes
+        profile_ids = {
+            c.curriculum_profile_id
+            for c in classes.values()
+            if c.curriculum_profile_id
+        }
+
+        if not profile_ids:
+            raise ExamServiceError(
+                "No curriculum profile found for the exam's classes. "
+                "Predicted grades require a curriculum profile assigned to the class.",
+                "no_profile",
+            )
+
+        profile_result = await self.db.execute(
+            select(CurriculumProfile).where(
+                and_(
+                    CurriculumProfile.tenant_id == tenant_id,
+                    CurriculumProfile.id.in_(profile_ids),
+                    CurriculumProfile.deleted_at.is_(None),
+                )
+            )
+        )
+        profiles = {p.id: p for p in profile_result.scalars().all()}
+
+        # 4. Load grading scales and grades for each profile
+        grading_scale_ids = {
+            p.grading_scale_id
+            for p in profiles.values()
+            if p.grading_scale_id
+        }
+        grades_by_scale: dict[UUID, list] = {}
+        if grading_scale_ids:
+            grades_result = await self.db.execute(
+                select(Grade).where(
+                    and_(
+                        Grade.tenant_id == tenant_id,
+                        Grade.grading_scale_id.in_(grading_scale_ids),
+                    )
+                )
+            )
+            for grade in grades_result.scalars().all():
+                grades_by_scale.setdefault(grade.grading_scale_id, []).append(grade)
+
+        # 5. Process each exam subject's scores
+        created = 0
+        updated = 0
+        skipped = 0
+        now = datetime.now(UTC)
+
+        for exam_subject in exam_subjects:
+            # Resolve profile for this exam subject's class
+            class_obj = classes.get(exam_subject.class_id)
+            if not class_obj or not class_obj.curriculum_profile_id:
+                # Class has no curriculum profile — skip all its scores
+                skipped += len(exam_subject.scores) if exam_subject.scores else 0
+                continue
+
+            profile = profiles.get(class_obj.curriculum_profile_id)
+            if not profile or not profile.grading_scale_id:
+                skipped += len(exam_subject.scores) if exam_subject.scores else 0
+                continue
+
+            strategy = get_score_strategy(profile.curriculum_type.value)
+            grades_list = grades_by_scale.get(profile.grading_scale_id, [])
+
+            if not grades_list:
+                skipped += len(exam_subject.scores) if exam_subject.scores else 0
+                continue
+
+            for score_record in (exam_subject.scores or []):
+                if score_record.is_absent or score_record.score is None:
+                    skipped += 1
+                    continue
+
+                # Determine grade using the curriculum's strategy
+                grade_label, grade_point, remark = strategy.determine_grade(
+                    score_record.score, grades_list
+                )
+
+                if not grade_label:
+                    skipped += 1
+                    continue
+
+                # Check for existing predicted grade (upsert logic)
+                existing_result = await self.db.execute(
+                    select(PredictedGrade).where(
+                        and_(
+                            PredictedGrade.tenant_id == tenant_id,
+                            PredictedGrade.student_id == score_record.student_id,
+                            PredictedGrade.subject_id == exam_subject.subject_id,
+                            PredictedGrade.academic_year_id == exam.academic_year_id,
+                            PredictedGrade.deleted_at.is_(None),
+                        )
+                    )
+                )
+                pg = existing_result.scalar_one_or_none()
+
+                auto_generated_marker = "Auto-generated from mock exam"
+
+                if pg:
+                    # >>REVIEW FIX H2: Don't overwrite manually-set predictions.
+                    # Only update if the existing record was auto-generated.
+                    if pg.notes and auto_generated_marker not in pg.notes:
+                        skipped += 1
+                        continue
+
+                    pg.predicted_grade = grade_label
+                    pg.predicted_score = score_record.score
+                    pg.predicted_by = predicted_by
+                    pg.predicted_at = now
+                    pg.notes = f"{auto_generated_marker}: {exam.name}"
+                    updated += 1
+                else:
+                    new_pg = PredictedGrade(
+                        tenant_id=tenant_id,
+                        student_id=score_record.student_id,
+                        subject_id=exam_subject.subject_id,
+                        academic_year_id=exam.academic_year_id,
+                        term_id=exam.term_id,
+                        predicted_grade=grade_label,
+                        predicted_score=score_record.score,
+                        predicted_by=predicted_by,
+                        predicted_at=now,
+                        notes=f"{auto_generated_marker}: {exam.name}",
+                    )
+                    self.db.add(new_pg)
+                    created += 1
+
+        await self.db.flush()
+        return {"created": created, "updated": updated, "skipped": skipped}

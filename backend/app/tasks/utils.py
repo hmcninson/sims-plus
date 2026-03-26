@@ -6,7 +6,7 @@ across all schools in a tenant. These functions handle the difference
 between single-school and chain tenants transparently.
 
 Usage:
-    from app.tasks.utils import get_tenant_schools, for_each_school
+    from app.tasks.utils import get_tenant_schools, for_each_school, run_async
 
     # Get schools to iterate
     schools = await get_tenant_schools(db, tenant_id)
@@ -15,8 +15,14 @@ Usage:
 
     # Or use the higher-level helper
     results = await for_each_school(db, tenant_id, process_callback)
+
+    # Bridge sync Celery tasks to async code
+    @celery_app.task
+    def my_task():
+        run_async(my_async_function())
 """
 
+import asyncio
 from typing import Any, Awaitable, Callable, Optional
 from uuid import UUID
 
@@ -241,3 +247,37 @@ async def run_for_all_tenants(
     )
 
     return tenant_results
+
+
+def run_async(coro: Any) -> Any:
+    """
+    Bridge between synchronous Celery tasks and async application code.
+
+    Celery tasks are synchronous by default. This helper runs an async
+    coroutine in a fresh event loop. Each Celery task that needs async
+    DB operations should call this instead of asyncio.run() directly,
+    so the loop lifecycle is managed consistently.
+
+    Args:
+        coro: An awaitable coroutine to execute.
+
+    Returns:
+        The coroutine's return value.
+
+    Example:
+        @celery_app.task
+        def my_celery_task():
+            return run_async(_my_async_logic())
+
+        async def _my_async_logic():
+            async with async_session_maker() as db:
+                ...
+    """
+    # Create a new event loop for each task invocation. Celery worker
+    # threads do not have a running loop, so we cannot use
+    # asyncio.get_event_loop().run_until_complete() safely.
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()

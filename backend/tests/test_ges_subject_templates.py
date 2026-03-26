@@ -15,7 +15,7 @@ from tests.conftest import (
     set_app_tenant_context,
 )
 
-pytestmark = pytest.mark.asyncio
+
 
 
 # --- Helpers ---

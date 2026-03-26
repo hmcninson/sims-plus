@@ -13,6 +13,7 @@ pytest-mock==3.12.0
 httpx==0.26.0
 factory-boy==3.3.0
 faker==22.5.1
+fakeredis[aioredis]==2.21.1
 
 # =========================
 # Code Quality

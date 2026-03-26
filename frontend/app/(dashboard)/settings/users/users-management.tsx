@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import {
   Users,
   UserPlus,
@@ -16,6 +16,7 @@ import {
   UserMinus,
   Pencil,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,7 +72,10 @@ import {
   getUserStatsByRole,
 } from "@/actions/users.action";
 import { inviteUser } from "@/actions/settings.action";
+import { listCustomRoles, assignCustomRole } from "@/actions/custom-roles.action";
+import { ImportUsersDialog } from "@/components/users/ImportUsersDialog";
 import type { User, UserRole, UserStatus, UserListResponse, UserInviteRequest } from "@/types";
+import type { CustomRole } from "@/types/custom-role.type";
 
 // Role definitions with colors and descriptions
 const ROLE_CONFIG: Record<UserRole, { label: string; color: string; description: string }> = {
@@ -100,6 +104,11 @@ const ROLE_CONFIG: Record<UserRole, { label: string; color: string; description:
     color: "bg-green-500",
     description: "Manage fees and payments",
   },
+  hr_officer: {
+    label: "HR Officer",
+    color: "bg-teal-500",
+    description: "Staff management, attendance, HR reports",
+  },
   teacher: {
     label: "Teacher",
     color: "bg-purple-500",
@@ -110,6 +119,11 @@ const ROLE_CONFIG: Record<UserRole, { label: string; color: string; description:
     color: "bg-yellow-500",
     description: "Manage boarding students",
   },
+  transport_officer: {
+    label: "Transport Officer",
+    color: "bg-amber-500",
+    description: "Manage transport routes and vehicles",
+  },
   parent: {
     label: "Parent",
     color: "bg-cyan-500",
@@ -119,6 +133,11 @@ const ROLE_CONFIG: Record<UserRole, { label: string; color: string; description:
     label: "Student",
     color: "bg-gray-500",
     description: "Limited access to own records",
+  },
+  applicant: {
+    label: "Applicant",
+    color: "bg-slate-400",
+    description: "Admission applicant",
   },
 };
 
@@ -134,13 +153,16 @@ const STAFF_ROLES: UserRole[] = [
   "school_admin",
   "academic_head",
   "finance_officer",
+  "hr_officer",
   "teacher",
   "house_parent",
+  "transport_officer",
 ];
 
 interface UsersManagementProps {
   initialData: UserListResponse;
   roleStats: Record<string, number>;
+  subscriptionTier?: string;
 }
 
 function getInitials(firstName: string, lastName: string) {
@@ -161,7 +183,7 @@ function formatLastLogin(date: string | undefined): string {
   return d.toLocaleDateString();
 }
 
-export function UsersManagement({ initialData, roleStats }: UsersManagementProps) {
+export function UsersManagement({ initialData, roleStats, subscriptionTier = "starter" }: UsersManagementProps) {
   const [users, setUsers] = useState<User[]>(initialData.items);
   const [stats, setStats] = useState<Record<string, number>>(roleStats);
   const [searchQuery, setSearchQuery] = useState("");
@@ -189,6 +211,23 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
     role: "teacher" as UserRole,
   });
   const [newPassword, setNewPassword] = useState("");
+
+  // Import dialog state
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  // Custom roles state
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const hasCustomRoles = subscriptionTier === "professional" || subscriptionTier === "enterprise";
+
+  // Load custom roles on mount if feature is available
+  useEffect(() => {
+    if (!hasCustomRoles) return;
+    listCustomRoles().then((result) => {
+      if (result.success) {
+        setCustomRoles(result.data.roles);
+      }
+    });
+  }, [hasCustomRoles]);
 
   // Invite dialog state
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
@@ -416,6 +455,16 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              {/* Import Users Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Import
+              </Button>
+
               {/* Invite User Dialog -- sends credentials email, no password needed */}
               <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                 <DialogTrigger asChild>
@@ -717,6 +766,11 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                         />
                         <p className="text-sm font-medium">{ROLE_CONFIG[user.role].label}</p>
                       </div>
+                      {user.custom_role_name && (
+                        <p className="text-xs text-primary">
+                          {user.custom_role_name}
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground">
                         {formatLastLogin(user.last_login)}
                       </p>
@@ -925,6 +979,56 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
                   </SelectContent>
                 </Select>
               </div>
+              {/* Custom Role assignment -- Professional + Enterprise only */}
+              {hasCustomRoles && (() => {
+                const matchingRoles = customRoles.filter(
+                  (r) => r.base_role === formData.role
+                );
+                if (matchingRoles.length === 0) return null;
+                return (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_custom_role">Custom Role (Optional)</Label>
+                    <Select
+                      value={selectedUser?.custom_role_id ?? "__none__"}
+                      onValueChange={async (value) => {
+                        if (!selectedUser) return;
+                        const roleId = value === "__none__" ? null : value;
+                        startTransition(async () => {
+                          const result = await assignCustomRole(selectedUser.id, roleId);
+                          if (result.success) {
+                            toast.success(
+                              roleId
+                                ? "Custom role assigned"
+                                : "Custom role removed"
+                            );
+                          } else {
+                            toast.error("Failed to assign custom role", {
+                              description: result.error,
+                            });
+                          }
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Default permissions" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">
+                          Default permissions
+                        </SelectItem>
+                        {matchingRoles.map((cr) => (
+                          <SelectItem key={cr.id} value={cr.id}>
+                            {cr.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Override default permissions with a custom role
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
             <DialogFooter>
               <Button
@@ -1008,6 +1112,13 @@ export function UsersManagement({ initialData, roleStats }: UsersManagementProps
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Import Users Dialog */}
+      <ImportUsersDialog
+        open={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onSuccess={refreshUsers}
+      />
     </div>
   );
 }

@@ -15,6 +15,8 @@ from app.api.deps import (
     require_permissions,
 )
 from app.schemas.exam import (
+    MontessoriAssessmentCreate,
+    MontessoriAssessmentResponse,
     SubjectResult,
     TermReportGenerate,
     TermReportRemarksUpdate,
@@ -22,6 +24,7 @@ from app.schemas.exam import (
     TermReportWithDetailsResponse,
     TermReportListResponse,
 )
+from app.services.curriculum._shared import CurriculumServiceError
 from app.services.exam import TermReportService
 
 router = APIRouter()
@@ -541,3 +544,122 @@ async def publish_term_reports(
     )
 
     return {"published": count, "message": f"Published {count} reports"}
+
+
+# =========================
+# Montessori Narrative Assessment Endpoints
+# =========================
+
+
+@router.post(
+    "/reports/montessori-assessment/{academic_year_id}/{term_id}",
+    response_model=MontessoriAssessmentResponse,
+    summary="Save Montessori narrative assessment",
+    dependencies=[Depends(require_permissions("exams.scores"))],
+)
+async def save_montessori_assessment(
+    academic_year_id: UUID,
+    term_id: UUID,
+    data: MontessoriAssessmentCreate,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    class_id: UUID = Query(..., description="Class ID for the student"),
+    section_id: Optional[UUID] = Query(None, description="Section ID (optional)"),
+):
+    """Save or update a Montessori narrative assessment for a student.
+
+    Montessori schools use qualitative, narrative-based assessment instead of
+    numeric scores. This endpoint stores developmental area observations,
+    work samples, goals, and general narrative in the TermReport JSONB.
+    """
+    service = TermReportService(db)
+    try:
+        report = await service.save_montessori_assessment(
+            tenant_id=tenant.tenant_id,
+            academic_year_id=academic_year_id,
+            term_id=term_id,
+            class_id=class_id,
+            section_id=section_id,
+            data=data,
+        )
+    except CurriculumServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=e.message,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    # Build response from the saved TermReport.extra_data
+    extra = report.extra_data or {}
+    student_name = ""
+    if report.student_id:
+        from app.models.student import Student
+        from sqlalchemy import select as sa_select
+
+        student_result = await db.execute(
+            sa_select(Student).where(Student.id == report.student_id)
+        )
+        student = student_result.scalar_one_or_none()
+        if student:
+            student_name = f"{student.first_name} {student.last_name}"
+
+    return MontessoriAssessmentResponse(
+        student_id=report.student_id,
+        student_name=student_name,
+        developmental_areas=extra.get("developmental_areas", []),
+        work_samples=extra.get("work_samples", []),
+        goals=extra.get("goals", []),
+        general_narrative=extra.get("general_narrative", ""),
+        updated_at=report.updated_at,
+    )
+
+
+@router.get(
+    "/reports/montessori-assessment/{academic_year_id}/{term_id}/{student_id}",
+    response_model=MontessoriAssessmentResponse,
+    summary="Get Montessori narrative assessment",
+    dependencies=[Depends(require_permissions("exams.scores"))],
+)
+async def get_montessori_assessment(
+    academic_year_id: UUID,
+    term_id: UUID,
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+):
+    """Get existing Montessori assessment for a student-term.
+
+    Returns the narrative-based assessment data stored in TermReport.extra_data,
+    or 404 if no Montessori assessment has been saved for this student-term.
+    """
+    service = TermReportService(db)
+    report = await service.get_montessori_assessment(
+        tenant_id=tenant.tenant_id,
+        academic_year_id=academic_year_id,
+        term_id=term_id,
+        student_id=student_id,
+    )
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Montessori assessment found for this student-term",
+        )
+
+    extra = report.extra_data or {}
+    student = report.student
+    student_name = f"{student.first_name} {student.last_name}" if student else ""
+
+    return MontessoriAssessmentResponse(
+        student_id=report.student_id,
+        student_name=student_name,
+        developmental_areas=extra.get("developmental_areas", []),
+        work_samples=extra.get("work_samples", []),
+        goals=extra.get("goals", []),
+        general_narrative=extra.get("general_narrative", ""),
+        updated_at=report.updated_at,
+    )

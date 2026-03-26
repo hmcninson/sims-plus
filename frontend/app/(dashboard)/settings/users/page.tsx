@@ -1,3 +1,4 @@
+import { getCurrentUserContext } from "@/actions/auth.action";
 import { listUsers, getUserStatsByRole } from "@/actions/users.action";
 import { UsersManagement } from "./users-management";
 
@@ -7,9 +8,10 @@ export const metadata = {
 
 export default async function UsersSettingsPage() {
   // Fetch initial data server-side
-  const [usersResult, statsResult] = await Promise.all([
+  const [usersResult, statsResult, context] = await Promise.all([
     listUsers({ page: 1, page_size: 20 }),
     getUserStatsByRole(),
+    getCurrentUserContext(),
   ]);
 
   // Default data for empty/error states
@@ -37,6 +39,7 @@ export default async function UsersSettingsPage() {
     <UsersManagement
       initialData={usersResult.success ? usersResult.data! : defaultUsers}
       roleStats={statsResult.success ? statsResult.data! : defaultStats}
+      subscriptionTier={context?.tenant?.subscription_tier}
     />
   );
 }

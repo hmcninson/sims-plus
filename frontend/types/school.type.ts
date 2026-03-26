@@ -12,6 +12,16 @@ export interface PreschoolSettings {
   observation_photos_enabled: boolean;
   parent_daily_updates: boolean;
   default_rating_scale_id?: string;
+  incident_tracking_enabled: boolean;
+  pickup_verification_enabled: boolean;
+  allergy_alerts_enabled: boolean;
+  // Phase 2 fields
+  extended_care_enabled: boolean;
+  extended_care_rate_type?: "hourly" | "flat";
+  extended_care_rate_per_hour?: number;
+  extended_care_flat_rate?: number;
+  daily_report_auto_send: boolean;
+  daily_report_send_time?: string;
 }
 
 export interface PreschoolSettingsUpdate {
@@ -24,6 +34,16 @@ export interface PreschoolSettingsUpdate {
   observation_photos_enabled?: boolean;
   parent_daily_updates?: boolean;
   default_rating_scale_id?: string;
+  incident_tracking_enabled?: boolean;
+  pickup_verification_enabled?: boolean;
+  allergy_alerts_enabled?: boolean;
+  // Phase 2 fields
+  extended_care_enabled?: boolean;
+  extended_care_rate_type?: "hourly" | "flat";
+  extended_care_rate_per_hour?: number;
+  extended_care_flat_rate?: number;
+  daily_report_auto_send?: boolean;
+  daily_report_send_time?: string;
 }
 
 export interface SchoolProfile {

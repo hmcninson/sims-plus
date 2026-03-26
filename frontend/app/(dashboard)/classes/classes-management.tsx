@@ -79,6 +79,7 @@ import {
   updateSection,
   deleteSection,
 } from "@/actions/academic.action";
+import { CurriculumSelector } from "@/components/curriculum/CurriculumSelector";
 import type { Class, ClassSection, ClassLevel, ClassCreate, ClassSectionCreate } from "@/types";
 
 // Category configuration for display
@@ -172,6 +173,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
     level: "" as ClassLevel | "",
     capacity: "",
     sequence: "",
+    curriculum_profile_id: "" as string,
   });
 
   const [sectionFormData, setSectionFormData] = useState({
@@ -218,6 +220,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
         level: classFormData.level || undefined,
         capacity: classFormData.capacity ? parseInt(classFormData.capacity) : undefined,
         sequence: classFormData.sequence ? parseInt(classFormData.sequence) : undefined,
+        curriculum_profile_id: classFormData.curriculum_profile_id || undefined,
       };
 
       const result = await createClass(data);
@@ -227,7 +230,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
           description: `${classFormData.name} has been added.`,
         });
         setAddClassDialogOpen(false);
-        setClassFormData({ name: "", short_name: "", level: "", capacity: "", sequence: "" });
+        setClassFormData({ name: "", short_name: "", level: "", capacity: "", sequence: "", curriculum_profile_id: "" });
         refreshClasses();
       } else {
         toast.error("Failed to create class", {
@@ -248,6 +251,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
         level: classFormData.level || undefined,
         capacity: classFormData.capacity ? parseInt(classFormData.capacity) : undefined,
         sequence: classFormData.sequence ? parseInt(classFormData.sequence) : undefined,
+        curriculum_profile_id: classFormData.curriculum_profile_id || undefined,
       });
 
       if (result.success) {
@@ -294,6 +298,7 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
       level: classItem.level || "",
       capacity: classItem.capacity?.toString() || "",
       sequence: classItem.sequence?.toString() || "",
+      curriculum_profile_id: classItem.curriculum_profile_id || "",
     });
     setEditClassDialogOpen(true);
   };
@@ -494,6 +499,18 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                       }
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Curriculum Profile</Label>
+                  <CurriculumSelector
+                    value={classFormData.curriculum_profile_id || undefined}
+                    onChange={(value) =>
+                      setClassFormData((prev) => ({
+                        ...prev,
+                        curriculum_profile_id: value || "",
+                      }))
+                    }
+                  />
                 </div>
               </div>
               <DialogFooter>
@@ -961,6 +978,18 @@ export function ClassesManagement({ initialClasses }: ClassesManagementProps) {
                     }
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Curriculum Profile</Label>
+                <CurriculumSelector
+                  value={classFormData.curriculum_profile_id || undefined}
+                  onChange={(value) =>
+                    setClassFormData((prev) => ({
+                      ...prev,
+                      curriculum_profile_id: value || "",
+                    }))
+                  }
+                />
               </div>
             </div>
             <DialogFooter>

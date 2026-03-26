@@ -3,6 +3,10 @@ SIMS Plus - Parent Academic Service
 
 Grade views, report card access, and continuous assessment data for parents.
 All methods enforce parent-child access verification before returning any data.
+
+Curriculum-aware: resolves curriculum profile for non-GES students and returns
+curriculum-specific aggregate metrics (GPA, IB total points, French mention)
+from TermReport while keeping per-subject scores live from ExamScore queries.
 """
 
 from decimal import Decimal
@@ -10,11 +14,12 @@ from typing import Optional
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, and_, func, desc
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.models.academic import Subject, Term
+from app.models.academic import Class, Subject, Term
+from app.models.curriculum import CurriculumProfile
 from app.models.exam import (
     ContinuousAssessment,
     Exam,
@@ -22,6 +27,7 @@ from app.models.exam import (
     ExamSubject,
     TermReport,
 )
+from app.models.school import School
 from app.models.student import Student
 
 from app.services.parent._shared import ParentServiceError
@@ -43,6 +49,75 @@ class ParentAcademicService:
         self.db = db
         self._parent = ParentService(db)
 
+    # =========================
+    # Curriculum Profile Resolution
+    # =========================
+
+    async def _resolve_curriculum_profile(
+        self, tenant_id: UUID, student: Student
+    ) -> tuple[Optional[CurriculumProfile], str, str]:
+        """
+        Resolve curriculum profile using the inheritance chain:
+        student -> class -> school -> None (GES default).
+
+        Returns (profile_or_None, curriculum_type_str, score_display_mode_str).
+        """
+        profile_id = student.curriculum_profile_id
+
+        # Fallback to class-level override
+        if not profile_id and student.class_id:
+            class_result = await self.db.execute(
+                select(Class.curriculum_profile_id).where(
+                    and_(
+                        Class.id == student.class_id,
+                        Class.tenant_id == tenant_id,
+                    )
+                )
+            )
+            row = class_result.scalar_one_or_none()
+            if row:
+                profile_id = row
+
+        # Fallback to school-level default
+        if not profile_id and student.school_id:
+            school_result = await self.db.execute(
+                select(School.curriculum_profile_id).where(
+                    and_(
+                        School.id == student.school_id,
+                        School.tenant_id == tenant_id,
+                    )
+                )
+            )
+            row = school_result.scalar_one_or_none()
+            if row:
+                profile_id = row
+
+        if not profile_id:
+            return None, "ges", "grade_and_score"
+
+        profile_result = await self.db.execute(
+            select(CurriculumProfile).where(
+                and_(
+                    CurriculumProfile.id == profile_id,
+                    CurriculumProfile.tenant_id == tenant_id,
+                    CurriculumProfile.deleted_at.is_(None),
+                )
+            )
+        )
+        profile = profile_result.scalar_one_or_none()
+        if not profile:
+            return None, "ges", "grade_and_score"
+
+        return (
+            profile,
+            profile.curriculum_type.value,
+            profile.score_display_mode.value,
+        )
+
+    # =========================
+    # Child Grades
+    # =========================
+
     async def get_child_grades(
         self,
         user_id: UUID,
@@ -53,9 +128,10 @@ class ParentAcademicService:
         """
         Get term grades for a child: per-subject scores, grades, and positions.
 
-        Only returns scores from exams whose status is 'results_published'.
-        Combines exam scores with continuous assessment scores and computes
-        per-subject totals.
+        Uses the HYBRID approach per spec >>REVIEW FIX H2-parent:
+        - Per-subject scores: live ExamScore queries (same path as GES)
+        - Aggregate metrics (GPA, IB total, French mention): from TermReport
+        - "Reports not yet generated" flag when TermReport doesn't exist
 
         Args:
             user_id: The authenticated parent's user ID
@@ -74,7 +150,7 @@ class ParentAcademicService:
             user_id, student_id, tenant_id
         )
 
-        # Load student with class for display
+        # Load student with class and section for display
         student_result = await self.db.execute(
             select(Student)
             .where(
@@ -93,6 +169,11 @@ class ParentAcademicService:
         if not student:
             raise ParentServiceError("Student not found", code="student_not_found")
 
+        # Resolve curriculum profile (student -> class -> school -> GES default)
+        profile, curriculum_type, score_display_mode = (
+            await self._resolve_curriculum_profile(tenant_id, student)
+        )
+
         # Load term and academic year
         term_result = await self.db.execute(
             select(Term)
@@ -109,6 +190,103 @@ class ParentAcademicService:
         if not term:
             raise ParentServiceError("Term not found", code="term_not_found")
 
+        # Per-subject scores use the same live ExamScore path for ALL curricula
+        subjects, total_marks, subjects_with_scores = (
+            await self._build_subject_scores(
+                tenant_id, student_id, student.class_id, term_id
+            )
+        )
+
+        # Try to get position, aggregate metrics from published term report
+        term_report = await self._get_student_term_report(
+            tenant_id, term_id, student_id
+        )
+
+        class_position = None
+        class_size = None
+        average = None
+        report_generated = False
+
+        # Curriculum-specific aggregates from TermReport
+        gpa = None
+        weighted_gpa = None
+        cumulative_gpa = None
+        honor_roll = None
+        total_credits_earned = None
+        ib_total_points = None
+        french_mention = None
+
+        if term_report:
+            report_generated = True
+            class_position = term_report.class_position
+            class_size = term_report.class_size
+            average = term_report.average_score
+
+            # Read curriculum-specific aggregates populated by Phase 1
+            gpa = term_report.gpa
+            weighted_gpa = term_report.weighted_gpa
+            cumulative_gpa = term_report.cumulative_gpa
+            honor_roll = term_report.honor_roll
+            total_credits_earned = term_report.total_credits_earned
+            ib_total_points = term_report.ib_total_points
+            french_mention = term_report.french_mention
+        elif subjects_with_scores > 0:
+            average = total_marks / Decimal(str(subjects_with_scores))
+
+        child_summary = {
+            "id": student.id,
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "photo_url": student.photo_url,
+            "class_name": student.class_.name if student.class_ else None,
+            "section_name": student.section.name if student.section else None,
+            "admission_number": student.admission_number,
+            "date_of_birth": student.date_of_birth,
+            "gender": student.gender.value if student.gender else None,
+        }
+
+        return {
+            "student": child_summary,
+            "term_id": term_id,
+            "term_name": term.name,
+            "academic_year": term.academic_year.name if term.academic_year else None,
+            "subjects": subjects,
+            "overall": {
+                "total_marks": total_marks if subjects_with_scores > 0 else None,
+                "average": round(average, 2) if average is not None else None,
+                "class_position": class_position,
+                "class_size": class_size,
+                # Curriculum-specific aggregates (None for GES — backward compat)
+                "gpa": gpa,
+                "weighted_gpa": weighted_gpa,
+                "cumulative_gpa": cumulative_gpa,
+                "honor_roll": honor_roll,
+                "total_credits_earned": total_credits_earned,
+                "ib_total_points": ib_total_points,
+                "french_mention": french_mention,
+            },
+            # Curriculum context for frontend display switching
+            "curriculum_type": curriculum_type,
+            "score_display_mode": score_display_mode,
+            "report_generated": report_generated,
+        }
+
+    async def _build_subject_scores(
+        self,
+        tenant_id: UUID,
+        student_id: UUID,
+        class_id: Optional[UUID],
+        term_id: UUID,
+    ) -> tuple[list[dict], Decimal, int]:
+        """
+        Build per-subject grade list from live ExamScore + CA data.
+
+        Uses the same query path regardless of curriculum — per-subject
+        scores are always from live data so parents see results immediately
+        when exams are published, without waiting for report generation.
+
+        Returns (subjects_list, total_marks, subjects_with_scores).
+        """
         # Fetch exam scores for this student and term (only published exams)
         exam_scores_result = await self.db.execute(
             select(ExamScore)
@@ -192,9 +370,9 @@ class ParentAcademicService:
         # Union of all subject IDs from both exams and CAs
         all_subject_ids = set(exam_by_subject.keys()) | set(ca_by_subject.keys())
 
-        # Get class averages for context (from term report if available)
+        # Get class averages for context (from published exam scores)
         class_avg_map = await self._get_class_averages_for_term(
-            tenant_id, term_id, student.class_id
+            tenant_id, term_id, class_id
         )
 
         subjects = []
@@ -236,50 +414,10 @@ class ParentAcademicService:
                 "grade": exam_data["grade"] if exam_data else None,
                 "remark": exam_data["remark"] if exam_data else None,
                 "class_average": class_avg_map.get(sid),
-                "position": None,  # Filled from term report below
+                "position": None,  # Filled from term report if available
             })
 
-        # Try to get position and class size from term report
-        term_report = await self._get_student_term_report(
-            tenant_id, term_id, student_id
-        )
-
-        class_position = None
-        class_size = None
-        average = None
-
-        if term_report:
-            class_position = term_report.class_position
-            class_size = term_report.class_size
-            average = term_report.average_score
-        elif subjects_with_scores > 0:
-            average = total_marks / Decimal(str(subjects_with_scores))
-
-        child_summary = {
-            "id": student.id,
-            "first_name": student.first_name,
-            "last_name": student.last_name,
-            "photo_url": student.photo_url,
-            "class_name": student.class_.name if student.class_ else None,
-            "section_name": student.section.name if student.section else None,
-            "admission_number": student.admission_number,
-            "date_of_birth": student.date_of_birth,
-            "gender": student.gender.value if student.gender else None,
-        }
-
-        return {
-            "student": child_summary,
-            "term_id": term_id,
-            "term_name": term.name,
-            "academic_year": term.academic_year.name if term.academic_year else None,
-            "subjects": subjects,
-            "overall": {
-                "total_marks": total_marks if subjects_with_scores > 0 else None,
-                "average": round(average, 2) if average is not None else None,
-                "class_position": class_position,
-                "class_size": class_size,
-            },
-        }
+        return subjects, total_marks, subjects_with_scores
 
     async def _get_class_averages_for_term(
         self, tenant_id: UUID, term_id: UUID, class_id: Optional[UUID]
@@ -345,6 +483,10 @@ class ParentAcademicService:
         )
         return result.scalar_one_or_none()
 
+    # =========================
+    # Grade Trend
+    # =========================
+
     async def get_child_grade_trend(
         self,
         user_id: UUID,
@@ -354,8 +496,11 @@ class ParentAcademicService:
         """
         Get grade trend across all available terms for charting.
 
-        Returns average score and position from published term reports,
-        ordered chronologically by term sequence.
+        Returns curriculum-appropriate metric per term:
+        - American: GPA trend
+        - IB: total points trend
+        - French: average with mention label
+        - GES/Cambridge/others: average score percentage
 
         Args:
             user_id: The authenticated parent's user ID
@@ -370,6 +515,24 @@ class ParentAcademicService:
         """
         await self._parent.require_parent_child_access(
             user_id, student_id, tenant_id
+        )
+
+        # Resolve curriculum profile for trend metric selection
+        student_result = await self.db.execute(
+            select(Student).where(
+                and_(
+                    Student.id == student_id,
+                    Student.tenant_id == tenant_id,
+                    Student.deleted_at.is_(None),
+                )
+            )
+        )
+        student = student_result.scalar_one_or_none()
+        if not student:
+            raise ParentServiceError("Student not found", code="student_not_found")
+
+        _, curriculum_type, _ = await self._resolve_curriculum_profile(
+            tenant_id, student
         )
 
         # Get all published term reports for this student, ordered by term sequence
@@ -393,15 +556,66 @@ class ParentAcademicService:
 
         trend = []
         for report in reports:
-            trend.append({
+            term_name = report.term.name if report.term else "Unknown"
+            entry = {
                 "term_id": report.term_id,
-                "term_name": report.term.name if report.term else "Unknown",
+                "term_name": term_name,
                 "average": report.average_score,
                 "position": report.class_position,
                 "class_size": report.class_size,
-            })
+            }
+
+            # Select curriculum-appropriate metric for charting
+            entry.update(
+                self._build_trend_metric(curriculum_type, report)
+            )
+
+            trend.append(entry)
 
         return trend
+
+    @staticmethod
+    def _build_trend_metric(
+        curriculum_type: str, report: TermReport
+    ) -> dict:
+        """
+        Build the metric/value/label fields for a grade trend entry
+        based on the curriculum type.
+
+        Returns dict with keys: metric, value, label.
+        """
+        if curriculum_type == "american":
+            gpa_val = float(report.gpa) if report.gpa is not None else None
+            return {
+                "metric": "gpa",
+                "value": gpa_val,
+                "label": f"GPA: {report.gpa}" if report.gpa is not None else "N/A",
+            }
+        elif curriculum_type == "ib":
+            return {
+                "metric": "ib_total_points",
+                "value": float(report.ib_total_points) if report.ib_total_points is not None else None,
+                "label": f"{report.ib_total_points}/45" if report.ib_total_points is not None else "N/A",
+            }
+        elif curriculum_type == "french":
+            avg_val = float(report.average_score) if report.average_score is not None else None
+            return {
+                "metric": "average",
+                "value": avg_val,
+                "label": report.french_mention or "N/A",
+            }
+        else:
+            # GES, Cambridge, Edexcel, Montessori, Custom
+            avg_val = float(report.average_score) if report.average_score is not None else None
+            return {
+                "metric": "average_score",
+                "value": avg_val,
+                "label": f"{report.average_score}%" if report.average_score is not None else "N/A",
+            }
+
+    # =========================
+    # Report Card PDF
+    # =========================
 
     async def get_child_report_card_pdf(
         self,
@@ -467,6 +681,10 @@ class ParentAcademicService:
             report_id=report.id,
         )
         return pdf_bytes, filename
+
+    # =========================
+    # Continuous Assessments
+    # =========================
 
     async def get_child_assessments(
         self,

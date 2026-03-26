@@ -154,7 +154,7 @@ export function CommunicationSettingsForm({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">Hubtel SMS</p>
+                  <p className="font-medium">Arkesel SMS</p>
                   <Badge variant="secondary">
                     SMS Gateway
                   </Badge>

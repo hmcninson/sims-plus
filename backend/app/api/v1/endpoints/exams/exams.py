@@ -29,7 +29,9 @@ from app.schemas.exam import (
     ExamSubjectResponse,
     ExamSubjectWithDetailsResponse,
 )
+from app.schemas.curriculum import MockPredictedGradeResponse
 from app.services.exam import ExamService, ExamServiceError
+from app.services.curriculum._shared import CurriculumServiceError
 from app.models.student import Student
 from app.models.exam import ExamSubject
 
@@ -297,6 +299,65 @@ async def delete_exam(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Exam not found",
+        )
+
+
+# =========================
+# Mock → Predicted Grades
+# =========================
+
+
+@router.post(
+    "/{exam_id}/generate-predicted-grades",
+    response_model=MockPredictedGradeResponse,
+    summary="Generate predicted grades from mock exam",
+    dependencies=[Depends(require_permissions("curriculum.create"))],
+)
+async def generate_predicted_grades_from_mock(
+    exam_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    user: ValidatedUser,
+) -> MockPredictedGradeResponse:
+    """Generate predicted grades from mock exam results.
+
+    Only works for mock exams (exam_type='mock') with published results
+    (status='results_published'). Creates or updates PredictedGrade records
+    for each student-subject score. Manually-set predictions (those whose
+    notes do NOT contain 'Auto-generated from mock exam') are preserved.
+
+    Requires Professional or Enterprise plan (multi-curriculum feature).
+    """
+    # >>REVIEW FIX H3: Gate behind Professional+ subscription
+    from app.services.curriculum._shared import check_multi_curriculum_access
+
+    try:
+        await check_multi_curriculum_access(db, tenant.tenant_id)
+    except CurriculumServiceError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN if e.code == "plan_limit" else status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    service = ExamService(db)
+    try:
+        result = await service.generate_predicted_grades_from_mock(
+            tenant_id=tenant.tenant_id,
+            exam_id=exam_id,
+            predicted_by=UUID(user["user_id"]),
+        )
+        return MockPredictedGradeResponse(**result)
+    except ExamServiceError as e:
+        status_map = {
+            "not_found": status.HTTP_404_NOT_FOUND,
+            "invalid_type": status.HTTP_400_BAD_REQUEST,
+            "invalid_status": status.HTTP_400_BAD_REQUEST,
+            "no_profile": status.HTTP_400_BAD_REQUEST,
+            "no_subjects": status.HTTP_400_BAD_REQUEST,
+        }
+        raise HTTPException(
+            status_code=status_map.get(e.code, status.HTTP_400_BAD_REQUEST),
+            detail=e.message,
         )
 
 

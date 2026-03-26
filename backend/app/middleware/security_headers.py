@@ -7,7 +7,6 @@ These headers provide defense-in-depth against common web attacks:
 - XSS (Content-Security-Policy, X-XSS-Protection)
 - Clickjacking (X-Frame-Options)
 - MIME-type sniffing (X-Content-Type-Options)
-- Protocol downgrade (Strict-Transport-Security)
 - Referrer leakage (Referrer-Policy)
 - Device API abuse (Permissions-Policy)
 """
@@ -16,7 +15,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.config import settings
 
 # Paths that serve HTML documentation (Swagger UI, ReDoc) and need a relaxed
 # CSP so the browser can load their external JS/CSS/font assets.
@@ -51,11 +49,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
 
-        # HSTS only in production/staging -- localhost doesn't serve over TLS
-        if not settings.is_development:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains; preload"
-            )
+        # HSTS is set by Nginx in production — not duplicated here
 
         # Prevent browsers from MIME-sniffing the response away from the declared Content-Type
         response.headers["X-Content-Type-Options"] = "nosniff"

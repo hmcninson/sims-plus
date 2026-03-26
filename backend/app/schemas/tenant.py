@@ -78,3 +78,22 @@ class TenantValidationResponse(BaseModel):
     valid: bool
     tenant: TenantPublic | None = None
     error: str | None = None
+    code: str | None = None
+
+
+class SchoolSearchResult(BaseModel):
+    """A single school in search results -- only safe public fields."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    subdomain: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+
+
+class SchoolSearchResponse(BaseModel):
+    """Response for school search."""
+
+    results: list[SchoolSearchResult]
+    count: int

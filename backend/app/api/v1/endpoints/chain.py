@@ -17,6 +17,7 @@ so FastAPI does not try to parse path literals as UUID parameters.
 
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps import (
@@ -24,6 +25,7 @@ from app.api.deps import (
     ValidatedUser,
     require_permissions,
 )
+from app.services.token_blacklist import get_token_blacklist_service
 from app.schemas.chain import (
     AccessibleSchoolResponse,
     ChainDashboardResponse,
@@ -43,6 +45,8 @@ from app.schemas.chain import (
 from app.services.cache import CacheService
 from app.services.chain import ChainService
 from app.utils.cache_keys import CacheKeys
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -469,6 +473,14 @@ async def assign_user_to_school(
         CacheKeys.chain_accessible_schools(str(tenant_id), str(data.user_id))
     )
 
+    # Invalidate tokens so the user's accessible_school_ids JWT claim is refreshed
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(data.user_id))
+        logger.info("user_tokens_blacklisted_on_school_assign", user_id=str(data.user_id), school_id=str(data.school_id))
+    except Exception:
+        logger.warning("token_blacklist_failed_on_school_assign", user_id=str(data.user_id))
+
     return UserSchoolResponse(
         id=user_school.id,
         tenant_id=user_school.tenant_id,
@@ -514,6 +526,14 @@ async def remove_user_from_school(
     await cache.invalidate_key(
         CacheKeys.chain_accessible_schools(str(tenant_id), str(user_id))
     )
+
+    # Invalidate tokens so the user's accessible_school_ids JWT claim is refreshed
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(user_id))
+        logger.info("user_tokens_blacklisted_on_school_remove", user_id=str(user_id), school_id=str(school_id))
+    except Exception:
+        logger.warning("token_blacklist_failed_on_school_remove", user_id=str(user_id))
 
 
 @router.get(

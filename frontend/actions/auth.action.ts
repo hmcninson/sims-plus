@@ -2,18 +2,33 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiPost, apiGet, ApiError } from "@/lib/api";
-import type { ActionResult, User, SessionContext, LoginCredentials, RegisterData, RegistrationResponse } from "@/types";
+import { apiPost, apiGet, apiDelete, ApiError } from "@/lib/api";
+import { redirect as nextRedirect } from "next/navigation";
+import type { ActionResult, User, SessionContext, LoginCredentials, RegisterData, RegistrationResponse, SessionListResponse } from "@/types";
 
 interface AuthResponse {
   user: User;
   access_token: string;
   refresh_token: string;
+  refresh_token_expires_in: number;
+}
+
+interface MFARequiredResponse {
+  mfa_required: true;
+  mfa_pending_token: string;
+}
+
+/** Login result: either a User (success) or MFA pending data */
+export interface LoginResult {
+  user?: User;
+  mfa_required?: true;
+  mfa_pending_token?: string;
 }
 
 interface RefreshResponse {
   access_token: string;
   refresh_token: string;
+  refresh_token_expires_in: number;
 }
 
 // =========================
@@ -24,7 +39,11 @@ interface RefreshResponse {
  * Set both auth cookies with secure defaults.
  * Extracted to avoid duplicating cookie config across login and refresh.
  */
-async function setAuthCookies(accessToken: string, refreshToken: string) {
+async function setAuthCookies(
+  accessToken: string,
+  refreshToken: string,
+  refreshTokenExpiresIn?: number
+) {
   const cookieStore = await cookies();
   cookieStore.set("access_token", accessToken, {
     httpOnly: true,
@@ -38,7 +57,8 @@ async function setAuthCookies(accessToken: string, refreshToken: string) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 604800, // 7 days
+    // Use backend-provided expiry to stay in sync with JWT lifetime (remember_me support)
+    maxAge: refreshTokenExpiresIn ?? 604800, // defaults to 7 days
   });
 }
 
@@ -83,11 +103,21 @@ export async function refreshAccessToken(): Promise<string | null> {
       { subdomain }
     );
 
-    await setAuthCookies(response.access_token, response.refresh_token);
+    await setAuthCookies(
+      response.access_token,
+      response.refresh_token,
+      response.refresh_token_expires_in
+    );
 
     return response.access_token;
-  } catch {
-    // Refresh failed - user needs to re-login
+  } catch (error) {
+    // If the server flagged this as an inactivity timeout, clear cookies
+    // and redirect immediately so the user sees the session_expired message
+    if (error instanceof ApiError && error.sessionExpired) {
+      await clearAuthCookies();
+      nextRedirect("/login?error=session_expired&message=Your session expired due to inactivity. Please sign in again.");
+    }
+    // Refresh failed for another reason -- user needs to re-login
     return null;
   }
 }
@@ -119,14 +149,35 @@ export async function getValidAccessToken(): Promise<string | null> {
  */
 export async function login(
   credentials: LoginCredentials
-): Promise<ActionResult<User>> {
+): Promise<ActionResult<LoginResult>> {
   try {
     const subdomain = await getSubdomainFromCookies();
-    const response = await apiPost<AuthResponse>("/auth/login", credentials, { subdomain });
+    const response = await apiPost<AuthResponse | MFARequiredResponse>(
+      "/auth/login",
+      credentials,
+      { subdomain }
+    );
 
-    await setAuthCookies(response.access_token, response.refresh_token);
+    // Check if MFA verification is required
+    if ("mfa_required" in response && response.mfa_required) {
+      return {
+        success: true,
+        data: {
+          mfa_required: true,
+          mfa_pending_token: response.mfa_pending_token,
+        },
+      };
+    }
 
-    return { success: true, data: response.user };
+    // Normal login (no MFA) -- set cookies and return user
+    const authResponse = response as AuthResponse;
+    await setAuthCookies(
+      authResponse.access_token,
+      authResponse.refresh_token,
+      authResponse.refresh_token_expires_in
+    );
+
+    return { success: true, data: { user: authResponse.user } };
   } catch (error) {
     return {
       success: false,
@@ -487,6 +538,106 @@ export async function resendOnboardingVerification(
       data: {
         message: "If this email is registered and unverified, you will receive a verification link shortly.",
       },
+    };
+  }
+}
+
+// =========================
+// Session Heartbeat
+// =========================
+
+/**
+ * Send heartbeat to update server-side last_activity_at.
+ * Called every 5 minutes by the session timeout hook when user is active.
+ * Failures are silently ignored -- heartbeat is best-effort.
+ */
+export async function heartbeat(): Promise<void> {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("access_token")?.value;
+    const subdomain = cookieStore.get("x-subdomain")?.value;
+
+    if (!token) return;
+
+    await apiPost("/auth/heartbeat", {}, { token, subdomain });
+  } catch {
+    // Silently fail -- heartbeat is best-effort
+  }
+}
+
+// =========================
+// Session Management
+// =========================
+
+/**
+ * Get all active sessions for the current user
+ */
+export async function getActiveSessions(): Promise<ActionResult<SessionListResponse>> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("access_token")?.value;
+  const subdomain = cookieStore.get("x-subdomain")?.value;
+
+  if (!token) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    const response = await apiGet<SessionListResponse>("/auth/sessions", { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch sessions",
+    };
+  }
+}
+
+/**
+ * Terminate a specific session
+ */
+export async function terminateSession(sessionId: string): Promise<ActionResult> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("access_token")?.value;
+  const subdomain = cookieStore.get("x-subdomain")?.value;
+
+  if (!token) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    await apiDelete(`/auth/sessions/${sessionId}`, { token, subdomain });
+    return { success: true, data: undefined };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to terminate session",
+    };
+  }
+}
+
+/**
+ * Terminate all sessions except the current one
+ */
+export async function terminateAllOtherSessions(): Promise<ActionResult<{ terminated: number }>> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("access_token")?.value;
+  const subdomain = cookieStore.get("x-subdomain")?.value;
+
+  if (!token) {
+    return { success: false, error: "Not authenticated" };
+  }
+
+  try {
+    const response = await apiPost<{ terminated: number; message: string }>(
+      "/auth/sessions/terminate-all",
+      {},
+      { token, subdomain }
+    );
+    return { success: true, data: { terminated: response.terminated } };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to terminate sessions",
     };
   }
 }

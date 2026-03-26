@@ -19,9 +19,9 @@ from app.models.base import Base, TenantMixin
 
 class SMSProvider(str, Enum):
     """Supported SMS gateway providers."""
-    HUBTEL = "hubtel"
     ARKESEL = "arkesel"
-    TWILIO = "twilio"
+    HUBTEL = "hubtel"    # Dead value — kept to avoid destructive enum migration
+    TWILIO = "twilio"    # Dead value — kept to avoid destructive enum migration
 
 
 class SMSStatus(str, Enum):
@@ -47,7 +47,7 @@ class SMSLog(Base, TenantMixin):
             values_callable=lambda x: [e.value for e in x],
         ),
         nullable=False,
-        default=SMSProvider.HUBTEL,
+        default=SMSProvider.ARKESEL,
     )
     status: Mapped[SMSStatus] = mapped_column(
         SQLEnum(

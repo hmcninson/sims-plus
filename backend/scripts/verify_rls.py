@@ -34,7 +34,7 @@ import sys
 from sqlalchemy import create_engine, text
 
 # ============================================================
-# Authoritative list of all 48 tenant-scoped tables
+# Authoritative list of all 130 tenant-scoped tables
 # ============================================================
 # Every table here has a tenant_id column and MUST have
 # hardened RLS policies enforcing isolation.
@@ -151,6 +151,66 @@ TENANT_SCOPED_TABLES: list[str] = [
     "external_exam_registrations",
     "student_credit_accumulations",
     "predicted_grades",
+    # User Management & Access Control
+    "custom_roles",
+    "user_sessions",
+    # Preschool Phase 1 (Gap Closure)
+    "preschool_incidents", "authorized_pickups", "pickup_logs",
+    # Preschool Phase 2 (Gap Closure)
+    "learning_stories", "extended_care_sessions", "class_caregiver_ratios",
+    # Preschool Phase 3 (Gap Closure)
+    "preschool_supplies",
+    # Enrollment Gap Closure Phase 1
+    "inquiries",
+    "inquiry_communications",
+    "inquiry_follow_ups",
+    "interviews",
+    "screening_checklists",
+    # Enrollment Gap Closure Phase 3
+    "enrollment_checklists",
+    "enrollment_checklist_items",
+    # Enrollment Gap Closure Phase 4
+    "enrollment_targets",
+    "school_events",
+    "event_registrations",
+    # Student Management Gap Closure Phase 1
+    "student_class_history",
+    "student_status_changes",
+    # Student Management Gap Closure Phase 2
+    "withdrawal_clearances",
+    # Student Management Gap Closure Phase 3
+    "student_documents",
+    "previous_schools",
+    # Student Management Gap Closure Phase 4
+    "promotion_rules",
+    # Staff HR Gap Closure Phase 1
+    "staff_documents",
+    "staff_employment_history",
+    # Staff HR Gap Closure Phase 3 (Leave Management)
+    "leave_types",
+    "leave_balances",
+    "leave_requests",
+    # Staff HR Gap Closure Phase 4 (Payroll)
+    "salary_grades",
+    "allowance_types",
+    "deduction_types",
+    "tax_brackets",
+    "staff_salary_configs",
+    "staff_allowances",
+    "staff_deductions",
+    "payroll_runs",
+    "payroll_items",
+    "payroll_item_earnings",
+    "payroll_item_deductions",
+    "payroll_approvals",
+    "bank_file_configs",
+    "payroll_audit_log",
+    # Staff HR Gap Closure Phase 5 (Loan Management)
+    "loan_types",
+    "staff_loans",
+    "loan_installments",
+    "loan_guarantors",
+    "loan_payments",
 ]
 
 DEFAULT_DATABASE_URL = (

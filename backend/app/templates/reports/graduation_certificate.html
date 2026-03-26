@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Graduation Certificate - {{ student_name }}</title>
+    <style>
+        @page {
+            size: A4 landscape;
+            margin: 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100%;
+        }
+
+        .certificate {
+            max-width: 100%;
+            border: 4px double {{ school.primary_color or '#1B4F72' }};
+            padding: 30px 40px;
+            position: relative;
+        }
+
+        .certificate::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            bottom: 8px;
+            border: 1px solid {{ school.primary_color or '#1B4F72' }};
+            pointer-events: none;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .school-logo {
+            max-height: 80px;
+            max-width: 80px;
+            margin-bottom: 8px;
+        }
+
+        .school-name {
+            font-size: 22pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+
+        .school-address {
+            font-size: 9pt;
+            color: #666;
+            font-style: italic;
+        }
+
+        /* Title */
+        .title-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .certificate-title {
+            font-size: 28pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 5px;
+        }
+
+        .title-underline {
+            width: 200px;
+            height: 2px;
+            background-color: {{ school.primary_color or '#1B4F72' }};
+            margin: 8px auto;
+        }
+
+        /* Body */
+        .body-text {
+            text-align: center;
+            font-size: 12pt;
+            margin: 15px 40px;
+            line-height: 1.8;
+        }
+
+        .student-name {
+            font-size: 22pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            display: block;
+            margin: 10px 0;
+            font-style: italic;
+        }
+
+        .highlight {
+            font-weight: bold;
+        }
+
+        /* Details grid */
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 30px;
+            max-width: 500px;
+            margin: 20px auto;
+            font-size: 10pt;
+        }
+
+        .detail-item {
+            text-align: left;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        /* Signature section */
+        .signature-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 30px;
+            margin-top: 40px;
+            padding-top: 10px;
+        }
+
+        .signature-block {
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            margin-top: 50px;
+            padding-top: 5px;
+            font-size: 10pt;
+            font-weight: 600;
+        }
+
+        .signature-sub {
+            font-size: 8pt;
+            color: #666;
+            margin-top: 3px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 25px;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #e9ecef;
+            padding-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="certificate">
+        <!-- School Header -->
+        <div class="header">
+            {% if school.logo_url %}
+            <img src="{{ school.logo_url }}" alt="School Logo" class="school-logo">
+            {% endif %}
+            <div class="school-name">{{ school_name }}</div>
+            {% if school.address %}
+            <div class="school-address">{{ school.address }}</div>
+            {% endif %}
+            {% if school.phone %}
+            <div class="school-address">Tel: {{ school.phone }}</div>
+            {% endif %}
+        </div>
+
+        <!-- Certificate Title -->
+        <div class="title-section">
+            <div class="certificate-title">Certificate of Graduation</div>
+            <div class="title-underline"></div>
+        </div>
+
+        <!-- Certificate Body -->
+        <div class="body-text">
+            This is to certify that
+
+            <span class="student-name">{{ student_name }}</span>
+
+            has successfully completed the prescribed course of study at
+            <span class="highlight">{{ school_name }}</span>
+            {% if class_name %}
+            in <span class="highlight">{{ class_name }}</span>
+            {% endif %}
+            and is hereby awarded this Certificate of Graduation.
+        </div>
+
+        <!-- Student Details -->
+        <div class="details-grid">
+            <div class="detail-item">
+                <span class="detail-label">Student ID:</span> {{ student_id }}
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Date of Birth:</span>
+                {{ date_of_birth.strftime('%d/%m/%Y') if date_of_birth else '-' }}
+            </div>
+            {% if years_attended %}
+            <div class="detail-item">
+                <span class="detail-label">Years of Attendance:</span> {{ years_attended }}
+            </div>
+            {% endif %}
+            <div class="detail-item">
+                <span class="detail-label">Graduation Date:</span> {{ graduation_date }}
+            </div>
+        </div>
+
+        <!-- Signature Block -->
+        <div class="signature-section">
+            <div class="signature-block">
+                <div class="signature-line">Head Teacher / Principal</div>
+                <div class="signature-sub">Name &amp; Signature</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line">School Stamp</div>
+                <div class="signature-sub">&nbsp;</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line">Date</div>
+                <div class="signature-sub">{{ current_date }}</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            Generated on {{ current_date }} | {{ school_name }}
+        </div>
+    </div>
+</body>
+</html>

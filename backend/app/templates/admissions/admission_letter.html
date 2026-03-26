@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Admission Letter</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm 2.5cm;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #333;
+        }
+        .letterhead {
+            text-align: center;
+            margin-bottom: 2cm;
+            border-bottom: 3px solid {{ school_color }};
+            padding-bottom: 1cm;
+        }
+        .letterhead .logo {
+            max-height: 80px;
+            max-width: 200px;
+            margin-bottom: 0.5cm;
+        }
+        .letterhead .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            color: {{ school_color }};
+            margin: 0;
+        }
+        .letterhead .school-motto {
+            font-style: italic;
+            color: #666;
+            margin: 0.2cm 0 0 0;
+        }
+        .letterhead .school-address {
+            font-size: 10pt;
+            color: #666;
+            margin: 0.3cm 0 0 0;
+        }
+        .date-line {
+            text-align: right;
+            margin-bottom: 1cm;
+        }
+        .reference-line {
+            margin-bottom: 1cm;
+            font-weight: bold;
+        }
+        .salutation {
+            margin-bottom: 0.5cm;
+        }
+        .body-text {
+            margin-bottom: 0.5cm;
+            text-align: justify;
+        }
+        .highlight-box {
+            background: #f0f7ff;
+            border-left: 4px solid {{ school_color }};
+            padding: 0.8cm;
+            margin: 1cm 0;
+        }
+        .highlight-box p {
+            margin: 0.2cm 0;
+        }
+        .highlight-box .label {
+            font-weight: bold;
+            color: {{ school_color }};
+        }
+        .conditions-box {
+            border: 1px solid #ddd;
+            padding: 0.6cm;
+            margin: 0.8cm 0;
+            background: #fffef0;
+        }
+        .conditions-box h3 {
+            margin-top: 0;
+            font-size: 12pt;
+            color: {{ school_color }};
+        }
+        .next-steps {
+            margin: 1cm 0;
+        }
+        .next-steps ol {
+            padding-left: 1.5cm;
+        }
+        .next-steps li {
+            margin-bottom: 0.3cm;
+        }
+        .deadline-warning {
+            font-weight: bold;
+            color: #c0392b;
+            margin: 0.8cm 0;
+        }
+        .signature-block {
+            margin-top: 2cm;
+        }
+        .signature-block .role {
+            font-weight: bold;
+        }
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #ddd;
+            padding-top: 0.3cm;
+        }
+    </style>
+</head>
+<body>
+    <div class="letterhead">
+        {% if safe_logo_url %}
+        <img src="{{ safe_logo_url }}" alt="{{ school.name }}" class="logo">
+        {% endif %}
+        <p class="school-name">{{ school.name }}</p>
+        {% if school.motto %}
+        <p class="school-motto">&ldquo;{{ school.motto }}&rdquo;</p>
+        {% endif %}
+        {% if school.address %}
+        <p class="school-address">{{ school.address }}</p>
+        {% endif %}
+    </div>
+
+    <div class="date-line">
+        {{ decision.decision_date.strftime('%d %B %Y') }}
+    </div>
+
+    <div class="reference-line">
+        Ref: ADM/{{ tracking_code[:12] | upper }}
+    </div>
+
+    <div class="salutation">
+        Dear Parent/Guardian,
+    </div>
+
+    <div class="body-text">
+        We are pleased to inform you that <strong>{{ applicant_name }}</strong>
+        has been offered admission to {{ school.name }} for the
+        {{ academic_year_name }} academic year.
+    </div>
+
+    <div class="highlight-box">
+        <p><span class="label">Student Name:</span> {{ applicant_name }}</p>
+        <p><span class="label">Tracking Code:</span> {{ tracking_code }}</p>
+        <p><span class="label">Offered Class:</span> {{ offered_class_name }}</p>
+        {% if response_deadline %}
+        <p><span class="label">Response Deadline:</span> {{ response_deadline.strftime('%d %B %Y') }}</p>
+        {% endif %}
+    </div>
+
+    {% if conditions %}
+    <div class="conditions-box">
+        <h3>Conditions of Admission</h3>
+        <p>{{ conditions }}</p>
+    </div>
+    {% endif %}
+
+    {% if response_deadline %}
+    <div class="deadline-warning">
+        Please note: You must respond to this offer by {{ response_deadline.strftime('%d %B %Y') }}.
+        Failure to respond by the deadline may result in the offer being withdrawn.
+    </div>
+    {% endif %}
+
+    <div class="next-steps">
+        <p><strong>Next Steps:</strong></p>
+        <ol>
+            <li>Accept or decline this offer using the applicant portal or by contacting the school directly.</li>
+            <li>Upon acceptance, complete the enrollment process including payment of required fees.</li>
+            <li>Submit any outstanding documents as requested by the admissions office.</li>
+            {% if conditions %}
+            <li>Ensure all conditions of admission are met before the commencement of the academic year.</li>
+            {% endif %}
+        </ol>
+    </div>
+
+    <div class="body-text">
+        We look forward to welcoming {{ applicant_name }} to the {{ school.name }} family.
+    </div>
+
+    <div class="signature-block">
+        <p>Yours sincerely,</p>
+        <br><br>
+        <p class="role">Head of Admissions</p>
+        <p>{{ school.name }}</p>
+    </div>
+
+    <div class="footer">
+        This is an official admission letter from {{ school.name }}.
+        Tracking Code: {{ tracking_code }}
+    </div>
+</body>
+</html>

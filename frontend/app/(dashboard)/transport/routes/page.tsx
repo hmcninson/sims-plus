@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
@@ -69,7 +69,7 @@ export default function RoutesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<RouteFormData>({
-    resolver: zodResolver(routeSchema),
+    resolver: zodResolver(routeSchema) as Resolver<RouteFormData>,
     defaultValues: {
       name: "",
       route_code: "",

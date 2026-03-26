@@ -57,9 +57,14 @@ const HOLIDAY_TYPES: { value: HolidayType; label: string; color: string }[] = [
   { value: "event", label: "School Event", color: "bg-green-100 text-green-800" },
 ];
 
-export function SchoolHolidays() {
+interface SchoolHolidaysProps {
+  /** Pre-fetched academic years from the parent page to avoid duplicate API calls */
+  initialAcademicYears?: AcademicYear[];
+}
+
+export function SchoolHolidays({ initialAcademicYears }: SchoolHolidaysProps) {
   const [holidays, setHolidays] = useState<SchoolHoliday[]>([]);
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>(initialAcademicYears || []);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<SchoolHoliday | null>(null);
@@ -98,18 +103,44 @@ export function SchoolHolidays() {
   // Track if initial load has completed
   const isInitialLoadDone = useRef(false);
 
-  // Initial data load
+  // Sync academic years from parent when prop changes
   useEffect(() => {
+    if (initialAcademicYears) {
+      setAcademicYears(initialAcademicYears);
+    }
+  }, [initialAcademicYears]);
+
+  // Initial data load — waits for parent-provided academic years when the prop
+  // is expected (undefined means parent is still fetching). This prevents a
+  // redundant self-fetch race when all tabs are force-mounted simultaneously.
+  useEffect(() => {
+    // Parent passes undefined while its fetch is in-flight; wait for it
+    if (initialAcademicYears === undefined) return;
+
     let mounted = true;
 
     async function loadInitialData() {
       setLoading(true);
-      const yearsResult = await getAcademicYears();
-      if (mounted && yearsResult.success && yearsResult.data) {
-        setAcademicYears(yearsResult.data);
+
+      // Use parent-provided academic years if available, otherwise fetch
+      let yearsData: AcademicYear[];
+      if (initialAcademicYears && initialAcademicYears.length > 0) {
+        yearsData = initialAcademicYears;
+      } else {
+        // Parent finished loading but returned an empty array — fetch ourselves
+        const yearsResult = await getAcademicYears();
+        if (mounted && yearsResult.success && yearsResult.data) {
+          yearsData = yearsResult.data;
+          setAcademicYears(yearsData);
+        } else {
+          yearsData = [];
+        }
+      }
+
+      if (mounted && yearsData.length > 0) {
         // Auto-select current year
-        const currentYear = yearsResult.data.find(y => y.is_current);
-        const yearToSelect = currentYear?.id || yearsResult.data[0]?.id || "";
+        const currentYear = yearsData.find(y => y.is_current);
+        const yearToSelect = currentYear?.id || yearsData[0]?.id || "";
         setSelectedYearId(yearToSelect);
         // Load holidays for the selected year
         if (yearToSelect) {
@@ -124,7 +155,7 @@ export function SchoolHolidays() {
 
     loadInitialData();
     return () => { mounted = false; };
-  }, [loadHolidays]);
+  }, [initialAcademicYears, loadHolidays]);
 
   // Load holidays when year changes (after initial load)
   useEffect(() => {

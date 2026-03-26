@@ -87,6 +87,7 @@ _STARTER_FEATURES = {
     "mobile_apps": False,
     "push_notifications": False,
     "hr_leave": False,
+    "hr_payroll": False,
     "boarding": False,
     "transport": False,
     "preschool": False,
@@ -96,6 +97,7 @@ _STARTER_FEATURES = {
     "api_access": False,
     "custom_domain": False,
     "sso": False,
+    "custom_roles": False,
 }
 
 PLAN_FEATURES = {
@@ -118,6 +120,7 @@ PLAN_FEATURES = {
         "mobile_apps": True,
         "push_notifications": True,
         "hr_leave": True,
+        "hr_payroll": False,
         "boarding": "addon",      # GHS 300/term add-on
         "transport": "addon",     # GHS 200/term add-on
         "preschool": "addon",     # GHS 200/term add-on
@@ -127,6 +130,7 @@ PLAN_FEATURES = {
         "api_access": False,
         "custom_domain": False,
         "sso": False,
+        "custom_roles": True,
     },
     SubscriptionTier.ENTERPRISE: {
         "teachers_portal": True,
@@ -144,6 +148,7 @@ PLAN_FEATURES = {
         "mobile_apps": True,
         "push_notifications": True,
         "hr_leave": True,
+        "hr_payroll": "addon",    # GHS 500/term add-on (Enterprise only)
         "boarding": True,
         "transport": True,
         "preschool": True,
@@ -153,6 +158,7 @@ PLAN_FEATURES = {
         "api_access": True,
         "custom_domain": True,
         "sso": True,
+        "custom_roles": True,
     },
 }
 
@@ -173,6 +179,7 @@ FEATURE_TIER_REQUIREMENTS = {
     "mobile_apps": "Professional",
     "push_notifications": "Professional",
     "hr_leave": "Professional",
+    "hr_payroll": "Enterprise (add-on)",
     "boarding": "Professional (add-on) or Enterprise",
     "transport": "Professional (add-on) or Enterprise",
     "preschool": "Professional (add-on) or Enterprise",
@@ -182,6 +189,7 @@ FEATURE_TIER_REQUIREMENTS = {
     "api_access": "Enterprise",
     "custom_domain": "Enterprise",
     "sso": "Enterprise",
+    "custom_roles": "Professional",
 }
 
 

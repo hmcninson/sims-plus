@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   User,
   Shield,
+  ShieldCheck,
   Palette,
   Bell,
   School,
@@ -17,6 +18,7 @@ import {
   Baby,
   ScrollText,
   BookOpen,
+  TrendingUp,
 } from "lucide-react";
 
 const settingsNavItems = [
@@ -83,10 +85,22 @@ const settingsNavItems = [
         description: "Manage users and permissions",
       },
       {
+        title: "Custom Roles",
+        href: "/settings/roles",
+        icon: ShieldCheck,
+        description: "Granular permission roles",
+      },
+      {
         title: "Communication",
         href: "/settings/communication",
         icon: Mail,
         description: "SMS and email settings",
+      },
+      {
+        title: "Promotion Rules",
+        href: "/settings/promotion-rules",
+        icon: TrendingUp,
+        description: "Student promotion criteria",
       },
     ],
   },

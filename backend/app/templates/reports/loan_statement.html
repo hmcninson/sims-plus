@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Loan Statement - {{ loan_number }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.4;
+            color: #333;
+        }
+
+        .container { max-width: 100%; }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding-bottom: 12px;
+            border-bottom: 3px solid {{ school.primary_color if school and school.primary_color else '#1B4F72' }};
+            margin-bottom: 15px;
+        }
+        .school-logo {
+            max-height: 60px;
+            max-width: 60px;
+            margin-bottom: 5px;
+        }
+        .school-name {
+            font-size: 18pt;
+            font-weight: bold;
+            color: {{ school.primary_color if school and school.primary_color else '#1B4F72' }};
+            margin-bottom: 2px;
+        }
+        .document-title {
+            font-size: 14pt;
+            font-weight: 600;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Loan Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 20px;
+            margin-bottom: 15px;
+            font-size: 9pt;
+        }
+        .info-grid .label {
+            font-weight: 600;
+            color: #555;
+        }
+        .info-grid .value {
+            font-weight: normal;
+        }
+
+        /* Summary Box */
+        .summary-section {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin-bottom: 15px;
+        }
+        .summary-section h3 {
+            font-size: 11pt;
+            color: {{ school.primary_color if school and school.primary_color else '#1B4F72' }};
+            margin-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 4px;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 20px;
+            font-size: 9pt;
+        }
+        .summary-grid .item {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+        }
+        .summary-grid .item .label {
+            color: #555;
+        }
+        .summary-grid .item .value {
+            font-weight: 600;
+            text-align: right;
+        }
+        .highlight-row {
+            border-top: 1px solid #bbb;
+            margin-top: 4px;
+            padding-top: 4px;
+        }
+
+        /* Table */
+        .schedule-section h3 {
+            font-size: 11pt;
+            color: {{ school.primary_color if school and school.primary_color else '#1B4F72' }};
+            margin-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 8.5pt;
+            margin-bottom: 15px;
+        }
+        thead {
+            background: {{ school.primary_color if school and school.primary_color else '#1B4F72' }};
+            color: white;
+        }
+        th {
+            padding: 6px 8px;
+            text-align: left;
+            font-weight: 600;
+        }
+        th.right, td.right {
+            text-align: right;
+        }
+        th.center, td.center {
+            text-align: center;
+        }
+        td {
+            padding: 5px 8px;
+            border-bottom: 1px solid #eee;
+        }
+        tr.paid {
+            background: #f0fdf4;
+        }
+        tr.overdue {
+            background: #fef2f2;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 7.5pt;
+            font-weight: 600;
+        }
+        .badge-paid {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .badge-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .badge-overdue {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 20px;
+            padding-top: 8px;
+            border-top: 1px solid #ddd;
+            font-size: 8pt;
+            color: #888;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            {% if school and school.logo_url %}
+            <img src="{{ school.logo_url }}" alt="Logo" class="school-logo">
+            {% endif %}
+            <div class="school-name">{{ school.name if school else 'SIMS Plus' }}</div>
+            <div class="document-title">Loan Statement</div>
+        </div>
+
+        <!-- Loan Info -->
+        <div class="info-grid">
+            <div><span class="label">Loan No:</span> <span class="value">{{ loan_number }}</span></div>
+            <div><span class="label">Status:</span> <span class="value">{{ status }}</span></div>
+            <div><span class="label">Staff:</span> <span class="value">{{ staff_name }} ({{ staff_code }})</span></div>
+            <div><span class="label">Loan Type:</span> <span class="value">{{ loan_type_name }}</span></div>
+            <div><span class="label">Applied:</span> <span class="value">{{ application_date.strftime('%d/%m/%Y') if application_date else 'N/A' }}</span></div>
+            <div><span class="label">Disbursed:</span> <span class="value">{{ disbursement_date.strftime('%d/%m/%Y') if disbursement_date else 'N/A' }}</span></div>
+        </div>
+
+        <!-- Loan Summary -->
+        <div class="summary-section">
+            <h3>Loan Summary</h3>
+            <div class="summary-grid">
+                <div class="item">
+                    <span class="label">Principal:</span>
+                    <span class="value">GHS {{ '{:,.2f}'.format(principal_amount) }}</span>
+                </div>
+                <div class="item">
+                    <span class="label">Interest ({{ interest_rate }}% {{ interest_method }}, {{ tenure_months }} months):</span>
+                    <span class="value">GHS {{ '{:,.2f}'.format(total_interest) }}</span>
+                </div>
+                <div class="item">
+                    <span class="label">Total Repayable:</span>
+                    <span class="value">GHS {{ '{:,.2f}'.format(total_repayable) }}</span>
+                </div>
+                <div class="item">
+                    <span class="label">Monthly Installment:</span>
+                    <span class="value">GHS {{ '{:,.2f}'.format(monthly_installment) }}</span>
+                </div>
+                <div class="item highlight-row">
+                    <span class="label">Total Paid:</span>
+                    <span class="value">GHS {{ '{:,.2f}'.format(total_paid) }}</span>
+                </div>
+                <div class="item highlight-row">
+                    <span class="label">Outstanding Balance:</span>
+                    <span class="value" style="color: {% if outstanding_balance > 0 %}#991b1b{% else %}#166534{% endif %};">GHS {{ '{:,.2f}'.format(outstanding_balance) }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Installment Schedule -->
+        <div class="schedule-section">
+            <h3>Installment Schedule</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th class="center">#</th>
+                        <th>Due Date</th>
+                        <th class="right">Principal</th>
+                        <th class="right">Interest</th>
+                        <th class="right">Amount</th>
+                        <th class="right">Paid</th>
+                        <th class="right">Balance</th>
+                        <th class="center">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inst in installments %}
+                    <tr class="{% if inst.is_paid %}paid{% elif inst.due_date < generated_date %}overdue{% endif %}">
+                        <td class="center">{{ inst.installment_number }}</td>
+                        <td>{{ inst.due_date.strftime('%d/%m/%Y') }}</td>
+                        <td class="right">{{ '{:,.2f}'.format(inst.principal_component) }}</td>
+                        <td class="right">{{ '{:,.2f}'.format(inst.interest_component) }}</td>
+                        <td class="right">{{ '{:,.2f}'.format(inst.installment_amount) }}</td>
+                        <td class="right">{{ '{:,.2f}'.format(inst.paid_amount) if inst.paid_amount else '-' }}</td>
+                        <td class="right">{{ '{:,.2f}'.format(inst.closing_balance) }}</td>
+                        <td class="center">
+                            {% if inst.is_paid %}
+                            <span class="status-badge badge-paid">Paid</span>
+                            {% elif inst.due_date < generated_date %}
+                            <span class="status-badge badge-overdue">Overdue</span>
+                            {% else %}
+                            <span class="status-badge badge-pending">Pending</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            Generated: {{ generated_date.strftime('%d/%m/%Y') }} | This is a system-generated document.
+        </div>
+    </div>
+</body>
+</html>

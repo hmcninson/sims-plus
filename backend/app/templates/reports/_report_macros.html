@@ -1,0 +1,188 @@
+{#
+    Shared macros for curriculum-specific report card templates.
+
+    All user-supplied text is auto-escaped by the Jinja2 environment
+    (autoescape=True in PDFService._get_jinja_env). These macros rely
+    on that guarantee — never mark user content as |safe.
+#}
+
+
+{# ============================================================
+   report_header — school branding, student info, term/year label
+   ============================================================ #}
+{% macro report_header(school, student, term, academic_year, class_name, section_name, report_title="Terminal Report Card", header_text=None) %}
+<div class="header">
+    {% if school.logo_url %}
+    <img src="{{ school.logo_url }}" alt="School Logo" class="school-logo">
+    {% endif %}
+    <div class="school-name">{{ school.name }}</div>
+    {% if school.motto %}
+    <div class="school-motto">"{{ school.motto }}"</div>
+    {% endif %}
+    <div class="school-address">
+        {% if school.address %}{{ school.address }}{% endif %}
+        {% if school.phone %} | Tel: {{ school.phone }}{% endif %}
+        {% if school.email %} | {{ school.email }}{% endif %}
+    </div>
+    {% if header_text %}
+    <div class="custom-header-text">{{ header_text }}</div>
+    {% endif %}
+    <div class="report-title">{{ report_title }}</div>
+    <div class="term-info">{{ term.name }} - {{ academic_year.name }}</div>
+</div>
+
+<!-- Student Information -->
+<div class="student-info">
+    <table>
+        <tr>
+            <td class="label">Student Name:</td>
+            <td class="value"><strong>{{ student.first_name }} {% if student.middle_name %}{{ student.middle_name }} {% endif %}{{ student.last_name }}</strong></td>
+            <td class="label">Student ID:</td>
+            <td class="value">{{ student.student_id }}</td>
+            {% if student.photo_url %}
+            <td rowspan="2" style="text-align: right; vertical-align: top;">
+                <img src="{{ student.photo_url }}" alt="Student Photo" class="student-photo">
+            </td>
+            {% endif %}
+        </tr>
+        <tr>
+            <td class="label">Class:</td>
+            <td class="value">{{ class_name }}{% if section_name %} ({{ section_name }}){% endif %}</td>
+            <td class="label">Date of Birth:</td>
+            <td class="value">{{ student.date_of_birth.strftime('%d/%m/%Y') if student.date_of_birth else '-' }}</td>
+        </tr>
+    </table>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   attendance_section — days present / absent / percentage
+   ============================================================ #}
+{% macro attendance_section(report) %}
+<div class="conduct-attendance">
+    {% if report.conduct_grade %}
+    <div class="conduct-box">
+        <div class="comment-label">Conduct</div>
+        <div class="conduct-value">{{ report.conduct_grade }}</div>
+    </div>
+    {% endif %}
+    <div class="attendance-box">
+        <div class="comment-label">Attendance Details</div>
+        <div class="attendance-grid">
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.days_present or 0 }}</div>
+                <div class="attendance-label">Present</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.days_absent or 0 }}</div>
+                <div class="attendance-label">Absent</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ report.total_school_days or 0 }}</div>
+                <div class="attendance-label">Total Days</div>
+            </div>
+            <div class="attendance-item">
+                <div class="attendance-value">{{ "%.0f"|format(report.attendance_percentage|float) if report.attendance_percentage else '-' }}%</div>
+                <div class="attendance-label">Percentage</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   remarks_section — class teacher + headmaster remarks
+   ============================================================ #}
+{% macro remarks_section(report) %}
+<div class="section-title">Remarks</div>
+<div class="comments-section">
+    <div class="comment-row">
+        <div class="comment-box">
+            <div class="comment-label">Class Teacher's Remark</div>
+            <div class="comment-text">{{ report.class_teacher_remark or '-' }}</div>
+        </div>
+    </div>
+    <div class="comment-row">
+        <div class="comment-box">
+            <div class="comment-label">Headmaster's Remark</div>
+            <div class="comment-text">{{ report.headmaster_remark or '-' }}</div>
+        </div>
+    </div>
+</div>
+
+{% if report.interest %}
+<div class="comments-section">
+    <div class="comment-box">
+        <div class="comment-label">Interest / Extra-Curricular Activities</div>
+        <div class="comment-text">{{ report.interest }}</div>
+    </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+
+{# ============================================================
+   report_footer — signature lines, next term info, generation stamp
+   ============================================================ #}
+{% macro report_footer(school, current_date, next_term_begins=None, footer_text=None, signature_labels=None) %}
+{% if next_term_begins %}
+<div class="next-term-info">
+    <span class="next-term-label">Next Term Begins:</span> {{ next_term_begins }}
+</div>
+{% endif %}
+
+<!-- Signatures -->
+<div class="signatures">
+    {% set labels = signature_labels or ['Class Teacher', 'Headmaster', 'Parent/Guardian'] %}
+    {% for label in labels %}
+    <div class="signature-box">
+        <div class="signature-line">{{ label }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    {% if footer_text %}
+    <div class="custom-footer-text">{{ footer_text }}</div>
+    {% endif %}
+    Generated by SIMS Plus | {{ school.name }} | {{ current_date }}
+</div>
+{% endmacro %}
+
+
+{# ============================================================
+   grading_scale_table — reference table for the grading scale
+   ============================================================ #}
+{% macro grading_scale_table(grading_scale, grades) %}
+{% if grading_scale and grades %}
+<div class="grading-scale">
+    <table class="grading-scale-table">
+        <thead>
+            <tr>
+                <th colspan="{{ grades|length }}">Grading Scale: {{ grading_scale.name }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                {% for grade in grades %}
+                <td><strong>{{ grade.grade }}</strong></td>
+                {% endfor %}
+            </tr>
+            <tr>
+                {% for grade in grades %}
+                <td>{{ "%.0f"|format(grade.min_score) }}-{{ "%.0f"|format(grade.max_score) }}%</td>
+                {% endfor %}
+            </tr>
+            <tr>
+                {% for grade in grades %}
+                <td style="font-size: 7pt;">{{ grade.remark or '' }}</td>
+                {% endfor %}
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endmacro %}

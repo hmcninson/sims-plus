@@ -2,6 +2,8 @@
 SIMS Plus - Analytics Service
 
 Business logic for exam analytics, statistics, timetabling, and conflict detection.
+Curriculum-aware: resolves curriculum profile for the class being analyzed and
+applies curriculum-specific pass marks. Montessori classes skip pass/fail stats.
 """
 
 from datetime import datetime, UTC
@@ -13,6 +15,7 @@ from sqlalchemy import select, and_, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
+from app.models.curriculum import CurriculumProfile
 from app.models.exam import (
     Exam,
     ExamSubject,
@@ -24,6 +27,7 @@ from app.models.academic import (
     ClassSection,
     Subject,
 )
+from app.models.school import School
 
 from app.services.exam.exam_service import ExamServiceError
 
@@ -33,6 +37,84 @@ class AnalyticsService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    # =========================
+    # Curriculum Helpers
+    # =========================
+
+    async def _resolve_class_curriculum(
+        self, tenant_id: UUID, class_id: UUID
+    ) -> tuple[Optional[CurriculumProfile], str, str]:
+        """
+        Resolve curriculum profile for a class (class -> school -> GES default).
+
+        Returns (profile_or_None, curriculum_type_str, score_display_mode_str).
+        """
+        # Check class-level override first
+        class_result = await self.db.execute(
+            select(Class).where(
+                and_(Class.id == class_id, Class.tenant_id == tenant_id)
+            )
+        )
+        class_obj = class_result.scalar_one_or_none()
+
+        profile_id = None
+        if class_obj and class_obj.curriculum_profile_id:
+            profile_id = class_obj.curriculum_profile_id
+        elif class_obj and class_obj.school_id:
+            # Fallback to school default
+            school_result = await self.db.execute(
+                select(School.curriculum_profile_id).where(
+                    and_(
+                        School.id == class_obj.school_id,
+                        School.tenant_id == tenant_id,
+                    )
+                )
+            )
+            row = school_result.scalar_one_or_none()
+            if row:
+                profile_id = row
+
+        if not profile_id:
+            return None, "ges", "percentage"
+
+        profile_result = await self.db.execute(
+            select(CurriculumProfile).where(
+                and_(
+                    CurriculumProfile.id == profile_id,
+                    CurriculumProfile.tenant_id == tenant_id,
+                    CurriculumProfile.deleted_at.is_(None),
+                )
+            )
+        )
+        profile = profile_result.scalar_one_or_none()
+        if not profile:
+            return None, "ges", "percentage"
+
+        return (
+            profile,
+            profile.curriculum_type.value,
+            profile.score_display_mode.value,
+        )
+
+    @staticmethod
+    def _get_pass_mark(curriculum_type: str) -> Optional[Decimal]:
+        """
+        Return the minimum passing score (as percentage) for a curriculum.
+
+        Returns None for Montessori (no pass/fail concept).
+        """
+        pass_marks = {
+            "ges": Decimal("50"),
+            "cambridge": Decimal("50"),
+            "edexcel": Decimal("50"),
+            "american": Decimal("60"),        # D- = 60%
+            "ib": Decimal("28.57"),           # Level 2 out of 7
+            "french": Decimal("50"),          # 10/20 = 50%
+            "montessori": None,               # No pass/fail for Montessori
+            "custom": Decimal("50"),
+        }
+        return pass_marks.get(curriculum_type, Decimal("50"))
 
     async def get_grade_distribution(
         self,
@@ -170,8 +252,20 @@ class AnalyticsService:
         class_id: UUID,
         section_id: Optional[UUID] = None,
     ) -> dict:
-        """Get overall class statistics for an exam."""
+        """
+        Get overall class statistics for an exam.
+
+        Curriculum-aware: resolves curriculum profile for the class and
+        uses the appropriate pass mark. Montessori classes get null
+        pass/fail rates since they don't use numeric grading.
+        """
         import statistics
+
+        # Resolve curriculum profile for the class being analyzed
+        _, curriculum_type, score_display_mode = (
+            await self._resolve_class_curriculum(tenant_id, class_id)
+        )
+        pass_mark = self._get_pass_mark(curriculum_type)
 
         # Get exam info (filter soft-deleted)
         exam_result = await self.db.execute(
@@ -227,7 +321,12 @@ class AnalyticsService:
         exam_subjects = exam_subjects_result.scalars().all()
 
         if not exam_subjects:
-            return self._empty_class_statistics(exam, class_obj, section_id, section_name)
+            result = self._empty_class_statistics(exam, class_obj, section_id, section_name)
+            # Add curriculum context to empty results too
+            result["curriculum_type"] = curriculum_type
+            result["score_display_mode"] = score_display_mode
+            result["pass_mark"] = float(pass_mark) if pass_mark is not None else None
+            return result
 
         # Get all scores
         exam_subject_ids = [es.id for es in exam_subjects]
@@ -267,7 +366,7 @@ class AnalyticsService:
 
         # Calculate averages per student
         student_averages = []
-        for student_id, pcts in student_scores.items():
+        for sid, pcts in student_scores.items():
             if pcts:
                 avg = sum(pcts) / len(pcts)
                 student_averages.append(avg)
@@ -285,12 +384,19 @@ class AnalyticsService:
             lowest_score = None
             median_score = None
 
-        # Calculate pass/fail (assuming 50% is pass mark)
-        pass_mark = Decimal("50")
-        passed = sum(1 for avg in student_averages if Decimal(str(avg)) >= pass_mark)
-        failed = total_students - passed
-        pass_rate = round((Decimal(passed) / Decimal(total_students) * 100), 1) if total_students > 0 else Decimal(0)
-        fail_rate = round((Decimal(failed) / Decimal(total_students) * 100), 1) if total_students > 0 else Decimal(0)
+        # Calculate pass/fail using curriculum-appropriate pass mark
+        # Montessori has no pass/fail concept (pass_mark is None)
+        if pass_mark is not None:
+            passed = sum(1 for avg in student_averages if Decimal(str(avg)) >= pass_mark)
+            failed = total_students - passed
+            pass_rate = round((Decimal(passed) / Decimal(total_students) * 100), 1) if total_students > 0 else Decimal(0)
+            fail_rate = round((Decimal(failed) / Decimal(total_students) * 100), 1) if total_students > 0 else Decimal(0)
+        else:
+            # Montessori — no pass/fail statistics
+            passed = 0
+            failed = 0
+            pass_rate = None
+            fail_rate = None
 
         # Grade distribution
         grades = []
@@ -325,6 +431,10 @@ class AnalyticsService:
                 "fail_rate": fail_rate,
             },
             "grade_distribution": grades,
+            # Curriculum context for frontend display adaptation
+            "curriculum_type": curriculum_type,
+            "score_display_mode": score_display_mode,
+            "pass_mark": float(pass_mark) if pass_mark is not None else None,
         }
 
     def _empty_class_statistics(self, exam, class_obj, section_id, section_name):
@@ -351,6 +461,10 @@ class AnalyticsService:
                 "fail_rate": Decimal(0),
             },
             "grade_distribution": [],
+            # Defaults — overridden by caller with curriculum context
+            "curriculum_type": "ges",
+            "score_display_mode": "percentage",
+            "pass_mark": 50.0,
         }
 
     async def get_subject_statistics(
@@ -360,8 +474,19 @@ class AnalyticsService:
         class_id: UUID,
         section_id: Optional[UUID] = None,
     ) -> list[dict]:
-        """Get statistics for each subject in an exam."""
+        """
+        Get statistics for each subject in an exam.
+
+        Curriculum-aware: uses the class's curriculum pass mark for
+        per-subject pass rate. Montessori subjects get null pass_rate.
+        """
         import statistics
+
+        # Resolve curriculum-specific pass mark for this class
+        _, curriculum_type, _ = await self._resolve_class_curriculum(
+            tenant_id, class_id
+        )
+        pass_mark_pct = self._get_pass_mark(curriculum_type)
 
         # Get exam subjects with subject details
         query = (
@@ -423,15 +548,18 @@ class AnalyticsService:
                 highest = round(Decimal(str(max(score_values))), 2)
                 lowest = round(Decimal(str(min(score_values))), 2)
                 median = round(Decimal(str(statistics.median(score_values))), 2) if len(score_values) > 1 else avg_score
-                # Pass rate (assuming 50% pass mark)
-                passed = sum(1 for s in score_values if s >= 50)
-                pass_rate = round(Decimal(passed) / Decimal(len(score_values)) * 100, 1) if score_values else Decimal(0)
+                # Curriculum-aware pass rate (None for Montessori)
+                if pass_mark_pct is not None:
+                    passed = sum(1 for s in score_values if s >= float(pass_mark_pct))
+                    pass_rate = round(Decimal(passed) / Decimal(len(score_values)) * 100, 1)
+                else:
+                    pass_rate = None
             else:
                 avg_score = None
                 highest = None
                 lowest = None
                 median = None
-                pass_rate = Decimal(0)
+                pass_rate = None if pass_mark_pct is None else Decimal(0)
 
             # Grade distribution
             grades = []

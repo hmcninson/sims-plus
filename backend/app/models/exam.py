@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -409,6 +410,13 @@ class ExamScore(Base, TenantMixin, SoftDeleteMixin):
         String(5),
         nullable=True,
         comment="Effort grade (Cambridge: 1-5 or A-E)",
+    )
+
+    # Criterion-referenced grading (IB MYP)
+    criterion_scores: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Criterion-referenced scores (IB MYP): {criteria: [{criterion, name, level, max_level}], criterion_total, criterion_max}",
     )
 
     # Teacher Remark (for report card)

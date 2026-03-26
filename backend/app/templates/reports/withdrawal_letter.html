@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Withdrawal Confirmation - {{ student_name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+        }
+
+        /* Letterhead */
+        .header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 3px solid {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 30px;
+        }
+
+        .school-logo {
+            max-height: 60px;
+            max-width: 60px;
+            margin-bottom: 5px;
+        }
+
+        .school-name {
+            font-size: 18pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 3px;
+        }
+
+        .school-address {
+            font-size: 9pt;
+            color: #666;
+        }
+
+        /* Letter content */
+        .date-block {
+            text-align: right;
+            margin-bottom: 25px;
+            font-size: 10pt;
+        }
+
+        .reference {
+            margin-bottom: 20px;
+            font-size: 10pt;
+        }
+
+        .reference strong {
+            color: {{ school.primary_color or '#1B4F72' }};
+        }
+
+        .subject-line {
+            font-size: 12pt;
+            font-weight: bold;
+            text-decoration: underline;
+            margin-bottom: 20px;
+            color: {{ school.primary_color or '#1B4F72' }};
+        }
+
+        .salutation {
+            margin-bottom: 15px;
+        }
+
+        .body-paragraph {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        .details-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 5px;
+            font-size: 10pt;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            min-width: 180px;
+            color: #555;
+        }
+
+        /* Signature */
+        .closing {
+            margin-top: 30px;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            width: 250px;
+            margin-top: 60px;
+            padding-top: 5px;
+            font-size: 10pt;
+        }
+
+        .title-line {
+            font-size: 10pt;
+            color: #666;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #e9ecef;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- School Letterhead -->
+        <div class="header">
+            {% if school.logo_url %}
+            <img src="{{ school.logo_url }}" alt="School Logo" class="school-logo">
+            {% endif %}
+            <div class="school-name">{{ school_name }}</div>
+            {% if school.address %}
+            <div class="school-address">{{ school.address }}</div>
+            {% endif %}
+            {% if school.phone %}
+            <div class="school-address">Tel: {{ school.phone }} {% if school.email %}| Email: {{ school.email }}{% endif %}</div>
+            {% endif %}
+        </div>
+
+        <!-- Date -->
+        <div class="date-block">
+            {{ current_date }}
+        </div>
+
+        <!-- Reference -->
+        <div class="reference">
+            <strong>Ref:</strong> WDL/{{ student_id }}/{{ current_date | replace('/', '') }}
+        </div>
+
+        <!-- Subject -->
+        <div class="subject-line">
+            Confirmation of Student Withdrawal
+        </div>
+
+        <!-- Body -->
+        <div class="salutation">
+            To Whom It May Concern,
+        </div>
+
+        <div class="body-paragraph">
+            This letter confirms that <strong>{{ student_name }}</strong>
+            (Student ID: {{ student_id }}) has been officially withdrawn from
+            <strong>{{ school_name }}</strong>
+            {% if class_name %}where they were enrolled in <strong>{{ class_name }}</strong>{% endif %}.
+        </div>
+
+        <!-- Student Details -->
+        <div class="details-box">
+            <div class="detail-row">
+                <span class="detail-label">Student Name:</span>
+                <span>{{ student_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Student ID:</span>
+                <span>{{ student_id }}</span>
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Last Class Attended:</span>
+                <span>{{ class_name or '-' }}</span>
+            </div>
+            {% if withdrawal %}
+            <div class="detail-row">
+                <span class="detail-label">Effective Date:</span>
+                <span>{{ withdrawal.effective_date.strftime('%d/%m/%Y') if withdrawal.effective_date else current_date }}</span>
+            </div>
+            {% if withdrawal.reason %}
+            <div class="detail-row">
+                <span class="detail-label">Reason for Withdrawal:</span>
+                <span>{{ withdrawal.reason }}</span>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        <div class="body-paragraph">
+            All clearance procedures have been completed and the student's records
+            have been updated accordingly. The student's academic records will be
+            maintained by the school as per our record-keeping policy.
+        </div>
+
+        <div class="body-paragraph">
+            Should any further information be required regarding this student's
+            enrollment history or academic records, please do not hesitate to
+            contact the school administration.
+        </div>
+
+        <!-- Closing -->
+        <div class="closing">
+            <div>Yours faithfully,</div>
+            <div class="signature-line">Head Teacher / Principal</div>
+            <div class="title-line">{{ school_name }}</div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            This is an official document of {{ school_name }}. Generated on {{ current_date }}.
+        </div>
+    </div>
+</body>
+</html>

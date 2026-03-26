@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Admissions Decision</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm 2.5cm;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #333;
+        }
+        .letterhead {
+            text-align: center;
+            margin-bottom: 2cm;
+            border-bottom: 3px solid {{ school_color }};
+            padding-bottom: 1cm;
+        }
+        .letterhead .logo {
+            max-height: 80px;
+            max-width: 200px;
+            margin-bottom: 0.5cm;
+        }
+        .letterhead .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            color: {{ school_color }};
+            margin: 0;
+        }
+        .letterhead .school-motto {
+            font-style: italic;
+            color: #666;
+            margin: 0.2cm 0 0 0;
+        }
+        .letterhead .school-address {
+            font-size: 10pt;
+            color: #666;
+            margin: 0.3cm 0 0 0;
+        }
+        .date-line {
+            text-align: right;
+            margin-bottom: 1cm;
+        }
+        .reference-line {
+            margin-bottom: 1cm;
+            font-weight: bold;
+        }
+        .salutation {
+            margin-bottom: 0.5cm;
+        }
+        .body-text {
+            margin-bottom: 0.5cm;
+            text-align: justify;
+        }
+        .reason-box {
+            border: 1px solid #ddd;
+            padding: 0.6cm;
+            margin: 0.8cm 0;
+            background: #fafafa;
+        }
+        .reason-box h3 {
+            margin-top: 0;
+            font-size: 12pt;
+            color: #555;
+        }
+        .signature-block {
+            margin-top: 2cm;
+        }
+        .signature-block .role {
+            font-weight: bold;
+        }
+        .footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #ddd;
+            padding-top: 0.3cm;
+        }
+    </style>
+</head>
+<body>
+    <div class="letterhead">
+        {% if safe_logo_url %}
+        <img src="{{ safe_logo_url }}" alt="{{ school.name }}" class="logo">
+        {% endif %}
+        <p class="school-name">{{ school.name }}</p>
+        {% if school.motto %}
+        <p class="school-motto">&ldquo;{{ school.motto }}&rdquo;</p>
+        {% endif %}
+        {% if school.address %}
+        <p class="school-address">{{ school.address }}</p>
+        {% endif %}
+    </div>
+
+    <div class="date-line">
+        {{ decision.decision_date.strftime('%d %B %Y') }}
+    </div>
+
+    <div class="reference-line">
+        Ref: ADM/{{ tracking_code[:12] | upper }}
+    </div>
+
+    <div class="salutation">
+        Dear Parent/Guardian,
+    </div>
+
+    <div class="body-text">
+        Thank you for your interest in {{ school.name }} and for submitting an application
+        for <strong>{{ applicant_name }}</strong> for the {{ academic_year_name }} academic year.
+    </div>
+
+    <div class="body-text">
+        After careful review of all applications received, we regret to inform you that
+        we are unable to offer {{ applicant_name }} a place at this time. This was a
+        highly competitive admissions cycle and many qualified applicants could not be
+        accommodated.
+    </div>
+
+    {% if rejection_reason %}
+    <div class="reason-box">
+        <h3>Additional Information</h3>
+        <p>{{ rejection_reason }}</p>
+    </div>
+    {% endif %}
+
+    <div class="body-text">
+        We encourage you to consider applying again in the future. We wish
+        {{ applicant_name }} every success in their academic journey.
+    </div>
+
+    <div class="body-text">
+        Should you have any questions regarding this decision, please do not hesitate
+        to contact our admissions office.
+    </div>
+
+    <div class="signature-block">
+        <p>Yours sincerely,</p>
+        <br><br>
+        <p class="role">Head of Admissions</p>
+        <p>{{ school.name }}</p>
+    </div>
+
+    <div class="footer">
+        This is an official communication from {{ school.name }}.
+        Tracking Code: {{ tracking_code }}
+    </div>
+</body>
+</html>

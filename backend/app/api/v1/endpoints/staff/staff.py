@@ -24,15 +24,83 @@ from app.schemas.staff import (
     StaffResponse,
     StaffListResponse,
     StaffStatsResponse,
+    StaffSensitiveFieldsResponse,
     StaffWithAssignmentsResponse,
     StaffAssignmentCreate,
     StaffAssignmentUpdate,
     StaffAssignmentResponse,
 )
 from app.services.staff import StaffService, StaffServiceError
+from app.services.staff.workload_service import StaffWorkloadService
+from app.schemas.staff import (
+    StaffWorkloadResponse,
+    StaffWorkloadSummaryItem,
+)
 from app.models.school import School
+from app.models.staff import Staff
 
 router = APIRouter()
+
+
+def _mask_sensitive(value: Optional[str]) -> Optional[str]:
+    """Mask sensitive PII fields, showing only last 4 characters."""
+    if not value:
+        return None
+    if len(value) <= 4:
+        return "****"
+    return "****" + value[-4:]
+
+
+def _build_staff_response(staff: Staff) -> StaffResponse:
+    """Build a StaffResponse from a Staff model, masking sensitive PII."""
+    return StaffResponse(
+        id=staff.id,
+        staff_id=staff.staff_id,
+        first_name=staff.first_name,
+        middle_name=staff.middle_name,
+        last_name=staff.last_name,
+        date_of_birth=staff.date_of_birth,
+        gender=staff.gender.value,
+        email=staff.email,
+        phone=staff.phone,
+        phone_secondary=staff.phone_secondary,
+        address=staff.address,
+        city=staff.city,
+        region=staff.region,
+        emergency_contact_name=staff.emergency_contact_name,
+        emergency_contact_phone=staff.emergency_contact_phone,
+        emergency_contact_relationship=staff.emergency_contact_relationship,
+        # Mask sensitive PII: show only last 4 digits
+        ghana_card_number=_mask_sensitive(staff.ghana_card_number),
+        ssnit_number=_mask_sensitive(staff.ssnit_number),
+        teacher_license_number=staff.teacher_license_number,
+        staff_type=staff.staff_type.value,
+        status=staff.status.value,
+        job_title=staff.job_title,
+        department=staff.department,
+        department_id=staff.department_id,
+        employment_date=staff.employment_date,
+        termination_date=staff.termination_date,
+        qualifications=staff.qualifications,
+        # Mask sensitive banking PII
+        bank_name=_mask_sensitive(staff.bank_name),
+        bank_branch=_mask_sensitive(staff.bank_branch),
+        account_number=_mask_sensitive(staff.account_number),
+        photo_url=staff.photo_url,
+        notes=staff.notes,
+        school_id=staff.school_id,
+        user_id=staff.user_id,
+        created_at=staff.created_at,
+        updated_at=staff.updated_at,
+        # HR gap closure fields
+        tin_number=_mask_sensitive(staff.tin_number),
+        employment_type=staff.employment_type.value if staff.employment_type and hasattr(staff.employment_type, "value") else staff.employment_type,
+        ges_staff_id=staff.ges_staff_id,
+        nationality=staff.nationality,
+        marital_status=staff.marital_status,
+        # Relationships
+        school_name=staff.school.name if staff.school else None,
+    )
 
 
 # =========================
@@ -46,7 +114,9 @@ EXPORT_COLUMNS = [
     "emergency_contact_name", "emergency_contact_phone", "emergency_contact_relationship",
     "ghana_card_number", "ssnit_number", "teacher_license_number",
     "staff_type", "status", "job_title", "department", "employment_date",
-    "termination_date", "bank_name", "bank_branch", "account_number", "notes"
+    "termination_date", "bank_name", "bank_branch", "account_number",
+    "tin_number", "employment_type", "ges_staff_id", "nationality", "marital_status",
+    "notes",
 ]
 
 
@@ -108,6 +178,11 @@ async def export_staff(
             "bank_name": staff.bank_name or "",
             "bank_branch": staff.bank_branch or "",
             "account_number": staff.account_number or "",
+            "tin_number": staff.tin_number or "",
+            "employment_type": staff.employment_type.value if staff.employment_type and hasattr(staff.employment_type, "value") else (staff.employment_type or ""),
+            "ges_staff_id": staff.ges_staff_id or "",
+            "nationality": staff.nationality or "",
+            "marital_status": staff.marital_status or "",
             "notes": staff.notes or "",
         }
         writer.writerow(row)
@@ -386,46 +461,14 @@ async def create_staff(
                 notes=data.notes,
                 school_id=data.school_id,
                 user_id=data.user_id,
+                tin_number=data.tin_number,
+                employment_type=data.employment_type,
+                ges_staff_id=data.ges_staff_id,
+                nationality=data.nationality,
+                marital_status=data.marital_status,
             )
 
-            return StaffResponse(
-                id=staff.id,
-                staff_id=staff.staff_id,
-                first_name=staff.first_name,
-                middle_name=staff.middle_name,
-                last_name=staff.last_name,
-                date_of_birth=staff.date_of_birth,
-                gender=staff.gender.value,
-                email=staff.email,
-                phone=staff.phone,
-                phone_secondary=staff.phone_secondary,
-                address=staff.address,
-                city=staff.city,
-                region=staff.region,
-                emergency_contact_name=staff.emergency_contact_name,
-                emergency_contact_phone=staff.emergency_contact_phone,
-                emergency_contact_relationship=staff.emergency_contact_relationship,
-                ghana_card_number=staff.ghana_card_number,
-                ssnit_number=staff.ssnit_number,
-                teacher_license_number=staff.teacher_license_number,
-                staff_type=staff.staff_type.value,
-                status=staff.status.value,
-                job_title=staff.job_title,
-                department=staff.department,
-                employment_date=staff.employment_date,
-                termination_date=staff.termination_date,
-                qualifications=staff.qualifications,
-                bank_name=staff.bank_name,
-                bank_branch=staff.bank_branch,
-                account_number=staff.account_number,
-                photo_url=staff.photo_url,
-                notes=staff.notes,
-                school_id=staff.school_id,
-                user_id=staff.user_id,
-                created_at=staff.created_at,
-                updated_at=staff.updated_at,
-                school_name=staff.school.name if staff.school else None,
-            )
+            return _build_staff_response(staff)
 
         except StaffServiceError as e:
             last_error = e
@@ -597,6 +640,98 @@ async def get_staff_by_section(
     ]
 
 
+# =========================
+# Workload Endpoints
+# CRITICAL: These must be registered BEFORE /{staff_id} routes
+# to prevent FastAPI from matching "workload" as a staff_id UUID.
+# =========================
+
+
+@router.get(
+    "/workload/summary",
+    response_model=list[StaffWorkloadSummaryItem],
+    summary="Get all staff workload summary",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def get_all_staff_workload(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+    school_id: Optional[UUID] = Query(None, description="Filter by school"),
+) -> list[StaffWorkloadSummaryItem]:
+    """Get workload overview for all teaching staff."""
+    service = StaffWorkloadService(db)
+    try:
+        workloads = await service.get_all_staff_workload(
+            tenant_id=tenant.tenant_id,
+            school_id=school_id,
+        )
+        return [StaffWorkloadSummaryItem(**w) for w in workloads]
+    except StaffWorkloadService.Error as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
+
+
+@router.get(
+    "/{staff_id}/workload",
+    response_model=StaffWorkloadResponse,
+    summary="Get staff workload",
+    dependencies=[Depends(require_permissions("staff.read"))],
+)
+async def get_staff_workload(
+    staff_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> StaffWorkloadResponse:
+    """Get teaching workload for a specific staff member."""
+    service = StaffWorkloadService(db)
+    try:
+        workload = await service.get_staff_workload(
+            tenant_id=tenant.tenant_id,
+            staff_id=staff_id,
+        )
+        return StaffWorkloadResponse(**workload)
+    except StaffWorkloadService.Error as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
+
+
+@router.get(
+    "/{staff_id}/sensitive-fields",
+    response_model=StaffSensitiveFieldsResponse,
+    summary="Get staff sensitive fields (unmasked)",
+    dependencies=[Depends(require_permissions("staff.update"))],
+)
+async def get_staff_sensitive_fields(
+    staff_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> StaffSensitiveFieldsResponse:
+    """Return unmasked sensitive PII fields (TIN, SSNIT, bank details).
+
+    Requires staff.update permission. Users with only staff.read (academic_head,
+    teacher) cannot access full financial identifiers.
+    """
+    service = StaffService(db)
+    staff = await service.get_staff(tenant.tenant_id, staff_id)
+
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff member not found",
+        )
+
+    return StaffSensitiveFieldsResponse(
+        id=staff.id,
+        tin_number=staff.tin_number,
+        ssnit_number=staff.ssnit_number,
+        ghana_card_number=staff.ghana_card_number,
+        bank_name=staff.bank_name,
+        bank_branch=staff.bank_branch,
+        account_number=staff.account_number,
+    )
+
+
 @router.get(
     "/{staff_id}",
     response_model=StaffWithAssignmentsResponse,
@@ -638,43 +773,10 @@ async def get_staff(
                 )
             )
 
+    # Build base response then add assignments
+    base = _build_staff_response(staff)
     return StaffWithAssignmentsResponse(
-        id=staff.id,
-        staff_id=staff.staff_id,
-        first_name=staff.first_name,
-        middle_name=staff.middle_name,
-        last_name=staff.last_name,
-        date_of_birth=staff.date_of_birth,
-        gender=staff.gender.value,
-        email=staff.email,
-        phone=staff.phone,
-        phone_secondary=staff.phone_secondary,
-        address=staff.address,
-        city=staff.city,
-        region=staff.region,
-        emergency_contact_name=staff.emergency_contact_name,
-        emergency_contact_phone=staff.emergency_contact_phone,
-        emergency_contact_relationship=staff.emergency_contact_relationship,
-        ghana_card_number=staff.ghana_card_number,
-        ssnit_number=staff.ssnit_number,
-        teacher_license_number=staff.teacher_license_number,
-        staff_type=staff.staff_type.value,
-        status=staff.status.value,
-        job_title=staff.job_title,
-        department=staff.department,
-        employment_date=staff.employment_date,
-        termination_date=staff.termination_date,
-        qualifications=staff.qualifications,
-        bank_name=staff.bank_name,
-        bank_branch=staff.bank_branch,
-        account_number=staff.account_number,
-        photo_url=staff.photo_url,
-        notes=staff.notes,
-        school_id=staff.school_id,
-        user_id=staff.user_id,
-        created_at=staff.created_at,
-        updated_at=staff.updated_at,
-        school_name=staff.school.name if staff.school else None,
+        **base.model_dump(),
         assignments=assignments,
     )
 
@@ -698,6 +800,7 @@ async def update_staff(
         staff = await service.update_staff(
             tenant_id=tenant.tenant_id,
             staff_id=staff_id,
+            current_user_id=UUID(current_user["user_id"]),
             **data.model_dump(exclude_unset=True),
         )
 
@@ -707,44 +810,7 @@ async def update_staff(
                 detail="Staff member not found",
             )
 
-        return StaffResponse(
-            id=staff.id,
-            staff_id=staff.staff_id,
-            first_name=staff.first_name,
-            middle_name=staff.middle_name,
-            last_name=staff.last_name,
-            date_of_birth=staff.date_of_birth,
-            gender=staff.gender.value,
-            email=staff.email,
-            phone=staff.phone,
-            phone_secondary=staff.phone_secondary,
-            address=staff.address,
-            city=staff.city,
-            region=staff.region,
-            emergency_contact_name=staff.emergency_contact_name,
-            emergency_contact_phone=staff.emergency_contact_phone,
-            emergency_contact_relationship=staff.emergency_contact_relationship,
-            ghana_card_number=staff.ghana_card_number,
-            ssnit_number=staff.ssnit_number,
-            teacher_license_number=staff.teacher_license_number,
-            staff_type=staff.staff_type.value,
-            status=staff.status.value,
-            job_title=staff.job_title,
-            department=staff.department,
-            employment_date=staff.employment_date,
-            termination_date=staff.termination_date,
-            qualifications=staff.qualifications,
-            bank_name=staff.bank_name,
-            bank_branch=staff.bank_branch,
-            account_number=staff.account_number,
-            photo_url=staff.photo_url,
-            notes=staff.notes,
-            school_id=staff.school_id,
-            user_id=staff.user_id,
-            created_at=staff.created_at,
-            updated_at=staff.updated_at,
-            school_name=staff.school.name if staff.school else None,
-        )
+        return _build_staff_response(staff)
     except StaffServiceError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
 

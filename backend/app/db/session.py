@@ -10,7 +10,7 @@ SECURITY:
 """
 
 from sqlalchemy import event, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
 
@@ -70,3 +70,60 @@ async def get_async_session() -> AsyncSession:
     """
     async with async_session_maker() as session:
         return session
+
+
+# ---------------------------------------------------------------------------
+# Superuser engine for platform admin cross-tenant queries.
+# Uses sims_admin role which bypasses RLS (policies target sims_app_user only).
+# This engine is ONLY used by PlatformService — never exposed as a FastAPI
+# dependency. Small pool to limit blast radius: 2 base + 3 overflow = 5 max.
+# ---------------------------------------------------------------------------
+
+_platform_admin_engine: AsyncEngine | None = None
+_platform_admin_session_maker: async_sessionmaker | None = None
+
+
+def get_platform_admin_session_maker() -> async_sessionmaker:
+    """
+    Get the superuser session factory for cross-tenant queries.
+
+    Lazily creates the engine on first call. Uses ALEMBIC_DATABASE_URL
+    (sims_admin credentials) which bypasses RLS.
+
+    WARNING: This must ONLY be used from PlatformService methods.
+    Never expose this as a FastAPI dependency or pass to route handlers.
+    """
+    global _platform_admin_engine, _platform_admin_session_maker
+
+    if _platform_admin_session_maker is None:
+        admin_url = settings.ALEMBIC_DATABASE_URL
+        if not admin_url:
+            raise RuntimeError(
+                "ALEMBIC_DATABASE_URL is required for platform admin operations. "
+                "Set it in .env or environment variables."
+            )
+
+        # RISK FIX (R3): ALEMBIC_DATABASE_URL may use sync driver prefix
+        # (postgresql://) but create_async_engine requires postgresql+asyncpg://.
+        admin_url_str = str(admin_url)
+        if admin_url_str.startswith("postgresql://"):
+            admin_url_str = admin_url_str.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
+
+        _platform_admin_engine = create_async_engine(
+            admin_url_str,
+            echo=False,  # Never echo superuser queries
+            pool_pre_ping=True,
+            pool_size=2,
+            max_overflow=3,
+        )
+        _platform_admin_session_maker = async_sessionmaker(
+            _platform_admin_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False,
+        )
+
+    return _platform_admin_session_maker

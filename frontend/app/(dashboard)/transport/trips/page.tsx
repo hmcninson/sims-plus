@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -252,7 +252,7 @@ export default function TripsPage() {
   // ─── Create Trip Form ─────────────────────────────────────────────────────
 
   const createForm = useForm<CreateTripFormData>({
-    resolver: zodResolver(createTripSchema),
+    resolver: zodResolver(createTripSchema) as Resolver<CreateTripFormData>,
     defaultValues: {
       route_id: "",
       trip_date: new Date().toISOString().split("T")[0],
@@ -309,7 +309,7 @@ export default function TripsPage() {
   // ─── Edit Trip Form ───────────────────────────────────────────────────────
 
   const editForm = useForm<EditTripFormData>({
-    resolver: zodResolver(editTripSchema),
+    resolver: zodResolver(editTripSchema) as Resolver<EditTripFormData>,
     defaultValues: {
       departure_time: "",
       arrival_time: "",

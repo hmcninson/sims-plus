@@ -4,11 +4,14 @@ SIMS Plus - User Management Endpoints
 API endpoints for user CRUD operations.
 """
 
+import csv
+import io
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.exc import IntegrityError
+from starlette.responses import StreamingResponse
 
 from app.api.deps import (
     CurrentUserId,
@@ -29,10 +32,15 @@ from app.schemas.user import (
     ResetUserPasswordRequest,
     UserInviteRequest,
     UserInviteResponse,
+    UserImportResult,
+    MySchoolRoleResponse,
 )
+from app.schemas.custom_role import CustomRoleAssign
 import structlog
 
 from app.services.user import UserService, UserServiceError
+from app.services.mfa import MFAService, MFAError
+from app.services.custom_role import CustomRoleError, CustomRoleService
 from app.services.email import email_service
 from app.services.audit import AuditService, AuditEventType
 from app.services.token_blacklist import get_token_blacklist_service
@@ -53,6 +61,7 @@ def _user_to_response(user) -> UserResponse:
         role=user.role,
         status=user.status,
         school_id=user.school_id,
+        custom_role_id=user.custom_role_id,
         email_verified=user.email_verified,
         mfa_enabled=user.mfa_enabled,
         last_login=user.last_login,
@@ -199,6 +208,139 @@ async def create_user(
     return _user_to_response(user)
 
 
+# =========================
+# Bulk Import Endpoints
+# =========================
+
+
+@router.get(
+    "/import/template",
+    summary="Download user import CSV template",
+    dependencies=[Depends(require_permissions("users.create"))],
+)
+async def download_import_template():
+    """
+    Download a CSV template file for bulk user import.
+
+    Returns a CSV with the required headers and two example rows.
+    Requires `users.create` permission.
+    """
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["email", "first_name", "last_name", "role", "phone"])
+    writer.writerow(["john.doe@example.com", "John", "Doe", "teacher", "+233241234567"])
+    writer.writerow(["jane.smith@example.com", "Jane", "Smith", "finance_officer", ""])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=user_import_template.csv",
+        },
+    )
+
+
+@router.post(
+    "/import",
+    response_model=UserImportResult,
+    summary="Import users from CSV file",
+    dependencies=[Depends(require_permissions("users.create"))],
+)
+async def import_users(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+    file: UploadFile = File(...),
+    preview: bool = Form(default=False),
+    school_id: Optional[UUID] = Form(default=None),
+):
+    """
+    Import users from a CSV file.
+
+    - **preview=true**: Validate only, return row-by-row preview without creating users
+    - **preview=false** (default): Validate and create users with PENDING status
+
+    CSV columns: email (required), first_name (required), last_name (required),
+    role (required), phone (optional).
+
+    Valid roles: school_admin, academic_head, finance_officer, hr_officer, teacher, house_parent.
+    Max 200 rows per import. Max 1MB file size.
+
+    Returns credentials (one-time) on actual import for admin to distribute as fallback.
+    Requires `users.create` permission.
+    """
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    # Validate file size (max 1MB)
+    content = await file.read()
+    if len(content) > 1_048_576:
+        raise HTTPException(status_code=400, detail="File too large (max 1MB)")
+
+    service = UserService(db)
+    try:
+        result = await service.import_users_from_file(
+            tenant_id=tenant.tenant_id,
+            school_id=school_id,
+            file_content=content,
+            preview_only=preview,
+            created_by_id=UUID(current_user["user_id"]),
+        )
+    except UserServiceError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+    # Audit log on actual import (not preview)
+    if not preview and result["created"] > 0:
+        audit = AuditService(db)
+        await audit.log(
+            event_type=AuditEventType.ACCOUNT_CREATED,
+            tenant_id=tenant.tenant_id,
+            user_id=UUID(current_user["user_id"]),
+            target_type="user",
+            target_id=None,
+            details={
+                "action": "bulk_import",
+                "total": result["total"],
+                "created": result["created"],
+                "errors": len(result["errors"]),
+            },
+        )
+
+    return result
+
+
+# =========================
+# Self-Service Endpoints
+# =========================
+
+
+@router.get(
+    "/me/schools",
+    response_model=list[MySchoolRoleResponse],
+    summary="Get current user's school roles",
+    dependencies=[Depends(require_permissions("self.read"))],
+)
+async def get_my_schools(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> list[MySchoolRoleResponse]:
+    service = UserService(db)
+    user_id = UUID(current_user["user_id"])
+    items = await service.get_user_school_roles(
+        tenant_id=tenant.tenant_id,
+        user_id=user_id,
+    )
+    return [MySchoolRoleResponse(**item) for item in items]
+
+
+# =========================
+# Single User Endpoints
+# =========================
+
+
 @router.get(
     "/{user_id}",
     response_model=UserResponse,
@@ -264,15 +406,22 @@ async def update_user(
             detail="User not found",
         )
 
-    # Token blacklisting: if status was changed to suspended/deactivated via PUT,
-    # blacklist all their tokens so they are immediately logged out.
+    # Token blacklisting: invalidate sessions when status or role changes via PUT,
+    # so the user picks up new permissions / is logged out immediately.
+    needs_blacklist = False
     if data.status in (UserStatus.SUSPENDED, UserStatus.DEACTIVATED):
+        needs_blacklist = True
+    if data.role is not None:
+        # Role changed — JWT permissions claim is now stale
+        needs_blacklist = True
+
+    if needs_blacklist:
         try:
             blacklist_service = await get_token_blacklist_service()
             await blacklist_service.blacklist_user_tokens(str(user_id))
-            logger.info("user_tokens_blacklisted_via_put", user_id=str(user_id), new_status=data.status.value)
+            logger.info("user_tokens_blacklisted_via_put", user_id=str(user_id))
         except Exception:
-            logger.error("token_blacklist_failed_via_put", user_id=str(user_id), exc_info=True)
+            logger.warning("token_blacklist_failed_via_put", user_id=str(user_id))
 
     # Audit: log user profile update
     audit = AuditService(db)
@@ -383,6 +532,14 @@ async def update_user_role(
         target_id=user_id,
         details={"new_role": data.role.value},
     )
+
+    # Invalidate existing sessions so the user picks up new role permissions
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(user_id))
+        logger.info("user_tokens_blacklisted_on_role_change", user_id=str(user_id), new_role=data.role.value)
+    except Exception:
+        logger.warning("token_blacklist_failed_on_role_change", user_id=str(user_id))
 
     return _user_to_response(user)
 
@@ -655,3 +812,119 @@ async def invite_user(
         status=new_user.status,
         created_at=new_user.created_at,
     )
+
+
+# =========================
+# MFA Admin Endpoints
+# =========================
+
+
+@router.delete(
+    "/{user_id}/mfa",
+    summary="Admin: force-disable MFA for a user",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permissions("users.update"))],
+)
+async def admin_disable_user_mfa(
+    user_id: UUID,
+    current_user: ValidatedUser,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> None:
+    """
+    Force-disable MFA for a user (e.g., user lost their phone).
+
+    Requires `users.update` permission. Audit logged.
+    """
+    mfa_service = MFAService(db)
+    try:
+        await mfa_service.admin_disable_mfa(
+            target_user_id=user_id,
+            tenant_id=UUID(tenant.tenant_id),
+            admin_user_id=UUID(current_user["user_id"]),
+        )
+    except MFAError as e:
+        raise HTTPException(status_code=400, detail=e.message)
+
+    # Audit log
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.MFA_DISABLED,
+        tenant_id=UUID(tenant.tenant_id),
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=str(user_id),
+        details={"action": "admin_force_disable"},
+    )
+
+
+# =========================
+# Custom Role Assignment
+# =========================
+
+
+@router.post(
+    "/{user_id}/custom-role",
+    response_model=UserResponse,
+    summary="Assign or clear a custom role for a user",
+    dependencies=[Depends(require_permissions("users.update"))],
+)
+async def assign_custom_role(
+    user_id: UUID,
+    data: CustomRoleAssign,
+    tenant: RequestTenant,
+    current_user: ValidatedUser,
+    db: DatabaseSession,
+):
+    """
+    Assign a custom role to a user, or clear it by passing null.
+
+    When a custom role is assigned, the user's JWT permissions will be
+    sourced from the custom role instead of the static ROLE_PERMISSIONS
+    on their next token refresh or login.
+
+    The custom role's base_role must match the user's role — a teacher
+    cannot be assigned a role based on school_admin.
+
+    Requires `users.update` permission.
+    """
+    service = CustomRoleService(db)
+    try:
+        user = await service.assign_role_to_user(
+            user_id=user_id,
+            custom_role_id=data.custom_role_id,
+            tenant_id=tenant.tenant_id,
+        )
+    except CustomRoleError as e:
+        status_map = {
+            "not_found": 404,
+            "base_role_mismatch": 400,
+        }
+        raise HTTPException(
+            status_code=status_map.get(e.code, 400),
+            detail=e.message,
+        )
+
+    # Audit trail
+    audit = AuditService(db)
+    await audit.log(
+        event_type=AuditEventType.USER_ROLE_CHANGED,
+        tenant_id=tenant.tenant_id,
+        user_id=UUID(current_user["user_id"]),
+        target_type="user",
+        target_id=str(user_id),
+        details={
+            "action": "custom_role_assigned" if data.custom_role_id else "custom_role_cleared",
+            "custom_role_id": str(data.custom_role_id) if data.custom_role_id else None,
+        },
+    )
+
+    # Invalidate tokens so the user picks up the new custom role permissions
+    try:
+        blacklist_service = await get_token_blacklist_service()
+        await blacklist_service.blacklist_user_tokens(str(user_id))
+        logger.info("user_tokens_blacklisted_on_custom_role_assign", user_id=str(user_id))
+    except Exception:
+        logger.warning("token_blacklist_failed_on_custom_role_assign", user_id=str(user_id))
+
+    return _user_to_response(user)

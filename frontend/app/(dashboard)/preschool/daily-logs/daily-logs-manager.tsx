@@ -48,11 +48,13 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
 import { StudentCombobox } from "@/components/preschool";
+import { AllergyAlert } from "@/components/preschool/AllergyAlert";
 import { getStudents } from "@/actions/students.action";
 import {
   getDailyLog,
   createDailyLog,
   updateDailyLog,
+  getClassAllergyAlerts,
 } from "@/actions/preschool.action";
 import type {
   Class,
@@ -63,6 +65,7 @@ import type {
   NapQuality,
   MealEntry,
   Student,
+  AllergyAlertResponse,
 } from "@/types";
 
 interface DailyLogsManagerProps {
@@ -116,6 +119,7 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
   // Data state
   const [students, setStudents] = useState<Student[]>([]);
   const [existingLog, setExistingLog] = useState<DailyActivityLog | null>(null);
+  const [allergyAlerts, setAllergyAlerts] = useState<AllergyAlertResponse[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -140,25 +144,29 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
   const [isLoadingLog, setIsLoadingLog] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Fetch students when class changes
+  // Fetch students and allergy alerts when class changes
   useEffect(() => {
     async function fetchStudents() {
       if (!selectedClassId) {
         setStudents([]);
         setSelectedStudentId("");
+        setAllergyAlerts([]);
         return;
       }
 
       setIsLoadingStudents(true);
       try {
-        const result = await getStudents({
-          class_id: selectedClassId,
-          page_size: 100,
-        });
+        const [studentsResult, alertsResult] = await Promise.all([
+          getStudents({
+            class_id: selectedClassId,
+            page_size: 100,
+          }),
+          getClassAllergyAlerts(selectedClassId),
+        ]);
 
-        if (result.success && result.data) {
+        if (studentsResult.success && studentsResult.data) {
           setStudents(
-            result.data.items.map((s) => ({
+            studentsResult.data.items.map((s) => ({
               id: s.id,
               student_id: s.student_id,
               first_name: s.first_name,
@@ -178,8 +186,15 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
         } else {
           setStudents([]);
         }
+
+        if (alertsResult.success && alertsResult.data) {
+          setAllergyAlerts(alertsResult.data);
+        } else {
+          setAllergyAlerts([]);
+        }
       } catch {
         setStudents([]);
+        setAllergyAlerts([]);
       } finally {
         setIsLoadingStudents(false);
       }
@@ -431,6 +446,14 @@ export function DailyLogsManager({ classes }: DailyLogsManagerProps) {
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Allergy Alert */}
+            {allergyAlerts.length > 0 && (
+              <AllergyAlert
+                alerts={allergyAlerts}
+                selectedStudentId={selectedStudentId}
+              />
+            )}
+
             {/* Header with Save Button */}
             <div className="flex items-center justify-between">
               <div>

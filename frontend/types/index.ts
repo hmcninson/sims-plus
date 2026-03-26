@@ -279,8 +279,12 @@ export interface Student {
   blood_group?: string;
   medical_conditions?: string;
   allergies?: string;
+  structured_medical?: StructuredMedical | null;
+  birth_certificate_number?: string;
   photo_url?: string;
   notes?: string;
+  enrollment_session?: PreschoolSessionType;
+  dietary_requirements?: DietaryRequirements;
   created_at: string;
   updated_at: string;
 }
@@ -334,6 +338,8 @@ export interface StudentCreate {
   blood_group?: string;
   medical_conditions?: string;
   allergies?: string;
+  structured_medical?: StructuredMedical | null;
+  birth_certificate_number?: string;
   photo_url?: string;
   notes?: string;
   guardians?: GuardianWithRelationship[];
@@ -364,6 +370,8 @@ export interface StudentUpdate {
   blood_group?: string;
   medical_conditions?: string;
   allergies?: string;
+  structured_medical?: StructuredMedical | null;
+  birth_certificate_number?: string;
   photo_url?: string;
   notes?: string;
 }
@@ -793,6 +801,9 @@ export interface AcademicSettingsUpdate {
 
 export type StaffType = "teaching" | "non_teaching" | "administrative";
 export type StaffStatus = "active" | "on_leave" | "suspended" | "terminated" | "retired";
+export type EmploymentType = "full_time" | "part_time" | "contract" | "temporary" | "intern";
+export type StaffDocumentType = "contract" | "certificate" | "cv_resume" | "id_document" | "reference_letter" | "disciplinary" | "training" | "medical" | "other";
+export type EmploymentEventType = "hired" | "promoted" | "demoted" | "transferred" | "title_changed" | "department_changed" | "status_changed" | "salary_changed" | "contract_renewed";
 
 export interface Staff {
   id: string;
@@ -829,8 +840,54 @@ export interface Staff {
   school_id?: string;
   user_id?: string;
   school_name?: string;
+  tin_number?: string;
+  employment_type?: EmploymentType;
+  ges_staff_id?: string;
+  nationality?: string;
+  marital_status?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface StaffDocument {
+  id: string;
+  staff_id: string;
+  document_type: StaffDocumentType;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  description?: string;
+  download_url: string;
+  uploaded_by?: string;
+  created_at: string;
+}
+
+export interface StaffEmploymentHistory {
+  id: string;
+  staff_id: string;
+  event_type: EmploymentEventType;
+  effective_date: string;
+  previous_value?: string;
+  new_value?: string;
+  previous_department_id?: string;
+  new_department_id?: string;
+  previous_job_title?: string;
+  new_job_title?: string;
+  notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export interface CreateEmploymentEvent {
+  event_type: EmploymentEventType;
+  effective_date: string;
+  previous_value?: string;
+  new_value?: string;
+  previous_department_id?: string;
+  new_department_id?: string;
+  previous_job_title?: string;
+  new_job_title?: string;
+  notes?: string;
 }
 
 export interface StaffListItem {
@@ -882,6 +939,11 @@ export interface StaffCreate {
   notes?: string;
   school_id?: string;
   user_id?: string;
+  tin_number?: string;
+  employment_type?: EmploymentType;
+  ges_staff_id?: string;
+  nationality?: string;
+  marital_status?: string;
 }
 
 export interface StaffUpdate {
@@ -916,6 +978,11 @@ export interface StaffUpdate {
   notes?: string;
   school_id?: string;
   user_id?: string;
+  tin_number?: string;
+  employment_type?: EmploymentType;
+  ges_staff_id?: string;
+  nationality?: string;
+  marital_status?: string;
 }
 
 export interface StaffStats {
@@ -1111,6 +1178,53 @@ export interface StaffAttendanceSummary {
   attendance_rate: number;
 }
 
+export interface StaffAttendanceEntry {
+  id?: string;
+  staff_id: string;
+  staff_name: string;
+  staff_code: string;
+  department?: string;
+  staff_type: StaffType;
+  photo_url?: string;
+  status: AttendanceStatus;
+  remarks?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  date: string;
+}
+
+export interface StaffAttendanceReportData {
+  total_staff: number;
+  date_range: { start: string; end: string };
+  overall_rate: number;
+  daily_breakdown: Array<{
+    date: string;
+    present: number;
+    absent: number;
+    late: number;
+    excused: number;
+    sick: number;
+    rate: number;
+  }>;
+  by_department: Array<{
+    department: string;
+    total: number;
+    present_rate: number;
+    absent_rate: number;
+    late_rate: number;
+  }>;
+  by_staff: Array<{
+    staff_id: string;
+    staff_name: string;
+    department?: string;
+    total_days: number;
+    present: number;
+    absent: number;
+    late: number;
+    rate: number;
+  }>;
+}
+
 // =========================
 // Exam Types
 // =========================
@@ -1258,6 +1372,7 @@ export interface ScoreEntry {
   score?: number;
   is_absent?: boolean;
   teacher_remark?: string;
+  effort_grade?: string | null;
 }
 
 export interface ExamScoreBulkCreate {
@@ -1270,6 +1385,7 @@ export interface ExamScoreUpdate {
   is_absent?: boolean;
   teacher_remark?: string;
   grading_scale_id?: string;
+  effort_grade?: string | null;
 }
 
 export interface ScoreEntryForm {
@@ -1284,6 +1400,8 @@ export interface ScoreEntryForm {
   pass_mark: number;
   grading_scale_id?: string;
   students: ScoreEntryStudent[];
+  curriculum_type?: string;
+  show_effort_grade?: boolean;
 }
 
 export interface ScoreEntryStudent {
@@ -1297,6 +1415,7 @@ export interface ScoreEntryStudent {
   current_grade?: string;
   is_absent: boolean;
   teacher_remark?: string;
+  effort_grade?: string | null;
 }
 
 export interface BulkScoreResult {
@@ -1425,6 +1544,12 @@ export interface TermReportWithDetails extends TermReport {
   subject_results: SubjectResult[];
   class_size?: number;
   subjects_count?: number;
+  /** Curriculum type from the curriculum profile (e.g., "ges", "montessori", "cambridge") */
+  curriculum_type?: string;
+  /** Template key from report config (e.g., "dual_track") */
+  template_key?: string;
+  /** JSONB extra data (Montessori narratives, dual-track data, etc.) */
+  extra_data?: Record<string, unknown>;
 }
 
 export interface TermReportGenerate {
@@ -1803,6 +1928,9 @@ export interface PreschoolReport {
   next_term_goals?: string[];
   class_teacher_remark?: string;
   head_teacher_remark?: string;
+  report_type: "term" | "interim" | "progress_update";
+  photo_urls?: { url: string; caption?: string }[];
+  chart_data?: { labels: string[]; values: number[]; max_value: number };
   is_published: boolean;
   published_at?: string;
   created_at: string;
@@ -1841,6 +1969,279 @@ export interface PreschoolReportUpdate {
   next_term_goals?: string[];
   class_teacher_remark?: string;
   head_teacher_remark?: string;
+}
+
+// =========================
+// Preschool Phase 1: Safety & Enrollment Types
+// =========================
+
+// Enums
+export type PreschoolSessionType = "half_day_morning" | "half_day_afternoon" | "full_day" | "extended";
+export type PreschoolIncidentType = "accident" | "illness" | "behavioral" | "allergic_reaction" | "other";
+export type PreschoolIncidentSeverity = "minor" | "moderate" | "serious";
+export type PreschoolIncidentStatus = "reported" | "reviewed" | "parent_notified" | "resolved";
+
+// Allergy / Dietary
+export interface AllergyEntry {
+  allergen: string;
+  severity: "mild" | "moderate" | "severe";
+  reaction?: string;
+  medication?: string;
+}
+
+export interface DietaryRequirements {
+  allergies: AllergyEntry[];
+  dietary_restrictions: string[];
+  notes?: string;
+}
+
+export interface AllergyAlertResponse {
+  student_id: string;
+  student_name: string;
+  allergies: AllergyEntry[];
+  dietary_restrictions: string[];
+  notes?: string;
+}
+
+// Incidents
+export interface PreschoolIncident {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  incident_type: PreschoolIncidentType;
+  severity: PreschoolIncidentSeverity;
+  status: PreschoolIncidentStatus;
+  incident_date: string;
+  incident_time?: string;
+  location?: string;
+  description: string;
+  action_taken?: string;
+  first_aid_given: boolean;
+  medical_attention_required: boolean;
+  parent_notified_at?: string;
+  parent_notified_by?: string;
+  witnesses?: string[];
+  attachments?: ProgressObservationAttachment[];
+  follow_up_notes?: string;
+  resolved_at?: string;
+  resolved_by?: string;
+  reported_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PreschoolIncidentCreate {
+  student_id: string;
+  incident_type: PreschoolIncidentType;
+  severity: PreschoolIncidentSeverity;
+  incident_date: string;
+  incident_time?: string;
+  location?: string;
+  description: string;
+  action_taken?: string;
+  first_aid_given?: boolean;
+  medical_attention_required?: boolean;
+  witnesses?: string[];
+  attachments?: ProgressObservationAttachment[];
+}
+
+export interface PreschoolIncidentUpdate {
+  incident_type?: PreschoolIncidentType;
+  severity?: PreschoolIncidentSeverity;
+  location?: string;
+  description?: string;
+  action_taken?: string;
+  first_aid_given?: boolean;
+  medical_attention_required?: boolean;
+  witnesses?: string[];
+  attachments?: ProgressObservationAttachment[];
+  follow_up_notes?: string;
+}
+
+// Authorized Pickups
+export interface AuthorizedPickup {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  full_name: string;
+  phone: string;
+  relationship_to_student?: string;
+  photo_url?: string;
+  id_document_url?: string;
+  is_active: boolean;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthorizedPickupCreate {
+  full_name: string;
+  phone: string;
+  relationship_to_student?: string;
+  photo_url?: string;
+  id_document_url?: string;
+  notes?: string;
+}
+
+export interface AuthorizedPickupUpdate {
+  full_name?: string;
+  phone?: string;
+  relationship_to_student?: string;
+  photo_url?: string;
+  id_document_url?: string;
+  is_active?: boolean;
+  notes?: string;
+}
+
+// Pickup Logs
+export interface PickupLog {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  pickup_date: string;
+  pickup_time: string;
+  picked_up_by_type: "guardian" | "authorized_person";
+  picked_up_by_guardian_id?: string;
+  picked_up_by_authorized_id?: string;
+  verified_by?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface PickupLogCreate {
+  student_id: string;
+  pickup_time: string;
+  picked_up_by_type: "guardian" | "authorized_person";
+  picked_up_by_guardian_id?: string;
+  picked_up_by_authorized_id?: string;
+  notes?: string;
+}
+
+// =========================
+// Preschool Phase 2: Enhancement & Integration Types
+// =========================
+
+// Learning Stories
+export interface LearningStory {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  term_id?: string;
+  title: string;
+  narrative: string;
+  learning_area_ids?: string[];
+  skill_ids?: string[];
+  observation_ids?: string[];
+  attachments?: ProgressObservationAttachment[];
+  is_shared_with_parents: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LearningStoryCreate {
+  student_id: string;
+  term_id?: string;
+  title: string;
+  narrative: string;
+  learning_area_ids?: string[];
+  skill_ids?: string[];
+  observation_ids?: string[];
+  attachments?: ProgressObservationAttachment[];
+  is_shared_with_parents?: boolean;
+}
+
+export interface LearningStoryUpdate {
+  title?: string;
+  narrative?: string;
+  learning_area_ids?: string[];
+  skill_ids?: string[];
+  observation_ids?: string[];
+  attachments?: ProgressObservationAttachment[];
+  is_shared_with_parents?: boolean;
+}
+
+// Extended Care
+export type ExtendedCareSessionType = "before_care" | "after_care";
+
+export interface ExtendedCareSession {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  session_date: string;
+  session_type: ExtendedCareSessionType;
+  check_in_time: string;
+  check_out_time?: string;
+  duration_minutes?: number;
+  checked_in_by?: string;
+  checked_out_by?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface ExtendedCareBillingSummary {
+  student_id: string;
+  student_name: string;
+  total_sessions: number;
+  total_minutes: number;
+  total_hours: number;
+  rate_per_hour?: number;
+  flat_rate?: number;
+  estimated_charge: number;
+}
+
+// Caregiver Ratios
+export interface CaregiverRatio {
+  id: string;
+  tenant_id: string;
+  class_id: string;
+  academic_year_id: string;
+  max_children_per_caregiver: number;
+  current_caregiver_count: number;
+  max_capacity: number;
+  current_enrollment: number;
+  is_compliant: boolean;
+}
+
+// Timeline
+export interface TimelineEntry {
+  date: string;
+  type: "assessment" | "observation" | "incident" | "learning_story";
+  title: string;
+  summary?: string;
+  details: Record<string, unknown>;
+  id: string;
+}
+
+// =========================
+// Preschool Phase 3: Supplies Types
+// =========================
+
+export interface PreschoolSupply {
+  id: string;
+  tenant_id: string;
+  student_id: string;
+  item_name: string;
+  quantity_remaining: number;
+  low_stock_threshold: number;
+  is_low_stock: boolean;
+  last_restocked_at?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PreschoolSupplyCreate {
+  item_name: string;
+  quantity_remaining?: number;
+  low_stock_threshold?: number;
+  notes?: string;
+}
+
+export interface PreschoolSupplyUpdate {
+  item_name?: string;
+  low_stock_threshold?: number;
+  notes?: string;
 }
 
 // =========================
@@ -3147,6 +3548,309 @@ export interface TransportStats {
   active_routes: number;
   total_students_assigned: number;
   trips_today: number;
+}
+
+// =========================
+// Student History Types
+// =========================
+
+export interface ClassHistoryRecord {
+  id: string;
+  student_id: string;
+  school_id: string;
+  class_id: string;
+  section_id: string | null;
+  academic_year_id: string;
+  enrolled_date: string;
+  left_date: string | null;
+  reason: string | null;
+  created_at: string;
+  class_name: string | null;
+  section_name: string | null;
+  academic_year_name: string | null;
+}
+
+export interface ClassHistoryListResponse {
+  records: ClassHistoryRecord[];
+  total: number;
+}
+
+export interface StatusChangeRecord {
+  id: string;
+  student_id: string;
+  school_id: string;
+  from_status: string | null;
+  to_status: string;
+  reason: string | null;
+  effective_date: string;
+  performed_by: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  performed_by_name: string | null;
+}
+
+export interface StatusHistoryListResponse {
+  records: StatusChangeRecord[];
+  total: number;
+}
+
+export interface ClassEnrollmentBreakdown {
+  class_id: string;
+  class_name: string;
+  total: number;
+  male: number;
+  female: number;
+  boarders: number;
+  day_students: number;
+}
+
+export interface EnrollmentTrend {
+  academic_year_id: string;
+  academic_year_name: string;
+  total_enrolled: number;
+  new_enrollments: number;
+  withdrawals: number;
+  transfers_out: number;
+  graduations: number;
+}
+
+export interface EnrollmentAnalyticsResponse {
+  total_active: number;
+  total_inactive: number;
+  total_graduated: number;
+  total_transferred: number;
+  total_withdrawn: number;
+  total_suspended: number;
+  by_class: ClassEnrollmentBreakdown[];
+  trends: EnrollmentTrend[];
+  attrition_rate: number;
+  new_enrollment_rate: number;
+}
+
+// =========================
+// Withdrawal & Transfer Types
+// =========================
+
+export interface OutstandingInvoiceSummary {
+  invoice_id: string;
+  invoice_number: string;
+  amount: number;
+  balance: number;
+  status: string;
+  due_date: string | null;
+}
+
+export interface OutstandingFeeCheckResponse {
+  has_outstanding: boolean;
+  total_outstanding: number;
+  invoice_count: number;
+  invoices: OutstandingInvoiceSummary[];
+}
+
+export interface WithdrawalInitiateRequest {
+  reason: string;
+  effective_date: string;
+  fee_override?: boolean;
+}
+
+export interface WithdrawalClearanceResponse {
+  id: string;
+  student_id: string;
+  status_change_id: string | null;
+  type: string;
+  library_cleared: boolean;
+  finance_cleared: boolean;
+  property_cleared: boolean;
+  boarding_cleared: boolean | null;
+  outstanding_fees: number | null;
+  fee_override: boolean;
+  notes: string | null;
+  is_complete: boolean;
+  cleared_by: string | null;
+  cleared_at: string | null;
+  created_at: string;
+}
+
+export interface ClearanceUpdateRequest {
+  library_cleared?: boolean;
+  finance_cleared?: boolean;
+  property_cleared?: boolean;
+  boarding_cleared?: boolean;
+  notes?: string;
+}
+
+export interface WithdrawalCompleteResponse {
+  student_id: string;
+  status: string;
+  clearance_completed: boolean;
+  withdrawal_letter_available: boolean;
+}
+
+export interface TransferInitiateRequest {
+  destination_school: string;
+  reason: string;
+  effective_date: string;
+  fee_override?: boolean;
+}
+
+export interface ChainTransferRequest {
+  to_school_id: string;
+  to_class_id: string;
+  to_section_id?: string;
+  reason: string;
+  effective_date: string;
+  fee_override?: boolean;
+}
+
+export interface ChainTransferResponse {
+  student_id: string;
+  from_school_id: string;
+  to_school_id: string;
+  to_class_id: string;
+  status: string;
+}
+
+// =========================
+// Student Documents
+// =========================
+
+export interface StudentDocumentResponse {
+  id: string;
+  student_id: string;
+  document_type: string;
+  title: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface DocumentListResponse {
+  documents: StudentDocumentResponse[];
+  total: number;
+  total_size_bytes: number;
+}
+
+export interface DocumentDownloadResponse {
+  download_url: string;
+  expires_in: number;
+}
+
+// =========================
+// Previous Schools
+// =========================
+
+export interface PreviousSchoolRecord {
+  id: string;
+  student_id: string;
+  school_name: string;
+  school_address: string | null;
+  last_class: string | null;
+  years_attended: string | null;
+  transfer_reason: string | null;
+  leaving_certificate_ref: string | null;
+  created_at: string;
+}
+
+export interface PreviousSchoolCreate {
+  school_name: string;
+  school_address?: string;
+  last_class?: string;
+  years_attended?: string;
+  transfer_reason?: string;
+  leaving_certificate_ref?: string;
+}
+
+export interface PreviousSchoolUpdate {
+  school_name?: string;
+  school_address?: string;
+  last_class?: string;
+  years_attended?: string;
+  transfer_reason?: string;
+  leaving_certificate_ref?: string;
+}
+
+// =========================
+// Structured Medical
+// =========================
+
+export interface MedicalCondition {
+  name: string;
+  severity?: string;
+  diagnosed_date?: string;
+  notes?: string;
+}
+
+export interface MedicalAllergy {
+  name: string;
+  severity?: string;
+  reaction?: string;
+}
+
+export interface MedicalMedication {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  prescriber?: string;
+}
+
+export interface StructuredMedical {
+  conditions: MedicalCondition[];
+  allergies: MedicalAllergy[];
+  medications: MedicalMedication[];
+  emergency_protocol?: string;
+  doctor_name?: string;
+  doctor_phone?: string;
+  hospital?: string;
+  blood_group?: string;
+}
+
+// =========================
+// Promotion Rules
+// =========================
+
+export interface PromotionRule {
+  id: string;
+  academic_year_id: string;
+  academic_year_name?: string;
+  class_id: string | null;
+  class_name?: string | null;
+  min_average: number | null;
+  min_attendance_percent: number | null;
+  core_passes_required: number | null;
+  pass_mark: number | null;
+  auto_apply: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PromotionRuleCreate {
+  academic_year_id: string;
+  class_id?: string | null;
+  min_average?: number | null;
+  min_attendance_percent?: number | null;
+  core_passes_required?: number | null;
+  pass_mark?: number | null;
+  auto_apply?: boolean;
+  is_active?: boolean;
+}
+
+export interface PromotionRuleUpdate {
+  academic_year_id?: string;
+  class_id?: string | null;
+  min_average?: number | null;
+  min_attendance_percent?: number | null;
+  core_passes_required?: number | null;
+  pass_mark?: number | null;
+  auto_apply?: boolean;
+  is_active?: boolean;
+}
+
+export interface PromotionRuleListResponse {
+  items: PromotionRule[];
+  total: number;
 }
 
 // Re-export School types

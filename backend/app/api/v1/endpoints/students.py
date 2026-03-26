@@ -11,13 +11,14 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from sqlalchemy import select
 
 from app.api.deps import (
     DatabaseSession,
     RequestTenant,
+    ValidatedUser,
     require_permissions,
 )
 from app.models.school import School
@@ -45,7 +46,31 @@ from app.schemas.student import (
     # Promotion
     StudentPromotionRequest,
     StudentPromotionResponse,
+    # History & Analytics
+    StudentClassHistoryListResponse,
+    StudentClassHistoryResponse,
+    StudentStatusChangeListResponse,
+    StudentStatusChangeResponse,
+    EnrollmentAnalyticsResponse,
+    # Lifecycle (Withdrawal / Transfer)
+    OutstandingFeeCheckResponse,
+    WithdrawalInitiateRequest,
+    WithdrawalClearanceResponse,
+    WithdrawalClearanceUpdateRequest,
+    WithdrawalCompleteResponse,
+    TransferInitiateRequest,
+    ChainTransferRequest,
+    ChainTransferResponse,
+    # Documents & Previous Schools
+    StudentDocumentUploadResponse,
+    StudentDocumentListResponse,
+    StudentDocumentDownloadResponse,
+    PreviousSchoolCreate,
+    PreviousSchoolUpdate,
+    PreviousSchoolResponse,
+    StructuredMedical,
 )
+from app.models.student import StudentDocumentType
 from app.services.student import StudentService, StudentServiceError
 
 router = APIRouter()
@@ -296,6 +321,47 @@ async def get_student_stats(
 
 
 @router.get(
+    "/enrollment-analytics",
+    response_model=EnrollmentAnalyticsResponse,
+    summary="Get enrollment analytics",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_enrollment_analytics(
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    school_id: Optional[UUID] = Query(None, description="School ID (required for chain tenants)"),
+) -> EnrollmentAnalyticsResponse:
+    """Get enhanced enrollment analytics with status counts, class breakdown, and trends.
+
+    For single-school tenants, school_id is resolved automatically.
+    For chain tenants, school_id must be provided.
+    """
+    service = StudentService(db)
+
+    # Resolve school_id: use provided value, or look up first school for tenant
+    resolved_school_id = school_id
+    if not resolved_school_id:
+        school_result = await db.execute(
+            select(School.id).where(School.tenant_id == tenant.tenant_id).limit(1)
+        )
+        resolved_school_id = school_result.scalar_one_or_none()
+        if not resolved_school_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No school found for this tenant. Provide school_id.",
+            )
+
+    try:
+        analytics = await service.get_enrollment_analytics(
+            tenant_id=tenant.tenant_id,
+            school_id=resolved_school_id,
+        )
+        return EnrollmentAnalyticsResponse(**analytics)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
     "/export",
     summary="Export students as CSV",
     dependencies=[Depends(require_permissions("students.read"))],
@@ -487,6 +553,844 @@ async def delete_student(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Student not found",
         )
+
+
+@router.get(
+    "/{student_id}/class-history",
+    response_model=StudentClassHistoryListResponse,
+    summary="Get student class assignment history",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_student_class_history(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> StudentClassHistoryListResponse:
+    """Get the full class assignment history for a student.
+
+    Returns every class/section a student has been enrolled in, ordered
+    by enrolled_date descending (most recent first).
+    """
+    service = StudentService(db)
+
+    # Verify student exists and belongs to tenant
+    student = await service.get_student(tenant.tenant_id, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    records = await service.get_class_history(
+        tenant_id=tenant.tenant_id,
+        student_id=student_id,
+    )
+    return StudentClassHistoryListResponse(
+        records=[StudentClassHistoryResponse(**r) for r in records],
+        total=len(records),
+    )
+
+
+@router.get(
+    "/{student_id}/status-history",
+    response_model=StudentStatusChangeListResponse,
+    summary="Get student status change history",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_student_status_history(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> StudentStatusChangeListResponse:
+    """Get the full status change timeline for a student.
+
+    Returns every enrollment status transition (e.g., active -> suspended),
+    ordered by created_at descending (most recent first).
+    """
+    service = StudentService(db)
+
+    # Verify student exists and belongs to tenant
+    student = await service.get_student(tenant.tenant_id, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    records = await service.get_status_history(
+        tenant_id=tenant.tenant_id,
+        student_id=student_id,
+    )
+    return StudentStatusChangeListResponse(
+        records=[StudentStatusChangeResponse(**r) for r in records],
+        total=len(records),
+    )
+
+
+# =========================
+# Lifecycle Endpoints (Withdrawal / Transfer)
+# =========================
+
+
+@router.get(
+    "/{student_id}/outstanding-fees",
+    response_model=OutstandingFeeCheckResponse,
+    summary="Check outstanding fees",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def check_outstanding_fees(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> OutstandingFeeCheckResponse:
+    """Check outstanding invoices for a student.
+
+    Returns advisory fee information -- does not block any action.
+    """
+    service = StudentService(db)
+    try:
+        result = await service.check_outstanding_fees(tenant.tenant_id, student_id)
+        return OutstandingFeeCheckResponse(**result)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.post(
+    "/{student_id}/withdraw",
+    response_model=dict,
+    summary="Initiate student withdrawal",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def initiate_withdrawal(
+    student_id: UUID,
+    data: WithdrawalInitiateRequest,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> dict:
+    """Start the withdrawal process by creating a clearance checklist.
+
+    The student status is NOT changed until complete_withdrawal is called.
+    """
+    service = StudentService(db)
+
+    # Resolve school_id for the student
+    school_id = await _resolve_school_id(db, tenant.tenant_id)
+
+    try:
+        result = await service.initiate_withdrawal(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            school_id=school_id,
+            reason=data.reason,
+            effective_date=data.effective_date,
+            performed_by=current_user["user_id"],
+            fee_override=data.fee_override,
+        )
+        return result
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
+    "/{student_id}/withdrawal-clearance",
+    response_model=WithdrawalClearanceResponse,
+    summary="Get withdrawal clearance",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_withdrawal_clearance(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> WithdrawalClearanceResponse:
+    """Get the pending withdrawal/transfer clearance for a student."""
+    service = StudentService(db)
+    clearance = await service.get_withdrawal_clearance(tenant.tenant_id, student_id)
+    if not clearance:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No pending clearance found for this student",
+        )
+    return WithdrawalClearanceResponse(
+        id=clearance.id,
+        student_id=clearance.student_id,
+        status_change_id=clearance.status_change_id,
+        type=clearance.type,
+        library_cleared=clearance.library_cleared,
+        finance_cleared=clearance.finance_cleared,
+        property_cleared=clearance.property_cleared,
+        boarding_cleared=clearance.boarding_cleared,
+        outstanding_fees=float(clearance.outstanding_fees) if clearance.outstanding_fees else None,
+        fee_override=clearance.fee_override,
+        notes=clearance.notes,
+        is_complete=clearance.is_complete,
+        cleared_by=clearance.cleared_by,
+        cleared_at=clearance.cleared_at.isoformat() if clearance.cleared_at else None,
+        created_at=clearance.created_at.isoformat() if clearance.created_at else "",
+    )
+
+
+@router.patch(
+    "/{student_id}/withdrawal-clearance/{clearance_id}",
+    response_model=WithdrawalClearanceResponse,
+    summary="Update clearance items",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def update_clearance(
+    student_id: UUID,
+    clearance_id: UUID,
+    data: WithdrawalClearanceUpdateRequest,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> WithdrawalClearanceResponse:
+    """Update withdrawal/transfer clearance checklist items.
+
+    Auto-completes the clearance when all required items are cleared.
+    """
+    service = StudentService(db)
+    try:
+        clearance = await service.update_clearance(
+            tenant_id=tenant.tenant_id,
+            clearance_id=clearance_id,
+            student_id=student_id,
+            **data.model_dump(exclude_unset=True),
+        )
+        return WithdrawalClearanceResponse(
+            id=clearance.id,
+            student_id=clearance.student_id,
+            status_change_id=clearance.status_change_id,
+            type=clearance.type,
+            library_cleared=clearance.library_cleared,
+            finance_cleared=clearance.finance_cleared,
+            property_cleared=clearance.property_cleared,
+            boarding_cleared=clearance.boarding_cleared,
+            outstanding_fees=float(clearance.outstanding_fees) if clearance.outstanding_fees else None,
+            fee_override=clearance.fee_override,
+            notes=clearance.notes,
+            is_complete=clearance.is_complete,
+            cleared_by=clearance.cleared_by,
+            cleared_at=clearance.cleared_at.isoformat() if clearance.cleared_at else None,
+            created_at=clearance.created_at.isoformat() if clearance.created_at else "",
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.post(
+    "/{student_id}/complete-withdrawal",
+    response_model=WithdrawalCompleteResponse,
+    summary="Complete student withdrawal",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def complete_withdrawal(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> WithdrawalCompleteResponse:
+    """Finalize the withdrawal after clearance is complete.
+
+    Changes student status to 'withdrawn' and records the status change.
+    """
+    service = StudentService(db)
+    try:
+        student = await service.complete_withdrawal(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            performed_by=current_user["user_id"],
+        )
+        return WithdrawalCompleteResponse(
+            student_id=student.id,
+            status=student.status.value,
+            clearance_completed=True,
+            withdrawal_letter_available=True,
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.post(
+    "/{student_id}/transfer",
+    response_model=dict,
+    summary="Initiate external transfer",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def initiate_transfer(
+    student_id: UUID,
+    data: TransferInitiateRequest,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> dict:
+    """Start an external transfer process with clearance checklist.
+
+    The student status is NOT changed until complete_transfer is called.
+    """
+    service = StudentService(db)
+
+    school_id = await _resolve_school_id(db, tenant.tenant_id)
+
+    try:
+        result = await service.initiate_transfer(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            school_id=school_id,
+            destination_school=data.destination_school,
+            reason=data.reason,
+            effective_date=data.effective_date,
+            performed_by=current_user["user_id"],
+            fee_override=data.fee_override,
+        )
+        return result
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.post(
+    "/{student_id}/complete-transfer",
+    response_model=StudentResponse,
+    summary="Complete external transfer",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def complete_transfer(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> StudentResponse:
+    """Finalize an external transfer.
+
+    Changes student status to 'transferred' and records the status change.
+    """
+    service = StudentService(db)
+    try:
+        student = await service.complete_transfer(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            performed_by=current_user["user_id"],
+        )
+        return StudentResponse.model_validate(student)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.post(
+    "/{student_id}/chain-transfer",
+    response_model=ChainTransferResponse,
+    summary="Transfer student within school chain",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def chain_transfer(
+    student_id: UUID,
+    data: ChainTransferRequest,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> ChainTransferResponse:
+    """Transfer a student between schools in the same chain.
+
+    Student remains ACTIVE with updated school/class/section.
+    """
+    service = StudentService(db)
+
+    # Resolve the student's current school as the from_school
+    student = await service.get_student(tenant.tenant_id, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Student not found"
+        )
+    if not student.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student does not have a current school assignment",
+        )
+
+    try:
+        updated = await service.transfer_within_chain(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            from_school_id=student.school_id,
+            to_school_id=data.to_school_id,
+            to_class_id=data.to_class_id,
+            to_section_id=data.to_section_id,
+            reason=data.reason,
+            effective_date=data.effective_date,
+            performed_by=current_user["user_id"],
+            fee_override=data.fee_override,
+        )
+        return ChainTransferResponse(
+            student_id=updated.id,
+            from_school_id=student.school_id,
+            to_school_id=data.to_school_id,
+            to_class_id=data.to_class_id,
+            status=updated.status.value,
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
+    "/{student_id}/transfer-certificate",
+    summary="Generate transfer certificate PDF",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_transfer_certificate(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> Response:
+    """Generate and download a transfer certificate as PDF."""
+    service = StudentService(db)
+    try:
+        pdf_bytes = await service.generate_transfer_certificate(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+        )
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="transfer_certificate_{student_id}.pdf"'
+            },
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+@router.get(
+    "/{student_id}/export-record",
+    summary="Export student record",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def export_student_record(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    format: str = Query("json", pattern="^(json|pdf)$", description="Export format: json or pdf"),
+) -> Response:
+    """Export a comprehensive student record as JSON or PDF.
+
+    Includes personal info, class history, status history, academic summary, and finance summary.
+    """
+    service = StudentService(db)
+    try:
+        data = await service.export_student_record(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            format=format,
+        )
+        if format == "pdf":
+            return Response(
+                content=data,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'attachment; filename="student_record_{student_id}.pdf"'
+                },
+            )
+        return Response(
+            content=data,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="student_record_{student_id}.json"'
+            },
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=e.message)
+
+
+# =========================
+# Document Endpoints
+# =========================
+
+
+# Map service error codes to HTTP status codes for document/previous school operations
+_ERROR_CODE_STATUS_MAP = {
+    "student_not_found": status.HTTP_404_NOT_FOUND,
+    "document_not_found": status.HTTP_404_NOT_FOUND,
+    "previous_school_not_found": status.HTTP_404_NOT_FOUND,
+}
+
+
+def _error_status(e: StudentServiceError) -> int:
+    """Resolve HTTP status code from a StudentServiceError code."""
+    return _ERROR_CODE_STATUS_MAP.get(e.code, status.HTTP_400_BAD_REQUEST)
+
+
+@router.post(
+    "/{student_id}/documents",
+    response_model=StudentDocumentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload student document",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def upload_student_document(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+    file: UploadFile = File(..., description="Document file (PDF, JPEG, PNG, DOC, DOCX)"),
+    document_type: str = Form(..., description="Document type"),
+    title: str = Form(..., description="Document title"),
+    notes: str = Form(default="", description="Optional notes"),
+) -> StudentDocumentUploadResponse:
+    """Upload a document for a student.
+
+    Validates MIME type (PDF, JPEG, PNG, DOC, DOCX) and file size (max 10MB).
+    Verifies magic bytes to prevent Content-Type spoofing.
+    """
+    # Validate document_type enum value
+    try:
+        doc_type_enum = StudentDocumentType(document_type)
+    except ValueError:
+        valid_types = [t.value for t in StudentDocumentType]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid document_type. Must be one of: {', '.join(valid_types)}",
+        )
+
+    # Read file content
+    content = await file.read()
+    file_size = len(content)
+    mime_type = file.content_type or "application/octet-stream"
+    filename = file.filename or "document"
+
+    # Resolve school_id for the student
+    school_id = await _resolve_school_id(db, tenant.tenant_id)
+
+    service = StudentService(db)
+    try:
+        document = await service.upload_document(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            school_id=school_id,
+            document_type=doc_type_enum,
+            title=title.strip(),
+            file_content=content,
+            filename=filename,
+            mime_type=mime_type,
+            file_size=file_size,
+            uploaded_by=current_user["user_id"],
+            notes=notes.strip() if notes.strip() else None,
+        )
+        return StudentDocumentUploadResponse(
+            id=document.id,
+            student_id=document.student_id,
+            document_type=document.document_type.value,
+            title=document.title,
+            file_size=document.file_size,
+            mime_type=document.mime_type,
+            uploaded_by=document.uploaded_by,
+            notes=document.notes,
+            created_at=document.created_at.isoformat() if document.created_at else "",
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.get(
+    "/{student_id}/documents",
+    response_model=StudentDocumentListResponse,
+    summary="List student documents",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def list_student_documents(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    document_type: Optional[str] = Query(None, description="Filter by document type"),
+) -> StudentDocumentListResponse:
+    """List all documents for a student, optionally filtered by type."""
+    # Parse optional document_type filter
+    doc_type_enum = None
+    if document_type:
+        try:
+            doc_type_enum = StudentDocumentType(document_type)
+        except ValueError:
+            valid_types = [t.value for t in StudentDocumentType]
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid document_type. Must be one of: {', '.join(valid_types)}",
+            )
+
+    service = StudentService(db)
+    try:
+        result = await service.list_documents(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            document_type=doc_type_enum,
+        )
+        return StudentDocumentListResponse(
+            documents=[
+                StudentDocumentUploadResponse(
+                    id=doc.id,
+                    student_id=doc.student_id,
+                    document_type=doc.document_type.value,
+                    title=doc.title,
+                    file_size=doc.file_size,
+                    mime_type=doc.mime_type,
+                    uploaded_by=doc.uploaded_by,
+                    notes=doc.notes,
+                    created_at=doc.created_at.isoformat() if doc.created_at else "",
+                )
+                for doc in result["documents"]
+            ],
+            total=result["total"],
+            total_size_bytes=result["total_size_bytes"],
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.delete(
+    "/{student_id}/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete student document",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def delete_student_document(
+    student_id: UUID,
+    document_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+    current_user: ValidatedUser,
+) -> None:
+    """Soft-delete a student document.
+
+    IDOR protection: verifies the document belongs to the specified student.
+    """
+    service = StudentService(db)
+    try:
+        await service.delete_document(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            document_id=document_id,
+            deleted_by=current_user["user_id"],
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.get(
+    "/{student_id}/documents/{document_id}/download",
+    response_model=StudentDocumentDownloadResponse,
+    summary="Get document download URL",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def get_document_download_url(
+    student_id: UUID,
+    document_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> StudentDocumentDownloadResponse:
+    """Generate a presigned S3 download URL for a student document.
+
+    URL expires in 15 minutes (900 seconds).
+    IDOR protection: verifies the document belongs to the specified student.
+    """
+    service = StudentService(db)
+    try:
+        result = await service.get_document_download_url(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            document_id=document_id,
+        )
+        return StudentDocumentDownloadResponse(**result)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+# =========================
+# Previous School Endpoints
+# =========================
+
+
+@router.post(
+    "/{student_id}/previous-schools",
+    response_model=PreviousSchoolResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add previous school record",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def create_previous_school(
+    student_id: UUID,
+    data: PreviousSchoolCreate,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> PreviousSchoolResponse:
+    """Create a previous school record for a student."""
+    school_id = await _resolve_school_id(db, tenant.tenant_id)
+
+    service = StudentService(db)
+    try:
+        record = await service.add_previous_school(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            school_id=school_id,
+            school_name=data.school_name,
+            school_address=data.school_address,
+            last_class=data.last_class,
+            years_attended=data.years_attended,
+            transfer_reason=data.transfer_reason,
+            leaving_certificate_ref=data.leaving_certificate_ref,
+        )
+        return PreviousSchoolResponse(
+            id=record.id,
+            student_id=record.student_id,
+            school_name=record.school_name,
+            school_address=record.school_address,
+            last_class=record.last_class,
+            years_attended=record.years_attended,
+            transfer_reason=record.transfer_reason,
+            leaving_certificate_ref=record.leaving_certificate_ref,
+            created_at=record.created_at.isoformat() if record.created_at else "",
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.get(
+    "/{student_id}/previous-schools",
+    response_model=list[PreviousSchoolResponse],
+    summary="List previous schools",
+    dependencies=[Depends(require_permissions("students.read"))],
+)
+async def list_previous_schools(
+    student_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> list[PreviousSchoolResponse]:
+    """List all previous school records for a student."""
+    service = StudentService(db)
+    try:
+        records = await service.list_previous_schools(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+        )
+        return [
+            PreviousSchoolResponse(
+                id=r.id,
+                student_id=r.student_id,
+                school_name=r.school_name,
+                school_address=r.school_address,
+                last_class=r.last_class,
+                years_attended=r.years_attended,
+                transfer_reason=r.transfer_reason,
+                leaving_certificate_ref=r.leaving_certificate_ref,
+                created_at=r.created_at.isoformat() if r.created_at else "",
+            )
+            for r in records
+        ]
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.put(
+    "/{student_id}/previous-schools/{record_id}",
+    response_model=PreviousSchoolResponse,
+    summary="Update previous school record",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def update_previous_school(
+    student_id: UUID,
+    record_id: UUID,
+    data: PreviousSchoolUpdate,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> PreviousSchoolResponse:
+    """Update a previous school record.
+
+    IDOR protection: verifies the record belongs to the specified student.
+    """
+    service = StudentService(db)
+    try:
+        record = await service.update_previous_school(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            record_id=record_id,
+            **data.model_dump(exclude_unset=True),
+        )
+        return PreviousSchoolResponse(
+            id=record.id,
+            student_id=record.student_id,
+            school_name=record.school_name,
+            school_address=record.school_address,
+            last_class=record.last_class,
+            years_attended=record.years_attended,
+            transfer_reason=record.transfer_reason,
+            leaving_certificate_ref=record.leaving_certificate_ref,
+            created_at=record.created_at.isoformat() if record.created_at else "",
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.delete(
+    "/{student_id}/previous-schools/{record_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete previous school record",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def delete_previous_school(
+    student_id: UUID,
+    record_id: UUID,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> None:
+    """Hard-delete a previous school record.
+
+    IDOR protection: verifies the record belongs to the specified student.
+    """
+    service = StudentService(db)
+    try:
+        await service.delete_previous_school(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            record_id=record_id,
+        )
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+@router.put(
+    "/{student_id}/structured-medical",
+    summary="Update structured medical data",
+    dependencies=[Depends(require_permissions("students.update"))],
+)
+async def update_structured_medical(
+    student_id: UUID,
+    data: StructuredMedical,
+    tenant: RequestTenant,
+    db: DatabaseSession,
+) -> StudentResponse:
+    """Update the structured medical JSONB field for a student.
+
+    Syncs data to legacy text fields for backward compatibility.
+    F-13: Input is validated and sanitized via StructuredMedical schema.
+    """
+    service = StudentService(db)
+    try:
+        student = await service.update_structured_medical(
+            tenant_id=tenant.tenant_id,
+            student_id=student_id,
+            medical_data=data.model_dump(),
+        )
+        return StudentResponse.model_validate(student)
+    except StudentServiceError as e:
+        raise HTTPException(status_code=_error_status(e), detail=e.message)
+
+
+async def _resolve_school_id(db, tenant_id: UUID) -> UUID:
+    """Resolve the school ID for the tenant (single-school shortcut)."""
+    result = await db.execute(
+        select(School.id).where(School.tenant_id == tenant_id).limit(1)
+    )
+    school_id = result.scalar_one_or_none()
+    if not school_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No school found for this tenant",
+        )
+    return school_id
 
 
 @router.post(

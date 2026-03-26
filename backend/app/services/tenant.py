@@ -10,11 +10,12 @@ from uuid import UUID
 
 import redis.asyncio as aioredis
 import structlog
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.middleware.tenant import invalidate_tenant_cache
 from app.models import Tenant, ReservedSubdomain
+from app.models.tenant import TenantStatus
 
 logger = structlog.get_logger()
 
@@ -65,6 +66,9 @@ class TenantService:
 
         if subdomain.startswith("-") or subdomain.endswith("-"):
             return False, "Subdomain cannot start or end with a hyphen"
+
+        if "--" in subdomain:
+            return False, "Subdomain cannot contain consecutive hyphens"
 
         return True, None
 
@@ -159,32 +163,88 @@ class TenantService:
         )
         return result.scalar_one_or_none()
 
+    async def search_tenants(
+        self, query: str, limit: int = 10
+    ) -> list[Tenant]:
+        """
+        Search active tenants by name or subdomain for the public school finder.
+
+        Only returns tenants that are active/trial and not soft-deleted.
+        Excludes the internal platform tenant.
+
+        Args:
+            query: Search string (min 2 chars, enforced at endpoint level)
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching Tenant objects (caller should project safe fields only)
+        """
+        from app.utils.sanitize import escape_ilike
+
+        safe_query = escape_ilike(query.strip())
+
+        result = await self.db.execute(
+            select(Tenant)
+            .where(
+                Tenant.is_active.is_(True),
+                Tenant.deleted_at.is_(None),
+                # Only show tenants with active or trial status --
+                # suspended/cancelled tenants should not appear in search
+                Tenant.status.in_([TenantStatus.TRIAL, TenantStatus.ACTIVE]),
+                # Exclude the internal platform tenant
+                Tenant.subdomain != "_platform",
+            )
+            .where(
+                or_(
+                    Tenant.name.ilike(f"%{safe_query}%"),
+                    Tenant.subdomain.ilike(f"%{safe_query}%"),
+                )
+            )
+            .order_by(Tenant.name)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def validate_tenant(
         self, subdomain: str
-    ) -> tuple[bool, Tenant | None, str | None]:
+    ) -> tuple[bool, Tenant | None, str | None, str | None]:
         """
         Validate tenant by subdomain.
 
-        Checks if tenant exists and is active.
+        Checks if tenant exists, is active, and has a valid status.
 
         Args:
             subdomain: Tenant subdomain
 
         Returns:
-            Tuple of (is_valid, tenant, error_message)
+            Tuple of (is_valid, tenant, error_message, error_code)
         """
         tenant = await self.get_tenant_by_subdomain(subdomain)
 
         if tenant is None:
-            return False, None, "School not found"
-
-        if not tenant.is_active:
-            return False, None, "This school account is currently inactive"
+            return False, None, "School not found", None
 
         if tenant.deleted_at is not None:
-            return False, None, "This school account no longer exists"
+            return False, None, "School not found", None
 
-        return True, tenant, None
+        # Cancelled tenants are treated as non-existent (same as middleware)
+        if tenant.status == TenantStatus.CANCELLED:
+            return False, None, "School not found", None
+
+        # Suspended tenants get a specific code so the frontend can show
+        # a suspension notice instead of a generic "not found" page
+        if tenant.status == TenantStatus.SUSPENDED:
+            return (
+                False,
+                None,
+                "This school account has been suspended. Contact your administrator.",
+                "TENANT_SUSPENDED",
+            )
+
+        if not tenant.is_active:
+            return False, None, "This school account is currently inactive", None
+
+        return True, tenant, None, None
 
     async def update_tenant(
         self,

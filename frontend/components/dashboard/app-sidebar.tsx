@@ -28,6 +28,15 @@ import {
   Megaphone,
   StickyNote,
   Link2,
+  UserPlus,
+  AlertTriangle,
+  UserCheck,
+  Clock,
+  GitBranch,
+  TrendingUp,
+  Target,
+  Briefcase,
+  Banknote,
 } from "lucide-react";
 
 import {
@@ -62,15 +71,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/format";
+import { formatRoleLabel } from "@/lib/utils";
 import { logout } from "@/actions/auth.action";
 import { clearOfflineData } from "@/lib/offline/db";
 import { SchoolSwitcher } from "@/components/layout/school-switcher";
+import { useSchool } from "@/contexts/school-context";
 
 interface User {
   first_name: string;
   last_name: string;
   email: string;
   role: string;
+  /** Per-school role overrides for chain tenants (school UUID -> role string). */
+  school_roles?: Record<string, string>;
 }
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -134,6 +147,32 @@ const navigationGroups: NavGroup[] = [
         subItems: [
           { title: "All Staff", url: "/staff" },
           { title: "Departments", url: "/staff/departments" },
+          { title: "Workload", url: "/staff/workload" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "Enrollment",
+    items: [
+      {
+        title: "Admissions",
+        url: "/admissions",
+        icon: UserPlus,
+        subItems: [
+          { title: "Dashboard", url: "/admissions" },
+          { title: "Inquiries", url: "/admissions/inquiries" },
+          { title: "Applications", url: "/admissions/applications" },
+          { title: "Entrance Exams", url: "/admissions/exams" },
+          { title: "Decisions", url: "/admissions/decisions" },
+          { title: "Enrollment", url: "/admissions/enrollment" },
+          { title: "Promotions", url: "/admissions/promotions" },
+          { title: "Return Intents", url: "/admissions/return-intents" },
+          { title: "CSSPS Import", url: "/admissions/cssps" },
+          { title: "Capacity Planning", url: "/admissions/capacity" },
+          { title: "Events & Tours", url: "/admissions/events" },
+          { title: "Analytics", url: "/admissions/analytics" },
+          { title: "Periods", url: "/admissions/periods" },
         ],
       },
     ],
@@ -158,6 +197,7 @@ const navigationGroups: NavGroup[] = [
         subItems: [
           { title: "Mark Attendance", url: "/attendance/mark" },
           { title: "Reports", url: "/attendance/reports" },
+          { title: "Staff Attendance", url: "/attendance/staff" },
         ],
       },
       {
@@ -168,7 +208,8 @@ const navigationGroups: NavGroup[] = [
           { title: "All Exams", url: "/exams" },
           { title: "Continuous Assessment", url: "/exams/ca" },
           { title: "Report Cards", url: "/exams/report-cards" },
-          { title: "Grading", url: "/exams/grading" },
+          { title: "External Exams", url: "/exams/external" },
+          { title: "Predicted Grades", url: "/exams/predicted-grades" },
         ],
       },
     ],
@@ -184,6 +225,11 @@ const navigationGroups: NavGroup[] = [
           { title: "Skill Assessment", url: "/preschool/assessment" },
           { title: "Observations", url: "/preschool/observations" },
           { title: "Daily Logs", url: "/preschool/daily-logs" },
+          { title: "Incidents", url: "/preschool/incidents" },
+          { title: "Pickups", url: "/preschool/pickups" },
+          { title: "Portfolio", url: "/preschool/portfolio" },
+          { title: "Extended Care", url: "/preschool/extended-care" },
+          { title: "Timeline", url: "/preschool/timeline" },
           { title: "Reports", url: "/preschool/reports" },
         ],
       },
@@ -238,6 +284,37 @@ const navigationGroups: NavGroup[] = [
           { title: "Routes", url: "/transport/routes" },
           { title: "Assignments", url: "/transport/assignments" },
           { title: "Trips", url: "/transport/trips" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "HR",
+    items: [
+      {
+        title: "Leave Management",
+        url: "/hr/leave",
+        icon: Briefcase,
+        subItems: [
+          { title: "Leave Requests", url: "/hr/leave/requests" },
+          { title: "Leave Calendar", url: "/hr/leave/calendar" },
+          { title: "My Leave", url: "/hr/leave/my-requests" },
+          { title: "Leave Types", url: "/hr/leave/types" },
+          { title: "Leave Balances", url: "/hr/leave/balances" },
+        ],
+      },
+      {
+        title: "Payroll",
+        url: "/payroll",
+        icon: Banknote,
+        subItems: [
+          { title: "Dashboard", url: "/payroll" },
+          { title: "Runs", url: "/payroll/runs" },
+          { title: "Settings", url: "/payroll/settings" },
+          { title: "Reports", url: "/payroll/reports" },
+          { title: "Audit Log", url: "/payroll/audit" },
+          { title: "Loans", url: "/payroll/loans" },
+          { title: "Loan Portfolio", url: "/payroll/loans/portfolio" },
         ],
       },
     ],
@@ -400,6 +477,17 @@ function NavItemComponent({
 
 export function AppSidebar({ user, schoolName, isChain = false, ...props }: AppSidebarProps) {
   const pathname = usePathname();
+  const { activeSchoolId } = useSchool();
+
+  // Derive the role to display: use the school-specific role when available,
+  // falling back to the user's global role for single-school tenants or when
+  // no per-school override exists.
+  const displayRole = React.useMemo(() => {
+    if (activeSchoolId && user.school_roles?.[activeSchoolId]) {
+      return user.school_roles[activeSchoolId];
+    }
+    return user.role;
+  }, [activeSchoolId, user.school_roles, user.role]);
 
   // Build navigation groups, appending chain management for chain tenants
   const allGroups = isChain
@@ -408,12 +496,26 @@ export function AppSidebar({ user, schoolName, isChain = false, ...props }: AppS
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="border-b border-sidebar-border px-2 py-2">
+      <SidebarHeader
+        className="border-b border-sidebar-border px-2 py-2"
+        style={{
+          borderTopWidth: "3px",
+          borderTopStyle: "solid",
+          /* Tenant primary color accent along the top of the sidebar header */
+          borderTopColor: "var(--tenant-primary-color, #1B4F72)",
+        }}
+      >
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="h-10" asChild>
               <Link href="/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <div
+                  className="flex aspect-square size-8 items-center justify-center rounded-lg text-white"
+                  style={{
+                    /* Use tenant branding color for the school icon background */
+                    backgroundColor: "var(--tenant-primary-color, #1B4F72)",
+                  }}
+                >
                   <School className="size-4" />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
@@ -430,7 +532,7 @@ export function AppSidebar({ user, schoolName, isChain = false, ...props }: AppS
           {/* School switcher -- only visible for chain tenants */}
           {isChain && (
             <SidebarMenuItem>
-              <SchoolSwitcher />
+              <SchoolSwitcher schoolRoles={user.school_roles} />
             </SidebarMenuItem>
           )}
         </SidebarMenu>
@@ -494,7 +596,7 @@ export function AppSidebar({ user, schoolName, isChain = false, ...props }: AppS
                         {user.first_name} {user.last_name}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">
-                        {user.role.replace("_", " ")}
+                        {formatRoleLabel(displayRole)}
                       </span>
                     </div>
                   </div>

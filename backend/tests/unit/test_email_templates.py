@@ -843,9 +843,9 @@ class TestEmailEdgeCases:
             )
 
         html = calls[0]["html_content"]
-        # f-strings pass through special chars as-is
-        assert "O'Brien Nana-Kwame" in html
-        assert "St. Mary's School" in html
+        # Template auto-escapes apostrophes to &#x27; for XSS prevention
+        assert "O&#x27;Brien Nana-Kwame" in html
+        assert "St. Mary&#x27;s School" in html
 
     def test_welcome_template_escapes_html_in_variables(self):
         """

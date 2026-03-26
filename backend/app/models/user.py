@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, SoftDeleteMixin, TenantMixin
 
 if TYPE_CHECKING:
+    from app.models.custom_role import CustomRole
     from app.models.staff import Staff
 
 
@@ -30,8 +31,10 @@ class UserRole(str, Enum):
     SCHOOL_ADMIN = "school_admin"
     ACADEMIC_HEAD = "academic_head"
     FINANCE_OFFICER = "finance_officer"
+    HR_OFFICER = "hr_officer"
     TEACHER = "teacher"
     HOUSE_PARENT = "house_parent"
+    TRANSPORT_OFFICER = "transport_officer"
     PARENT = "parent"
     STUDENT = "student"
     APPLICANT = "applicant"
@@ -114,12 +117,38 @@ class User(Base, TenantMixin, SoftDeleteMixin):
         nullable=True,
     )
 
+    # Phone verification
+    phone_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    phone_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # MFA
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mfa_backup_codes_hash: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    # JSON-encoded list of Argon2id-hashed backup codes.
+    # Each code is 8 characters, alphanumeric (XXXX-XXXX format).
+    # Codes are burned (removed from list) on use.
+
+    mfa_setup_pending_secret: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    # Temporary encrypted TOTP secret during setup flow. Uses Text (not
+    # String(255)) because the Fernet-encrypted payload including backup
+    # code hashes can exceed 255 chars. Cleared after verification.
 
     # Login tracking
     last_login: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # Session timeout: updated by heartbeat endpoint, checked on token refresh
+    last_activity_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
@@ -127,6 +156,16 @@ class User(Base, TenantMixin, SoftDeleteMixin):
     locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    # Custom role override — if set, permissions come from this custom role
+    # instead of the static ROLE_PERMISSIONS lookup for user.role
+    custom_role_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("custom_roles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="If set, user's permissions come from this custom role instead of ROLE_PERMISSIONS",
     )
 
     # Profile
@@ -139,6 +178,13 @@ class User(Base, TenantMixin, SoftDeleteMixin):
     staff_profile: Mapped["Staff | None"] = relationship(
         "Staff",
         back_populates="user",
+        uselist=False,
+        lazy="raise",
+    )
+    custom_role: Mapped["CustomRole | None"] = relationship(
+        "CustomRole",
+        back_populates="users",
+        foreign_keys="[User.custom_role_id]",
         uselist=False,
         lazy="raise",
     )

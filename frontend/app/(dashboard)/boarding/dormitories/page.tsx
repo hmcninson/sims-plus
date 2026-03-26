@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +48,7 @@ export default function DormitoriesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<DormFormData>({
-    resolver: zodResolver(dormitorySchema),
+    resolver: zodResolver(dormitorySchema) as Resolver<DormFormData>,
     defaultValues: { house_id: "", name: "", floor: "", capacity: 20, dormitory_type: "room" },
   });
 

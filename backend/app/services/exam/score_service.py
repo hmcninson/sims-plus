@@ -137,6 +137,15 @@ class ScoreService:
         )
         scores_map = {s.student_id: s for s in scores_result.scalars().all()}
 
+        # Resolve curriculum type from the class's curriculum profile
+        curriculum_type = "ges"
+        if exam_subject.class_ and exam_subject.class_.curriculum_profile_id:
+            from app.models.curriculum import CurriculumProfile
+
+            profile = await self.db.get(CurriculumProfile, exam_subject.class_.curriculum_profile_id)
+            if profile:
+                curriculum_type = profile.curriculum_type.value
+
         # Build students list
         students_data = []
         for student in students:
@@ -152,6 +161,8 @@ class ScoreService:
                 "current_grade": score.grade if score else None,
                 "is_absent": score.is_absent if score else False,
                 "teacher_remark": score.teacher_remark if score else None,
+                "effort_grade": score.effort_grade if score else None,
+                "criterion_scores": score.criterion_scores if score else None,
                 "score_id": score.id if score else None,
             })
 
@@ -166,6 +177,8 @@ class ScoreService:
             "max_score": exam_subject.max_score,
             "pass_mark": exam_subject.pass_mark,
             "grading_scale_id": exam_subject.grading_scale_id,
+            "curriculum_type": curriculum_type,
+            "show_effort_grade": curriculum_type in ("cambridge", "edexcel"),
             "students": students_data,
         }
 
@@ -251,12 +264,42 @@ class ScoreService:
                 if student_uuid not in valid_student_ids:
                     raise ValueError(f"Student not enrolled in this class/section")
 
+                # Handle criterion-referenced scores (IB MYP)
+                criterion_data = score_entry.get("criterion_scores")
+                criterion_scores_dict = None
+                if criterion_data is not None:
+                    # criterion_data may be a Pydantic model or a dict
+                    if hasattr(criterion_data, "model_dump"):
+                        criteria_list = criterion_data.criteria
+                        criterion_scores_dict = criterion_data.model_dump()
+                    else:
+                        criteria_list = criterion_data.get("criteria", [])
+                        criterion_scores_dict = criterion_data
+
+                    # Auto-compute final grade (1-7) from criterion totals
+                    total = sum(
+                        c.level if hasattr(c, "level") else c.get("level", 0)
+                        for c in criteria_list
+                    )
+                    max_total = sum(
+                        c.max_level if hasattr(c, "max_level") else c.get("max_level", 8)
+                        for c in criteria_list
+                    )
+
+                    # Enrich the stored dict with computed totals
+                    criterion_scores_dict["criterion_total"] = total
+                    criterion_scores_dict["criterion_max"] = max_total
+
+                    # Override raw_score with the derived MYP grade (1-7)
+                    raw_score = self._criterion_total_to_grade(total, max_total)
+
                 # Validate score is within range
                 if raw_score is not None:
                     score_decimal = Decimal(str(raw_score))
                     if score_decimal < 0:
                         raise ValueError(f"Score cannot be negative: {raw_score}")
-                    if score_decimal > exam_subject.max_score:
+                    # Skip max_score check for criterion-derived grades (1-7 scale)
+                    if criterion_data is None and score_decimal > exam_subject.max_score:
                         raise ValueError(
                             f"Score {raw_score} exceeds max score {exam_subject.max_score}"
                         )
@@ -300,6 +343,12 @@ class ScoreService:
                     existing_score.grade_point = grade_point
                     existing_score.grade_remark = grade_remark
                     existing_score.teacher_remark = teacher_remark
+                    # Persist criterion-referenced scores (IB MYP)
+                    if criterion_scores_dict is not None:
+                        existing_score.criterion_scores = criterion_scores_dict
+                    # Persist teacher-entered effort grade (Cambridge/Edexcel)
+                    if "effort_grade" in score_entry and score_entry["effort_grade"] is not None:
+                        existing_score.effort_grade = score_entry["effort_grade"]
                     existing_score.entered_by = entered_by
                     existing_score.entered_at = now
                     existing_score.updated_at = now
@@ -331,6 +380,10 @@ class ScoreService:
                         grade_point=grade_point,
                         grade_remark=grade_remark,
                         teacher_remark=teacher_remark,
+                        # Persist criterion-referenced scores (IB MYP)
+                        criterion_scores=criterion_scores_dict,
+                        # Persist teacher-entered effort grade (Cambridge/Edexcel)
+                        effort_grade=score_entry.get("effort_grade"),
                         entered_by=entered_by,
                         entered_at=now,
                     )
@@ -371,6 +424,43 @@ class ScoreService:
             "failed": failed_count,
             "errors": errors,
         }
+
+    @staticmethod
+    def _criterion_total_to_grade(total: int, max_total: int) -> Decimal:
+        """Convert criterion total to IB MYP 1-7 grade.
+
+        Standard MYP boundaries for 4 criteria (max 32):
+        28-32 = 7, 24-27 = 6, 19-23 = 5, 15-18 = 4,
+        10-14 = 3, 6-9 = 2, 1-5 = 1, 0 = 0
+
+        For non-standard max totals (e.g., 3 criteria with max 24),
+        boundaries are scaled proportionally from the standard 32-point scale.
+        """
+        if total == 0:
+            return Decimal("0")
+
+        if max_total == 32:
+            # Standard 4 criteria, each with max_level=8
+            if total >= 28:
+                return Decimal("7")
+            elif total >= 24:
+                return Decimal("6")
+            elif total >= 19:
+                return Decimal("5")
+            elif total >= 15:
+                return Decimal("4")
+            elif total >= 10:
+                return Decimal("3")
+            elif total >= 6:
+                return Decimal("2")
+            else:
+                return Decimal("1")
+        else:
+            # Proportional scaling for non-standard criteria counts
+            if max_total <= 0:
+                return Decimal("0")
+            percentage = total / max_total
+            return Decimal(str(min(7, max(0, round(percentage * 7)))))
 
     async def calculate_grade(
         self,

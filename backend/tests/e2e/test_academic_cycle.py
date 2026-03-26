@@ -34,7 +34,7 @@ async def test_complete_academic_setup(auth_client, seeded_tenant):
         "sequence": 1,
     })
     assert term_resp.status_code == 201, f"Term creation failed: {term_resp.text}"
-    assert term_resp.json()["name"] == "First Term"
+    assert term_resp.json()["term"]["name"] == "First Term"
 
     # 3. Create class
     class_resp = await client.post("/api/v1/academic/classes", json={

@@ -6,6 +6,7 @@ import { GenderDonut } from "@/components/dashboard/gender-donut";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { MobileQuickActions } from "@/components/dashboard/mobile-quick-actions";
 import { PushPermissionPrompt } from "@/components/pwa/push-permission";
+import { PhoneVerificationBanner } from "@/components/banners/phone-verification-banner";
 
 import { getCurrentUser } from "@/actions/auth.action";
 import {
@@ -35,8 +36,16 @@ export default async function DashboardPage() {
   const feeTrend = feeResult.success ? feeResult.data : [];
   const gender = genderResult.success ? genderResult.data : null;
 
+  // Show phone verification prompt for users with unverified phone
+  const showPhoneBanner = user?.phone && !user?.phone_verified;
+
   return (
     <div className="space-y-6">
+      {/* Phone Verification Banner */}
+      {showPhoneBanner && (
+        <PhoneVerificationBanner settingsPath="/settings/account" />
+      )}
+
       {/* Welcome Banner */}
       <WelcomeBanner
         firstName={firstName}

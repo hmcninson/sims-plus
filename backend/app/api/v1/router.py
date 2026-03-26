@@ -7,7 +7,7 @@ Aggregates all API endpoints under /api/v1.
 from fastapi import APIRouter, Depends
 
 from app.api.deps import enforce_subscription
-from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain, communication_settings, messaging, admissions, subscription
+from app.api.v1.endpoints import auth, tenant, onboarding, academic, schools, media, users, students, staff, attendance, exams, preschool, timetable, finance, notifications, audit, dashboard, boarding, transport, push, parent, teacher, chain, communication_settings, messaging, admissions, subscription, custom_roles, platform, leave, payroll
 from app.api.v1.endpoints.curriculum import router as curriculum_router
 
 # C1: enforce_subscription is a global dependency on api_router.
@@ -196,3 +196,27 @@ api_router.include_router(curriculum_router)
 # Subscription Management
 # =========================
 api_router.include_router(subscription.router)
+
+
+# =========================
+# Custom Roles
+# =========================
+api_router.include_router(custom_roles.router, prefix="/custom-roles")
+
+
+# =========================
+# Leave Management
+# =========================
+api_router.include_router(leave.router)
+
+
+# =========================
+# Payroll
+# =========================
+api_router.include_router(payroll.router)
+
+
+# =========================
+# Platform Admin
+# =========================
+api_router.include_router(platform.router)

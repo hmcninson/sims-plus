@@ -22,8 +22,6 @@ import {
   Receipt,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   XAxis,
@@ -55,6 +53,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  GradeSummaryCard,
+  shouldHidePosition,
+  formatScoreDisplay,
+} from "@/components/parent/grade-summary-card";
+import { GradeTrendChart } from "@/components/parent/grade-trend-chart";
 import { cn } from "@/lib/utils";
 import {
   formatGHS,
@@ -492,6 +496,11 @@ function GradesTab({ studentId }: { studentId: string }) {
     return <GradesTabSkeleton />;
   }
 
+  const curriculum = grades?.curriculum_type ?? "ges";
+  const displayMode = grades?.score_display_mode;
+  const hidePosition = shouldHidePosition(curriculum);
+  const isAmerican = curriculum === "american";
+
   return (
     <div className="space-y-6">
       {/* Term selector + download button */}
@@ -531,27 +540,8 @@ function GradesTab({ studentId }: { studentId: string }) {
         </div>
       </div>
 
-      {/* Overall summary */}
-      {grades?.overall && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MiniStat
-            label="Total Marks"
-            value={grades.overall.total_marks.toString()}
-          />
-          <MiniStat
-            label="Average"
-            value={`${grades.overall.average.toFixed(1)}%`}
-          />
-          <MiniStat
-            label="Position"
-            value={`${grades.overall.class_position}/${grades.overall.class_size}`}
-          />
-          <MiniStat
-            label="Subjects"
-            value={grades.subjects.length.toString()}
-          />
-        </div>
-      )}
+      {/* Curriculum-aware overall summary */}
+      {grades && <GradeSummaryCard grades={grades} />}
 
       {/* Subject grades table */}
       {grades && grades.subjects.length > 0 ? (
@@ -568,11 +558,17 @@ function GradesTab({ studentId }: { studentId: string }) {
                     <TableHead className="text-center hidden sm:table-cell">
                       Exam
                     </TableHead>
-                    <TableHead className="text-center">Total</TableHead>
-                    <TableHead className="text-center">Grade</TableHead>
-                    <TableHead className="text-center hidden md:table-cell">
-                      Position
+                    <TableHead className="text-center">
+                      {isAmerican ? "Grade" : "Total"}
                     </TableHead>
+                    {!isAmerican && (
+                      <TableHead className="text-center">Grade</TableHead>
+                    )}
+                    {!hidePosition && (
+                      <TableHead className="text-center hidden md:table-cell">
+                        Position
+                      </TableHead>
+                    )}
                     <TableHead className="text-center hidden md:table-cell">
                       Class Avg
                     </TableHead>
@@ -595,20 +591,34 @@ function GradesTab({ studentId }: { studentId: string }) {
                           : "--"}
                       </TableCell>
                       <TableCell className="text-center font-semibold">
-                        {subject.total !== null ? subject.total : "--"}
+                        {isAmerican
+                          ? formatScoreDisplay(
+                              subject.total,
+                              subject.grade,
+                              "grade_only"
+                            )
+                          : formatScoreDisplay(
+                              subject.total,
+                              subject.grade,
+                              displayMode
+                            )}
                       </TableCell>
-                      <TableCell className="text-center">
-                        {subject.grade ? (
-                          <Badge variant="outline" className="font-mono">
-                            {subject.grade}
-                          </Badge>
-                        ) : (
-                          "--"
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center hidden md:table-cell">
-                        {subject.position ?? "--"}
-                      </TableCell>
+                      {!isAmerican && (
+                        <TableCell className="text-center">
+                          {subject.grade ? (
+                            <Badge variant="outline" className="font-mono">
+                              {subject.grade}
+                            </Badge>
+                          ) : (
+                            "--"
+                          )}
+                        </TableCell>
+                      )}
+                      {!hidePosition && (
+                        <TableCell className="text-center hidden md:table-cell">
+                          {subject.position ?? "--"}
+                        </TableCell>
+                      )}
                       <TableCell className="text-center hidden md:table-cell">
                         {subject.class_average !== null
                           ? subject.class_average.toFixed(1)
@@ -633,70 +643,9 @@ function GradesTab({ studentId }: { studentId: string }) {
         </Card>
       )}
 
-      {/* Grade trend chart */}
-      {trend.length >= 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Grade Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trend}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="term_name"
-                    className="text-xs"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    className="text-xs"
-                    tick={{ fontSize: 12 }}
-                  />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null;
-                      const d = payload[0].payload as GradeTrend;
-                      return (
-                        <div className="rounded-lg border bg-background p-3 shadow-md">
-                          <p className="text-sm font-medium">{d.term_name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Average: {d.average.toFixed(1)}%
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Position: {d.position}/{d.class_size}
-                          </p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="average"
-                    stroke="var(--primary)"
-                    strokeWidth={2}
-                    dot={{ fill: "var(--primary)", r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Curriculum-aware grade trend chart */}
+      <GradeTrendChart trend={trend} curriculumType={curriculum} />
     </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card className="bg-muted/30">
-      <CardContent className="p-3">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-bold">{value}</p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -725,6 +674,17 @@ function GradesTabSkeleton() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="bg-muted/30">
+      <CardContent className="p-3">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-lg font-bold">{value}</p>
+      </CardContent>
+    </Card>
   );
 }
 

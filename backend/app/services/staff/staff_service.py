@@ -19,12 +19,14 @@ from app.models.staff import (
     StaffType,
     StaffStatus,
     StaffClassAssignment,
+    EmploymentType,
 )
 from app.models.student import Gender
 from app.models.academic import ClassSection, Subject
 from app.utils.sanitize import escape_ilike
 
 from app.services.staff._shared import StaffServiceError
+from app.services.staff.history_service import StaffHistoryService
 
 
 class StaffService:
@@ -74,6 +76,11 @@ class StaffService:
         notes: Optional[str] = None,
         school_id: Optional[UUID] = None,
         user_id: Optional[UUID] = None,
+        tin_number: Optional[str] = None,
+        employment_type: Optional[str] = None,
+        ges_staff_id: Optional[str] = None,
+        nationality: Optional[str] = None,
+        marital_status: Optional[str] = None,
     ) -> Staff:
         """Create a new staff member."""
         # Check for duplicate staff_id
@@ -144,6 +151,11 @@ class StaffService:
             notes=notes,
             school_id=school_id,
             user_id=user_id,
+            tin_number=tin_number,
+            employment_type=EmploymentType(employment_type) if employment_type else None,
+            ges_staff_id=ges_staff_id,
+            nationality=nationality,
+            marital_status=marital_status,
         )
         self.db.add(staff)
         try:
@@ -295,12 +307,28 @@ class StaffService:
         return staff_list, total
 
     async def update_staff(
-        self, tenant_id: UUID, staff_id: UUID, **kwargs
+        self, tenant_id: UUID, staff_id: UUID, current_user_id: Optional[UUID] = None, **kwargs
     ) -> Optional[Staff]:
-        """Update a staff member."""
+        """Update a staff member.
+
+        If current_user_id is provided, auto-records employment history events
+        for tracked fields (job_title, department_id, status, employment_type).
+        """
         staff = await self.get_staff(tenant_id, staff_id)
         if not staff:
             return None
+
+        # Auto-record history BEFORE applying changes (need old values)
+        if current_user_id:
+            history_service = StaffHistoryService(self.db)
+            await history_service.auto_record_changes(
+                tenant_id=tenant_id,
+                staff_id=staff_id,
+                old_staff=staff,
+                new_data=kwargs,
+                recorded_by=current_user_id,
+                school_id=staff.school_id,
+            )
 
         # Handle enum conversions
         if "status" in kwargs and kwargs["status"]:
@@ -309,6 +337,8 @@ class StaffService:
             kwargs["gender"] = Gender(kwargs["gender"])
         if "staff_type" in kwargs and kwargs["staff_type"]:
             kwargs["staff_type"] = StaffType(kwargs["staff_type"])
+        if "employment_type" in kwargs and kwargs["employment_type"]:
+            kwargs["employment_type"] = EmploymentType(kwargs["employment_type"])
 
         for key, value in kwargs.items():
             if value is not None and hasattr(staff, key):
@@ -563,6 +593,20 @@ class StaffService:
 
         return "active"
 
+    def _parse_employment_type(self, value) -> Optional[str]:
+        """Parse employment type value from various human-readable formats."""
+        if not value or str(value).strip() == "":
+            return None
+
+        mapping = {
+            "full time": "full_time", "full-time": "full_time", "full_time": "full_time", "ft": "full_time",
+            "part time": "part_time", "part-time": "part_time", "part_time": "part_time", "pt": "part_time",
+            "contract": "contract", "contractor": "contract",
+            "temporary": "temporary", "temp": "temporary",
+            "intern": "intern", "internship": "intern",
+        }
+        return mapping.get(str(value).lower().strip())
+
     def _auto_map_columns(self, headers: list[str]) -> dict[str, str]:
         """Auto-map CSV headers to staff fields."""
         mapping = {}
@@ -596,6 +640,12 @@ class StaffService:
             "bank_branch": ["bank_branch", "branch"],
             "account_number": ["account_number", "account_no", "bank_account"],
             "notes": ["notes", "comments", "remarks"],
+            # HR gap closure fields
+            "tin_number": ["tin_number", "tin", "tax_id", "tax_identification_number"],
+            "employment_type": ["employment_type", "emp_type", "contract_type"],
+            "ges_staff_id": ["ges_staff_id", "ges_id", "ges_number"],
+            "nationality": ["nationality", "country"],
+            "marital_status": ["marital_status", "marital"],
         }
 
         # Normalize headers for matching
@@ -643,6 +693,10 @@ class StaffService:
                     data[field] = self._parse_staff_type(value)
                 elif field == "status":
                     data[field] = self._parse_status(value)
+                elif field == "employment_type":
+                    parsed_value = self._parse_employment_type(value)
+                    if parsed_value:
+                        data[field] = parsed_value
                 elif value is not None and str(value).strip():
                     data[field] = str(value).strip()
             except Exception as e:

@@ -16,6 +16,8 @@ import {
   Camera,
   Loader2,
   Upload,
+  FileText,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,10 +27,14 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+import { StaffDocuments } from "./staff-documents";
+import { EmploymentHistory } from "./employment-history";
 
 import { getStaffMember, updateStaff } from "@/actions/staff.action";
 import { uploadStaffPhoto } from "@/actions/media.action";
-import type { StaffStatus, StaffType, StaffWithAssignments } from "@/types";
+import type { StaffStatus, StaffType, EmploymentType, StaffWithAssignments } from "@/types";
 
 const STATUS_CONFIG: Record<StaffStatus, { label: string; color: string }> = {
   active: { label: "Active", color: "bg-green-500" },
@@ -42,6 +48,14 @@ const TYPE_CONFIG: Record<StaffType, { label: string; color: string }> = {
   teaching: { label: "Teaching", color: "bg-blue-500" },
   non_teaching: { label: "Non-Teaching", color: "bg-slate-500" },
   administrative: { label: "Administrative", color: "bg-indigo-500" },
+};
+
+const EMPLOYMENT_TYPE_LABELS: Record<EmploymentType, string> = {
+  full_time: "Full Time",
+  part_time: "Part Time",
+  contract: "Contract",
+  temporary: "Temporary",
+  intern: "Intern",
 };
 
 export default function StaffProfilePage() {
@@ -310,193 +324,253 @@ export default function StaffProfilePage() {
           )}
         </div>
 
-        {/* Right Column - Details */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Personal Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Personal Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm text-muted-foreground">Full Name</p>
-                  <p className="font-medium">
-                    {staff.first_name} {staff.middle_name} {staff.last_name}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Gender</p>
-                  <p className="font-medium capitalize">{staff.gender}</p>
-                </div>
-                {staff.date_of_birth && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Date of Birth</p>
-                    <p className="font-medium">{formatDate(staff.date_of_birth)}</p>
-                  </div>
-                )}
-                {staff.phone_secondary && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Secondary Phone</p>
-                    <p className="font-medium">{staff.phone_secondary}</p>
-                  </div>
-                )}
-              </div>
+        {/* Right Column - Tabbed Content */}
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="profile" className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="profile" className="gap-2">
+                <User className="h-4 w-4 hidden sm:inline" />
+                Profile
+              </TabsTrigger>
+              <TabsTrigger value="documents" className="gap-2">
+                <FileText className="h-4 w-4 hidden sm:inline" />
+                Documents
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2">
+                <History className="h-4 w-4 hidden sm:inline" />
+                History
+              </TabsTrigger>
+            </TabsList>
 
-              {/* Emergency Contact */}
-              {staff.emergency_contact_name && (
-                <>
-                  <Separator className="my-4" />
-                  <h4 className="text-sm font-medium mb-3">Emergency Contact</h4>
-                  <div className="grid gap-4 sm:grid-cols-3">
+            {/* Profile Tab */}
+            <TabsContent value="profile" className="space-y-6">
+              {/* Personal Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Personal Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div>
-                      <p className="text-sm text-muted-foreground">Name</p>
-                      <p className="font-medium">{staff.emergency_contact_name}</p>
+                      <p className="text-sm text-muted-foreground">Full Name</p>
+                      <p className="font-medium">
+                        {staff.first_name} {staff.middle_name} {staff.last_name}
+                      </p>
                     </div>
-                    {staff.emergency_contact_phone && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Gender</p>
+                      <p className="font-medium capitalize">{staff.gender}</p>
+                    </div>
+                    {staff.date_of_birth && (
                       <div>
-                        <p className="text-sm text-muted-foreground">Phone</p>
-                        <p className="font-medium">{staff.emergency_contact_phone}</p>
+                        <p className="text-sm text-muted-foreground">Date of Birth</p>
+                        <p className="font-medium">{formatDate(staff.date_of_birth)}</p>
                       </div>
                     )}
-                    {staff.emergency_contact_relationship && (
+                    {staff.nationality && (
                       <div>
-                        <p className="text-sm text-muted-foreground">Relationship</p>
-                        <p className="font-medium">{staff.emergency_contact_relationship}</p>
+                        <p className="text-sm text-muted-foreground">Nationality</p>
+                        <p className="font-medium">{staff.nationality}</p>
+                      </div>
+                    )}
+                    {staff.marital_status && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Marital Status</p>
+                        <p className="font-medium capitalize">{staff.marital_status}</p>
+                      </div>
+                    )}
+                    {staff.phone_secondary && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Secondary Phone</p>
+                        <p className="font-medium">{staff.phone_secondary}</p>
                       </div>
                     )}
                   </div>
-                </>
+
+                  {/* Emergency Contact */}
+                  {staff.emergency_contact_name && (
+                    <>
+                      <Separator className="my-4" />
+                      <h4 className="text-sm font-medium mb-3">Emergency Contact</h4>
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Name</p>
+                          <p className="font-medium">{staff.emergency_contact_name}</p>
+                        </div>
+                        {staff.emergency_contact_phone && (
+                          <div>
+                            <p className="text-sm text-muted-foreground">Phone</p>
+                            <p className="font-medium">{staff.emergency_contact_phone}</p>
+                          </div>
+                        )}
+                        {staff.emergency_contact_relationship && (
+                          <div>
+                            <p className="text-sm text-muted-foreground">Relationship</p>
+                            <p className="font-medium">{staff.emergency_contact_relationship}</p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Employment Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Briefcase className="h-5 w-5" />
+                    Employment Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Staff Type</p>
+                      <p className="font-medium">{TYPE_CONFIG[staff.staff_type]?.label || staff.staff_type}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Job Title</p>
+                      <p className="font-medium">{staff.job_title}</p>
+                    </div>
+                    {staff.employment_type && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Employment Type</p>
+                        <p className="font-medium">{EMPLOYMENT_TYPE_LABELS[staff.employment_type] || staff.employment_type}</p>
+                      </div>
+                    )}
+                    {staff.department && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Department</p>
+                        <p className="font-medium">{staff.department}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm text-muted-foreground">Employment Date</p>
+                      <p className="font-medium">{formatDate(staff.employment_date)}</p>
+                    </div>
+                    {staff.termination_date && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Termination Date</p>
+                        <p className="font-medium">{formatDate(staff.termination_date)}</p>
+                      </div>
+                    )}
+                    {staff.school_name && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">School</p>
+                        <p className="font-medium">{staff.school_name}</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Identification */}
+              {(staff.ghana_card_number || staff.ssnit_number || staff.teacher_license_number || staff.ges_staff_id || staff.tin_number) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BadgeCheck className="h-5 w-5" />
+                      Identification
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      {staff.ghana_card_number && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Ghana Card</p>
+                          <p className="font-medium font-mono">{staff.ghana_card_number}</p>
+                        </div>
+                      )}
+                      {staff.ssnit_number && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">SSNIT Number</p>
+                          <p className="font-medium">{staff.ssnit_number}</p>
+                        </div>
+                      )}
+                      {staff.teacher_license_number && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Teacher License</p>
+                          <p className="font-medium">{staff.teacher_license_number}</p>
+                        </div>
+                      )}
+                      {staff.ges_staff_id && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">GES Staff ID</p>
+                          <p className="font-medium">{staff.ges_staff_id}</p>
+                        </div>
+                      )}
+                      {staff.tin_number && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">TIN Number</p>
+                          <p className="font-medium">{staff.tin_number}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Employment Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Briefcase className="h-5 w-5" />
-                Employment Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm text-muted-foreground">Staff Type</p>
-                  <p className="font-medium">{TYPE_CONFIG[staff.staff_type]?.label || staff.staff_type}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Job Title</p>
-                  <p className="font-medium">{staff.job_title}</p>
-                </div>
-                {staff.department && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Department</p>
-                    <p className="font-medium">{staff.department}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-sm text-muted-foreground">Employment Date</p>
-                  <p className="font-medium">{formatDate(staff.employment_date)}</p>
-                </div>
-                {staff.termination_date && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">Termination Date</p>
-                    <p className="font-medium">{formatDate(staff.termination_date)}</p>
-                  </div>
-                )}
-                {staff.school_name && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">School</p>
-                    <p className="font-medium">{staff.school_name}</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+              {/* Banking Information */}
+              {(staff.bank_name || staff.account_number) && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <CreditCard className="h-5 w-5" />
+                      Banking Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      {staff.bank_name && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Bank Name</p>
+                          <p className="font-medium">{staff.bank_name}</p>
+                        </div>
+                      )}
+                      {staff.bank_branch && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Branch</p>
+                          <p className="font-medium">{staff.bank_branch}</p>
+                        </div>
+                      )}
+                      {staff.account_number && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Account Number</p>
+                          <p className="font-medium font-mono">{staff.account_number}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-          {/* Identification */}
-          {(staff.ghana_card_number || staff.ssnit_number || staff.teacher_license_number) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BadgeCheck className="h-5 w-5" />
-                  Identification
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {staff.ghana_card_number && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Ghana Card</p>
-                      <p className="font-medium font-mono">{staff.ghana_card_number}</p>
-                    </div>
-                  )}
-                  {staff.ssnit_number && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">SSNIT Number</p>
-                      <p className="font-medium">{staff.ssnit_number}</p>
-                    </div>
-                  )}
-                  {staff.teacher_license_number && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Teacher License</p>
-                      <p className="font-medium">{staff.teacher_license_number}</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+              {/* Notes */}
+              {staff.notes && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm whitespace-pre-wrap">{staff.notes}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
-          {/* Banking Information */}
-          {(staff.bank_name || staff.account_number) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Banking Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {staff.bank_name && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Bank Name</p>
-                      <p className="font-medium">{staff.bank_name}</p>
-                    </div>
-                  )}
-                  {staff.bank_branch && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Branch</p>
-                      <p className="font-medium">{staff.bank_branch}</p>
-                    </div>
-                  )}
-                  {staff.account_number && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Account Number</p>
-                      <p className="font-medium font-mono">{staff.account_number}</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+            {/* Documents Tab */}
+            <TabsContent value="documents">
+              <StaffDocuments staffId={staffId} />
+            </TabsContent>
 
-          {/* Notes */}
-          {staff.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm whitespace-pre-wrap">{staff.notes}</p>
-              </CardContent>
-            </Card>
-          )}
+            {/* Employment History Tab */}
+            <TabsContent value="history">
+              <EmploymentHistory staffId={staffId} />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

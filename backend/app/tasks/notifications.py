@@ -1,8 +1,7 @@
 """
-SIMS Plus - Notification Task Stubs (Chain-Aware)
+SIMS Plus - Notification Tasks (Chain-Aware)
 
-Background task stubs for smart notification triggers. These functions
-encapsulate the logic for:
+Background tasks for smart notification triggers:
   1. Attendance reminders -- nudge teachers who haven't marked attendance
      by a configurable cutoff time.
   2. Score deadline reminders -- alert teachers when an exam score entry
@@ -13,12 +12,9 @@ Chain-aware: both tasks accept an optional school_id parameter.
   - When omitted, iterate over ALL active schools in the tenant so
     chain tenants get full coverage.
 
-These are plain async functions today. When Celery infrastructure is added,
-decorate them with @celery_app.task and schedule via celery beat.
-
-TODO: Wire to Celery beat schedule:
-  - send_attendance_reminders: daily at 11:00 AM school local time
-  - send_score_deadline_reminders: daily at 08:00 AM school local time
+Celery beat schedule (defined in app.celery_app):
+  - send_attendance_reminders_task: daily at 11:00 UTC
+  - send_score_deadline_reminders_task: daily at 08:00 UTC
 """
 
 from datetime import date, timedelta
@@ -412,3 +408,37 @@ async def send_score_deadline_reminders(
         "total_errors": total_errors,
         "per_school": per_school_results,
     }
+
+
+# ---------------------------------------------------------------------------
+# Celery task wrappers
+# ---------------------------------------------------------------------------
+# Celery tasks are synchronous. These thin wrappers bridge to the async
+# business logic above via run_async(). The beat schedule references these
+# task names (e.g., "app.tasks.notifications.send_attendance_reminders_task").
+# ---------------------------------------------------------------------------
+
+from app.celery_app import celery_app  # noqa: E402
+from app.tasks.utils import run_async, run_for_all_tenants  # noqa: E402
+
+
+@celery_app.task(name="app.tasks.notifications.send_attendance_reminders_task")
+def send_attendance_reminders_task() -> list[dict]:
+    """
+    Celery beat task: send attendance reminders for ALL active tenants.
+
+    Iterates every active/trial tenant, sets RLS context per-tenant,
+    and calls send_attendance_reminders for all schools in each tenant.
+    """
+    return run_async(run_for_all_tenants(send_attendance_reminders))
+
+
+@celery_app.task(name="app.tasks.notifications.send_score_deadline_reminders_task")
+def send_score_deadline_reminders_task() -> list[dict]:
+    """
+    Celery beat task: send score deadline reminders for ALL active tenants.
+
+    Iterates every active/trial tenant, sets RLS context per-tenant,
+    and calls send_score_deadline_reminders for all schools in each tenant.
+    """
+    return run_async(run_for_all_tenants(send_score_deadline_reminders))

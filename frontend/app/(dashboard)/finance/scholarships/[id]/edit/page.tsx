@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -104,7 +104,7 @@ export default function EditScholarshipPage() {
   const scholarshipId = params.id as string;
 
   const form = useForm<ScholarshipFormData>({
-    resolver: zodResolver(scholarshipSchema),
+    resolver: zodResolver(scholarshipSchema) as Resolver<ScholarshipFormData>,
     defaultValues: {
       name: "",
       code: "",

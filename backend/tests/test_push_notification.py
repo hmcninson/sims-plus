@@ -28,7 +28,6 @@ from tests.conftest import (
 )
 
 pytestmark = [
-    pytest.mark.asyncio,
     pytest.mark.integration,
 ]
 

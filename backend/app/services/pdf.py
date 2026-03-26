@@ -48,6 +48,7 @@ class PDFService:
         "ib": "ib_report.html",
         "french": "french_report.html",
         "montessori": "montessori_report.html",
+        "dual_track": "dual_track_report.html",
         "default": "term_report.html",
     }
 
@@ -388,6 +389,20 @@ class PDFService:
         # Select the correct template based on curriculum type
         template_name = cls.get_report_template(curriculum_profile)
 
+        # H4: Detect dual-track via template_key ONLY (single canonical source)
+        is_dual_track = False
+        if curriculum_profile and curriculum_profile.curriculum_type.value != "ges":
+            if report_config and report_config.template_key == "dual_track":
+                is_dual_track = True
+                template_name = cls.REPORT_TEMPLATES["dual_track"]
+
+        # Resolve curriculum type for Montessori data wiring
+        curriculum_type = (
+            curriculum_profile.curriculum_type.value
+            if curriculum_profile and hasattr(curriculum_profile.curriculum_type, "value")
+            else None
+        )
+
         # Prepare template context
         context = {
             "report": report,
@@ -408,26 +423,96 @@ class PDFService:
             "report_config": report_config,
             "components": components,
             "curriculum_profile": curriculum_profile,
-            # Curriculum-specific values — populated by the calling service when available.
-            # Templates degrade gracefully when these are absent (show dashes).
-            "term_gpa": None,
-            "cumulative_gpa": None,
-            "total_credits_attempted": None,
-            "total_credits_earned": None,
-            "honor_roll": None,
-            "ib_total_points": None,
-            "ib_bonus_points": None,
-            "learner_profile_traits": None,
-            "atl_skills": None,
-            "mention": None,
-            "weighted_average": None,
-            "total_coefficients": None,
-            "total_weighted_score": None,
+            # Curriculum-specific values read from the TermReport model.
+            # Templates degrade gracefully when these are None (show dashes).
+            "term_gpa": report.gpa,
+            "weighted_gpa": report.weighted_gpa,
+            "cumulative_gpa": report.cumulative_gpa,
+            "total_credits_attempted": None,  # Not stored on TermReport yet
+            "total_credits_earned": report.total_credits_earned,
+            "cumulative_credits": report.cumulative_credits,
+            "honor_roll": report.honor_roll,
+            "ib_total_points": report.ib_total_points,
+            "ib_bonus_points": (report.extra_data or {}).get("ib_bonus_points"),
+            "learner_profile_traits": (report.extra_data or {}).get("learner_profile_traits"),
+            "atl_skills": (report.extra_data or {}).get("atl_skills"),
+            "mention": report.french_mention,
+            "weighted_average": (report.extra_data or {}).get("weighted_average"),
+            "total_coefficients": (report.extra_data or {}).get("total_coefficients"),
+            "total_weighted_score": (report.extra_data or {}).get("total_weighted_score"),
             "class_averages": None,
             "developmental_areas": None,
             "work_samples": None,
             "goals": None,
+            "general_narrative": None,
         }
+
+        # Wire Montessori narrative data from extra_data JSONB into template context
+        if curriculum_type == "montessori" and report.extra_data:
+            context.update({
+                "developmental_areas": report.extra_data.get("developmental_areas", []),
+                "work_samples": report.extra_data.get("work_samples", []),
+                "goals": report.extra_data.get("goals", []),
+                "general_narrative": report.extra_data.get("general_narrative", ""),
+            })
+
+        # Wire dual-track data: fetch GES + international results side-by-side
+        if is_dual_track:
+            dual_data = await term_report_service._get_dual_track_results(
+                tenant_id=tenant_id,
+                term_id=report.term_id,
+                student_id=report.student_id,
+                class_id=report.class_id,
+                academic_year_id=report.academic_year_id,
+                section_id=report.section_id,
+                international_profile=curriculum_profile,
+            )
+            context.update(dual_data)
+            # Compute summary values for the template
+            ges_results = dual_data.get("ges_results", [])
+            intl_results = dual_data.get("international_results", [])
+            if ges_results:
+                ges_scores = [
+                    r["total_score"]
+                    for r in ges_results
+                    if r.get("total_score") is not None
+                ]
+                context["ges_average"] = (
+                    f"{sum(ges_scores) / len(ges_scores):.1f}"
+                    if ges_scores
+                    else "-"
+                )
+            else:
+                context["ges_average"] = "-"
+            context["ges_position"] = report.class_position or "-"
+
+            if intl_results:
+                intl_scores = [
+                    r["total_score"]
+                    for r in intl_results
+                    if r.get("total_score") is not None
+                ]
+                context["international_average"] = (
+                    f"{sum(intl_scores) / len(intl_scores):.1f}"
+                    if intl_scores
+                    else "-"
+                )
+            else:
+                context["international_average"] = "-"
+
+            # GPA / IB points passed through from TermReport fields
+            context["gpa"] = report.gpa
+            # ib_total_points already in context
+
+            # Visibility flags from report config
+            context["show_position"] = (
+                report_config.show_position if report_config else True
+            )
+            context["show_effort_grade"] = (
+                report_config.show_effort_grade if report_config else False
+            )
+            context["ges_ca_weight"] = ca_weight
+            context["ges_exam_weight"] = exam_weight
 
         # Render HTML template
         env = cls._get_jinja_env()

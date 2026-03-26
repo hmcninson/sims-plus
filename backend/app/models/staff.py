@@ -4,7 +4,7 @@ SIMS Plus - Staff Model
 Database models for staff management (teachers and non-teaching staff).
 """
 
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
@@ -12,13 +12,16 @@ from uuid import UUID
 from sqlalchemy import (
     Boolean,
     Date,
+    DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     Enum as SQLEnum,
     UniqueConstraint,
+    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TenantMixin, SoftDeleteMixin
@@ -81,6 +84,41 @@ class StaffStatus(str, Enum):
     SUSPENDED = "suspended"
     TERMINATED = "terminated"
     RETIRED = "retired"
+
+
+class EmploymentType(str, Enum):
+    """Employment type (full-time, part-time, etc.)."""
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+    TEMPORARY = "temporary"
+    INTERN = "intern"
+
+
+class StaffDocumentType(str, Enum):
+    """Types of staff documents."""
+    CONTRACT = "contract"
+    CERTIFICATE = "certificate"
+    CV_RESUME = "cv_resume"
+    ID_DOCUMENT = "id_document"
+    REFERENCE_LETTER = "reference_letter"
+    DISCIPLINARY = "disciplinary"
+    TRAINING = "training"
+    MEDICAL = "medical"
+    OTHER = "other"
+
+
+class EmploymentEventType(str, Enum):
+    """Types of employment history events."""
+    HIRED = "hired"
+    PROMOTED = "promoted"
+    DEMOTED = "demoted"
+    TRANSFERRED = "transferred"
+    TITLE_CHANGED = "title_changed"
+    DEPARTMENT_CHANGED = "department_changed"
+    STATUS_CHANGED = "status_changed"
+    SALARY_CHANGED = "salary_changed"
+    CONTRACT_RENEWED = "contract_renewed"
 
 
 class Staff(Base, TenantMixin, SoftDeleteMixin):
@@ -162,6 +200,16 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
     )
     employment_date: Mapped[date] = mapped_column(Date, nullable=False)
     termination_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    employment_type: Mapped[Optional[EmploymentType]] = mapped_column(
+        SQLEnum(EmploymentType, name="employmenttype", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+    )
+
+    # HR-specific fields
+    tin_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    ges_staff_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    nationality: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    marital_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # Qualifications (stored as JSON array)
     # Example: [{"degree": "B.Ed", "institution": "UCC", "year": 2015}, ...]
@@ -214,6 +262,19 @@ class Staff(Base, TenantMixin, SoftDeleteMixin):
         back_populates="staff",
         cascade="all, delete-orphan",
         lazy="raise",
+    )
+    documents: Mapped[list["StaffDocument"]] = relationship(
+        "StaffDocument",
+        back_populates="staff",
+        cascade="all, delete-orphan",
+        lazy="raise",
+    )
+    employment_history: Mapped[list["StaffEmploymentHistory"]] = relationship(
+        "StaffEmploymentHistory",
+        back_populates="staff",
+        cascade="all, delete-orphan",
+        lazy="raise",
+        order_by="desc(StaffEmploymentHistory.effective_date)",
     )
 
     @property
@@ -279,5 +340,95 @@ class StaffClassAssignment(Base, TenantMixin):
     section: Mapped["ClassSection"] = relationship(
         "ClassSection",
         back_populates="staff_assignments",
+        lazy="raise",
+    )
+
+
+class StaffDocument(Base, TenantMixin, SoftDeleteMixin):
+    """
+    Staff document model.
+
+    Stores references to uploaded staff documents (contracts, certificates,
+    CVs, ID documents, etc.) with S3 file keys.
+    """
+    __tablename__ = "staff_documents"
+    __table_args__ = {"extend_existing": True}
+
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    staff_id: Mapped[UUID] = mapped_column(
+        ForeignKey("staff.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    document_type: Mapped[StaffDocumentType] = mapped_column(
+        SQLEnum(StaffDocumentType, name="staffdocumenttype", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    uploaded_by: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Relationships
+    staff: Mapped["Staff"] = relationship(
+        "Staff",
+        back_populates="documents",
+        lazy="raise",
+    )
+
+
+class StaffEmploymentHistory(Base, TenantMixin):
+    """
+    Staff employment history model.
+
+    Tracks employment events: promotions, transfers, department changes,
+    title changes, status changes, salary changes, etc.
+    NO SoftDeleteMixin — history records are permanent.
+    """
+    __tablename__ = "staff_employment_history"
+    __table_args__ = {"extend_existing": True}
+
+    school_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("schools.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    staff_id: Mapped[UUID] = mapped_column(
+        ForeignKey("staff.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[EmploymentEventType] = mapped_column(
+        SQLEnum(EmploymentEventType, name="employmenteventtype", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    effective_date: Mapped[date] = mapped_column(Date, nullable=False)
+    previous_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    previous_department_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    new_department_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    previous_job_title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    new_job_title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Relationships
+    staff: Mapped["Staff"] = relationship(
+        "Staff",
+        back_populates="employment_history",
         lazy="raise",
     )

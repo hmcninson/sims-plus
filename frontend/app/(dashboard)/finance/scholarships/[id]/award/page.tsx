@@ -52,7 +52,7 @@ import {
 import { getStudents } from "@/actions/students.action";
 import { getClasses, getAcademicYears, getTerms } from "@/actions/academic.action";
 import type { StudentListItem, Class, AcademicYear, Term } from "@/types";
-import type { Scholarship, StudentScholarshipWithDetails } from "@/types/finance.type";
+import type { Scholarship, StudentScholarshipWithDetails, RenewalType } from "@/types/finance.type";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 
@@ -299,7 +299,7 @@ export default function AwardScholarshipPage() {
       // Calculate effective dates from term selection
       const effectiveFrom = getTermStartDate(startTermId);
       let effectiveTo: string | undefined;
-      let renewalType: string;
+      let renewalType: RenewalType;
 
       switch (durationType) {
         case "specific_term":

@@ -309,6 +309,7 @@ export interface InvoiceSyncSkippedReasons {
 
 export interface InvoiceSyncResult {
   updated: number;
+  synced_count?: number;
   skipped: number;
   failed: number;
   errors: string[];
@@ -585,6 +586,7 @@ export interface StudentScholarshipWithDetails extends StudentScholarship {
 
 export interface ScholarshipAward {
   student_id: string;
+  academic_year_id?: string;
   effective_from: string;
   effective_to?: string;
   coverage_override?: number;
@@ -600,6 +602,7 @@ export interface ScholarshipAward {
 
 export interface ScholarshipBulkAward {
   student_ids: string[];
+  academic_year_id?: string;
   effective_from: string;
   effective_to?: string;
   coverage_override?: number;
@@ -798,6 +801,7 @@ export interface CreditNoteWithDetails extends CreditNote {
   original_invoice_number?: string;
   applied_to_invoice_number?: string;
   issued_by_name?: string;
+  remaining_amount?: number;
 }
 
 export interface CreditNoteCreate {
@@ -842,6 +846,8 @@ export interface CreditNoteListResponse {
 
 export interface StudentCreditBalance {
   student_id: string;
+  student_name?: string;
   credit_balance: number;
+  available_balance?: number;
   currency: string;
 }

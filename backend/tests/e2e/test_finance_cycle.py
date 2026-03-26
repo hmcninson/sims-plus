@@ -57,7 +57,7 @@ async def test_fee_structure_with_items(auth_client, seeded_tenant):
         "sequence": 1,
     })
     assert term_resp.status_code == 201
-    term_id = term_resp.json()["id"]
+    term_id = term_resp.json()["term"]["id"]
 
     class_resp = await client.post("/api/v1/academic/classes", json={
         "name": "FS Class 1",
@@ -119,7 +119,7 @@ async def test_complete_billing_cycle(auth_client, seeded_tenant):
         "sequence": 1,
     })
     assert term_resp.status_code == 201
-    term_id = term_resp.json()["id"]
+    term_id = term_resp.json()["term"]["id"]
 
     # 3. Class
     class_resp = await client.post("/api/v1/academic/classes", json={

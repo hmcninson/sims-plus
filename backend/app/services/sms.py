@@ -1,10 +1,10 @@
 """
 SIMS Plus - SMS Service
 
-Sends SMS messages via the Hubtel gateway and maintains a persistent
+Sends SMS messages via the Arkesel gateway and maintains a persistent
 log in the sms_log table for delivery tracking and audit.
 
-When Hubtel credentials are not configured (dev / staging), messages
+When Arkesel API key is not configured (dev / staging), messages
 are logged with PENDING status but not actually dispatched.
 """
 
@@ -18,12 +18,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sms import SMSLog, SMSProvider, SMSStatus
-from app.services.messaging.hubtel_client import HubtelClient
+from app.services.messaging.arkesel_client import ArkeselClient
 
 logger = structlog.get_logger()
 
 # Module-level singleton so we only parse settings once
-_hubtel_client = HubtelClient()
+_sms_client = ArkeselClient()
 
 
 class SMSError(Exception):
@@ -46,14 +46,14 @@ class SMSService:
         tenant_id: UUID,
         recipient_phone: str,
         message: str,
-        provider: SMSProvider = SMSProvider.HUBTEL,
+        provider: SMSProvider = SMSProvider.ARKESEL,
         sender_id: str | None = None,
         _skip_limit_check: bool = False,
     ) -> SMSLog:
         """
         Send an SMS message and log it.
 
-        If Hubtel is configured, the message is dispatched immediately.
+        If Arkesel is configured, the message is dispatched immediately.
         Otherwise it is recorded with PENDING status for later retry or
         manual inspection.
 
@@ -73,16 +73,16 @@ class SMSService:
             tenant_id=tenant_id,
             recipient_phone=recipient_phone,
             message=message,
-            provider=provider,
+            provider=SMSProvider.ARKESEL,
             status=SMSStatus.PENDING,
         )
         self.db.add(sms_log)
         await self.db.flush()
         await self.db.refresh(sms_log)
 
-        # Attempt delivery via Hubtel when credentials are available
-        if provider == SMSProvider.HUBTEL and _hubtel_client.is_configured:
-            result = await _hubtel_client.send_sms(
+        # Attempt delivery via Arkesel when API key is available
+        if _sms_client.is_configured:
+            result = await _sms_client.send_sms(
                 to=recipient_phone,
                 message=message,
                 sender_id=sender_id,
@@ -103,7 +103,7 @@ class SMSService:
                 "sms_gateway_not_configured",
                 sms_id=str(sms_log.id),
                 recipient=recipient_phone,
-                provider=provider.value,
+                provider="arkesel",
             )
 
         return sms_log
@@ -113,7 +113,7 @@ class SMSService:
         tenant_id: UUID,
         recipients: list[dict],
         message: str,
-        provider: SMSProvider = SMSProvider.HUBTEL,
+        provider: SMSProvider = SMSProvider.ARKESEL,
         sender_id: str | None = None,
     ) -> list[SMSLog]:
         """

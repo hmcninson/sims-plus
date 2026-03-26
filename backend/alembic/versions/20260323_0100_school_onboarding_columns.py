@@ -54,12 +54,16 @@ def upgrade() -> None:
             comment="Last completed wizard step (0 = not started)",
         ),
     )
-    calendar_type_enum = sa.Enum('term', 'semester', 'quarter', name='calendartype', create_type=True)
+    # Create the enum type explicitly before using it in add_column.
+    # sa.Enum with create_type=True inside add_column does NOT auto-create
+    # the type — it only works inside create_table's before_create event.
+    calendar_type_enum = sa.Enum('term', 'semester', 'quarter', name='calendartype')
+    calendar_type_enum.create(op.get_bind(), checkfirst=True)
     op.add_column(
         "schools",
         sa.Column(
             "calendar_type",
-            calendar_type_enum,
+            sa.Enum('term', 'semester', 'quarter', name='calendartype', create_type=False),
             nullable=False,
             server_default="term",
             comment="Academic calendar type: term, semester, or quarter",

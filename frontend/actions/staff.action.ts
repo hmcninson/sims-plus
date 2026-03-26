@@ -13,7 +13,14 @@ import type {
   StaffUpdate,
   StaffStats,
   StaffAssignment,
+  StaffDocument,
+  StaffEmploymentHistory,
+  CreateEmploymentEvent,
 } from "@/types";
+import type {
+  StaffWorkloadSummaryItem,
+  StaffWorkloadResponse,
+} from "@/types/leave.type";
 
 /**
  * Get auth context from cookies with token refresh
@@ -630,6 +637,187 @@ export async function importStaff(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to import staff",
+    };
+  }
+}
+
+// =========================
+// Staff Document Actions
+// =========================
+
+export async function getStaffDocuments(
+  staffId: string,
+  documentType?: string
+): Promise<ActionResult<StaffDocument[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams();
+    if (documentType) params.append("document_type", documentType);
+    const url = `/staff/${staffId}/documents${params.toString() ? `?${params.toString()}` : ""}`;
+    const response = await apiGet<StaffDocument[]>(url, { token, subdomain });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch staff documents",
+    };
+  }
+}
+
+export async function uploadStaffDocument(
+  staffId: string,
+  formData: FormData
+): Promise<ActionResult<StaffDocument>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+
+    const response = await fetch(
+      `${process.env.API_URL || "http://localhost:8000/api/v1"}/staff/${staffId}/documents`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Subdomain": subdomain || "",
+        },
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(
+        (error as Record<string, string>).detail || "Failed to upload document"
+      );
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to upload staff document",
+    };
+  }
+}
+
+export async function getDocumentDownloadUrl(
+  staffId: string,
+  documentId: string
+): Promise<ActionResult<{ download_url: string }>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<{ download_url: string }>(
+      `/staff/${staffId}/documents/${documentId}/download`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get download URL",
+    };
+  }
+}
+
+export async function deleteStaffDocument(
+  staffId: string,
+  documentId: string
+): Promise<ActionResult<void>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    await apiDelete(`/staff/${staffId}/documents/${documentId}`, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: undefined };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to delete staff document",
+    };
+  }
+}
+
+// =========================
+// Staff Employment History Actions
+// =========================
+
+export async function getStaffEmploymentHistory(
+  staffId: string
+): Promise<ActionResult<StaffEmploymentHistory[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<StaffEmploymentHistory[]>(
+      `/staff/${staffId}/employment-history`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch employment history",
+    };
+  }
+}
+
+export async function createStaffEmploymentEvent(
+  staffId: string,
+  data: CreateEmploymentEvent
+): Promise<ActionResult<StaffEmploymentHistory>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiPost<StaffEmploymentHistory>(
+      `/staff/${staffId}/employment-history`,
+      data,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create employment event",
+    };
+  }
+}
+
+// =========================
+// Staff Workload Actions
+// =========================
+
+export async function getStaffWorkloadSummary(): Promise<
+  ActionResult<StaffWorkloadSummaryItem[]>
+> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<StaffWorkloadSummaryItem[]>(
+      "/staff/workload/summary",
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to fetch workload summary",
+    };
+  }
+}
+
+export async function getStaffWorkload(
+  staffId: string
+): Promise<ActionResult<StaffWorkloadResponse>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<StaffWorkloadResponse>(
+      `/staff/${staffId}/workload`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Failed to fetch staff workload",
     };
   }
 }

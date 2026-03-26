@@ -77,6 +77,7 @@ class UserResponse(BaseSchema):
     role: UserRole
     status: UserStatus
     school_id: Optional[UUID] = None
+    custom_role_id: Optional[UUID] = None
     email_verified: bool
     mfa_enabled: bool
     last_login: Optional[datetime] = None
@@ -149,3 +150,57 @@ class UserInviteResponse(BaseSchema):
     role: UserRole
     status: UserStatus
     created_at: datetime
+
+
+# =========================
+# Bulk Import Schemas
+# =========================
+
+
+class MySchoolRoleResponse(BaseSchema):
+    """A school and the current user's role at that school."""
+
+    school_id: UUID
+    school_name: str
+    role_at_school: str | None
+    is_primary: bool
+    is_active: bool
+
+
+class UserImportRowError(BaseSchema):
+    """A single validation error from CSV import."""
+
+    row: int
+    field: str
+    error: str
+
+
+class UserImportRow(BaseSchema):
+    """Single row preview from CSV import."""
+
+    row_number: int
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+    phone: Optional[str] = None
+    valid: bool
+    errors: list[str] = []
+
+
+class UserImportCredential(BaseSchema):
+    """One-time credential for a newly imported user."""
+
+    email: str
+    temporary_password: str
+
+
+class UserImportResult(BaseSchema):
+    """Result of a bulk user import operation."""
+
+    total: int
+    valid: int
+    created: int
+    errors: list[UserImportRowError]
+    preview: list[UserImportRow]
+    credentials: Optional[list[UserImportCredential]] = None

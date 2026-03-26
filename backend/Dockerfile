@@ -4,7 +4,7 @@
 # =========================
 # Base Stage
 # =========================
-FROM python:3.12-slim as base
+FROM python:3.12-slim-bookworm as base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

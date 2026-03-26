@@ -711,6 +711,10 @@ export interface ClassStatistics {
   median_score?: number;
   pass_fail: PassFailStatistics;
   grade_distribution: GradeCount[];
+  /** Curriculum context for display formatting */
+  curriculum_type?: string;
+  score_display_mode?: string;
+  pass_mark?: number | null;
 }
 
 export interface SubjectStatistics {
@@ -958,6 +962,61 @@ export async function bulkUpdateTimetable(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to update timetable",
+    };
+  }
+}
+
+// =========================
+// Montessori Assessment Actions
+// =========================
+
+import type {
+  MontessoriAssessmentCreate,
+  MontessoriAssessmentResponse,
+} from "@/types/curriculum.type";
+
+export async function saveMontessoriAssessment(
+  academicYearId: string,
+  termId: string,
+  classId: string,
+  sectionId: string | undefined,
+  data: MontessoriAssessmentCreate
+): Promise<ActionResult<MontessoriAssessmentResponse>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams({ class_id: classId });
+    if (sectionId) params.append("section_id", sectionId);
+
+    const response = await apiPost<MontessoriAssessmentResponse>(
+      `/exams/reports/montessori-assessment/${academicYearId}/${termId}?${params.toString()}`,
+      data,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to save Montessori assessment",
+    };
+  }
+}
+
+export async function getMontessoriAssessment(
+  academicYearId: string,
+  termId: string,
+  studentId: string
+): Promise<ActionResult<MontessoriAssessmentResponse>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<MontessoriAssessmentResponse>(
+      `/exams/reports/montessori-assessment/${academicYearId}/${termId}/${studentId}`,
+      { token, subdomain }
+    );
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch Montessori assessment",
     };
   }
 }

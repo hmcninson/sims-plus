@@ -197,6 +197,49 @@ class ExamSubjectWithDetailsResponse(ExamSubjectResponse):
 
 
 # =========================
+# Criterion-Referenced Grading Schemas (IB MYP)
+# =========================
+
+
+class CriterionScore(BaseSchema):
+    """A single criterion assessment level.
+
+    IB MYP uses 4 criteria (A-D) per subject, each scored 0-8.
+    Other criterion-referenced systems may use different scales.
+    """
+
+    criterion: str = Field(
+        ..., max_length=5,
+        description="Criterion label (A, B, C, D)",
+    )
+    name: str = Field(
+        ..., max_length=200,
+        description="Criterion name, e.g., 'Knowing and understanding'",
+    )
+    level: int = Field(
+        ..., ge=0, le=8,
+        description="Achievement level 0-8",
+    )
+    max_level: int = Field(
+        default=8, ge=1, le=10,
+        description="Maximum possible level for this criterion",
+    )
+
+
+class CriterionScoreEntry(BaseSchema):
+    """Container for criterion-referenced scores on a single exam score.
+
+    Used by IB MYP where each subject has 4 criteria scored independently,
+    and the final grade (1-7) is derived from the sum of criterion levels.
+    """
+
+    criteria: list[CriterionScore] = Field(
+        ..., min_length=1, max_length=10,
+        description="List of criterion scores",
+    )
+
+
+# =========================
 # Exam Score Schemas
 # =========================
 
@@ -208,6 +251,17 @@ class ScoreEntry(BaseSchema):
     score: Optional[Decimal] = Field(None, ge=0)
     is_absent: bool = False
     teacher_remark: Optional[str] = None
+    effort_grade: Optional[str] = Field(
+        None,
+        max_length=10,
+        description="Effort/behavior grade (Cambridge: 1-5, or A-E). "
+                    "Valid values depend on the curriculum's effort grade scale."
+    )
+    criterion_scores: Optional[CriterionScoreEntry] = Field(
+        None,
+        description="Criterion-referenced scores (IB MYP). When provided, "
+                    "the final score (1-7) is auto-computed from criterion totals.",
+    )
 
 
 class ExamScoreBulkCreate(BaseSchema):
@@ -237,6 +291,8 @@ class ExamScoreResponse(BaseSchema):
     grade: Optional[str] = None
     grade_point: Optional[Decimal] = None
     grade_remark: Optional[str] = None
+    effort_grade: Optional[str] = None
+    criterion_scores: Optional[dict] = None
     teacher_remark: Optional[str] = None
     entered_by: Optional[UUID] = None
     entered_at: Optional[datetime] = None
@@ -264,6 +320,8 @@ class ScoreEntryStudent(BaseSchema):
     current_grade: Optional[str] = None
     is_absent: bool = False
     teacher_remark: Optional[str] = None
+    effort_grade: Optional[str] = None
+    criterion_scores: Optional[dict] = None
     score_id: Optional[UUID] = None
 
 
@@ -280,6 +338,8 @@ class ScoreEntryFormResponse(BaseSchema):
     max_score: Decimal
     pass_mark: Decimal
     grading_scale_id: Optional[UUID] = None
+    curriculum_type: str = "ges"
+    show_effort_grade: bool = False
     students: list[ScoreEntryStudent]
 
 
@@ -575,14 +635,14 @@ class GradeDistributionResponse(BaseSchema):
 
 
 class PassFailStatistics(BaseSchema):
-    """Pass/fail statistics."""
+    """Pass/fail statistics. Rates are None for Montessori (no pass/fail)."""
 
     total_students: int
     passed: int
     failed: int
     absent: int
-    pass_rate: Decimal
-    fail_rate: Decimal
+    pass_rate: Optional[Decimal] = None
+    fail_rate: Optional[Decimal] = None
 
 
 class ClassStatisticsResponse(BaseSchema):
@@ -602,6 +662,10 @@ class ClassStatisticsResponse(BaseSchema):
     median_score: Optional[Decimal] = None
     pass_fail: PassFailStatistics
     grade_distribution: list[GradeCount]
+    # Curriculum context — allows frontend to adapt display
+    curriculum_type: str = "ges"
+    score_display_mode: str = "percentage"
+    pass_mark: Optional[float] = None
 
 
 class SubjectStatisticsResponse(BaseSchema):
@@ -617,7 +681,7 @@ class SubjectStatisticsResponse(BaseSchema):
     highest_score: Optional[Decimal] = None
     lowest_score: Optional[Decimal] = None
     median_score: Optional[Decimal] = None
-    pass_rate: Decimal
+    pass_rate: Optional[Decimal] = None
     grade_distribution: list[GradeCount]
 
 
@@ -743,3 +807,103 @@ class BulkTimetableUpdateResult(BaseSchema):
     failed: int
     errors: list[dict] = []
     conflicts: list[TimetableConflict] = []
+
+
+# =========================
+# Montessori Narrative Assessment Schemas
+# =========================
+
+
+class MontessoriSkillEntry(BaseSchema):
+    """Single skill within a Montessori developmental area."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    progress_level: str = Field(
+        ...,
+        pattern=r"^(emerging|developing|practicing|mastery)$",
+        description="Progress level: emerging, developing, practicing, mastery",
+    )
+
+
+class MontessoriAreaEntry(BaseSchema):
+    """A Montessori developmental area with skills and narrative."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    skills: list[MontessoriSkillEntry] = Field(default_factory=list, max_length=20)
+    narrative: str = Field("", max_length=2000)
+
+    @field_validator("narrative")
+    @classmethod
+    def strip_html_from_narrative(cls, v: str) -> str:
+        """Strip ALL HTML tags using nh3 to prevent XSS in PDF output."""
+        if not v:
+            return v
+        import nh3
+
+        return nh3.clean(v, tags=set())
+
+
+class MontessoriWorkSample(BaseSchema):
+    """Reference to a physical or digital portfolio item."""
+
+    description: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("description")
+    @classmethod
+    def strip_html_from_description(cls, v: str) -> str:
+        """Strip ALL HTML tags using nh3 to prevent XSS in PDF output."""
+        if not v:
+            return v
+        import nh3
+
+        return nh3.clean(v, tags=set())
+
+
+class MontessoriAssessmentCreate(BaseSchema):
+    """Full Montessori assessment for a student-term.
+
+    Stores qualitative, narrative-based observations across developmental
+    domains — Montessori schools do not use numeric grades.
+    """
+
+    student_id: UUID
+    developmental_areas: list[MontessoriAreaEntry] = Field(
+        ..., min_length=1, max_length=15
+    )
+    work_samples: list[MontessoriWorkSample] = Field(
+        default_factory=list, max_length=20
+    )
+    goals: list[str] = Field(default_factory=list, max_length=10)
+    general_narrative: str = Field("", max_length=3000)
+
+    @field_validator("goals", mode="before")
+    @classmethod
+    def validate_goals(cls, v: list[str] | None) -> list[str]:
+        if v:
+            # Truncate individual goals and strip HTML
+            import nh3
+
+            return [nh3.clean(g[:500], tags=set()) for g in v]
+        return v or []
+
+    @field_validator("general_narrative")
+    @classmethod
+    def strip_html_from_general_narrative(cls, v: str) -> str:
+        """Strip ALL HTML tags using nh3 to prevent XSS in PDF output."""
+        if not v:
+            return v
+        import nh3
+
+        return nh3.clean(v, tags=set())
+
+
+class MontessoriAssessmentResponse(BaseSchema):
+    """Response for a Montessori narrative assessment."""
+
+    student_id: UUID
+    student_name: str
+    developmental_areas: list[dict]
+    work_samples: list[dict]
+    goals: list[str]
+    general_narrative: str
+    updated_at: Optional[datetime] = None

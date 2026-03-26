@@ -73,6 +73,9 @@ class LoginResponse(BaseSchema):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int = Field(description="Access token expiry in seconds")
+    refresh_token_expires_in: int = Field(
+        description="Refresh token expiry in seconds (use for cookie maxAge)"
+    )
     user: "UserResponse"
 
 
@@ -132,6 +135,9 @@ class TokenResponse(BaseSchema):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    refresh_token_expires_in: int = Field(
+        description="Refresh token expiry in seconds (use for cookie maxAge)"
+    )
 
 
 # =========================
@@ -186,6 +192,8 @@ class UserResponse(BaseSchema):
     school_id: Optional[UUID] = None
     avatar_url: Optional[str] = None
     email_verified: bool
+    phone_verified: bool = False
+    phone_verified_at: Optional[datetime] = None
     mfa_enabled: bool
     created_at: datetime
     updated_at: datetime
@@ -253,6 +261,28 @@ class ResendVerificationRequest(BaseSchema):
     """Resend verification email request."""
 
     email: EmailStr
+
+
+# =========================
+# Session Management
+# =========================
+
+class SessionResponse(BaseSchema):
+    """Active session information."""
+
+    id: UUID
+    device_info: Optional[str] = None
+    ip_address: Optional[str] = None
+    last_activity_at: datetime
+    created_at: datetime
+    is_current: bool = False
+
+
+class SessionListResponse(BaseSchema):
+    """List of active sessions."""
+
+    sessions: list[SessionResponse]
+    count: int
 
 
 # Update forward references

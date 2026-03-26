@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REMEMBER_ME_REFRESH_TOKEN_DAYS: int = 30
+    PASSWORD_RESET_TOKEN_EXPIRY_MINUTES: int = 60
+
+    # Session timeout: frontend shows warning at (timeout - 5) min, auto-logout at timeout
+    SESSION_TIMEOUT_MINUTES: int = 30
+    HEARTBEAT_INTERVAL_MINUTES: int = 5
 
     # =========================
     # CORS
@@ -107,6 +113,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_WINDOW: int = 60  # seconds
     RATE_LIMIT_SUBDOMAIN_CHECK_REQUESTS: int = 20
     RATE_LIMIT_SUBDOMAIN_CHECK_WINDOW: int = 60  # seconds
+    RATE_LIMIT_SEARCH_REQUESTS: int = 20
+    RATE_LIMIT_SEARCH_WINDOW: int = 60  # seconds
 
     # =========================
     # Email (SMTP)
@@ -121,12 +129,12 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "SIMS Plus"
 
     # =========================
-    # SMS (Hubtel)
+    # SMS (Arkesel)
     # =========================
-    HUBTEL_CLIENT_ID: str | None = None
-    HUBTEL_CLIENT_SECRET: str | None = None
-    HUBTEL_SENDER_ID: str = "SIMSPlus"
-    HUBTEL_MERCHANT_ACCOUNT: str | None = None
+    ARKESEL_API_KEY: str | None = None
+    ARKESEL_SENDER_ID: str = "SIMSPlus"
+    ARKESEL_SANDBOX: bool = False        # True for development/testing
+    ARKESEL_CALLBACK_URL: str | None = None  # Optional delivery report webhook
 
     # =========================
     # Mobile Money (MTN MoMo)
@@ -182,11 +190,30 @@ class Settings(BaseSettings):
     RATE_LIMIT_SUBSCRIPTION_REQUESTS: int = 5
     RATE_LIMIT_SUBSCRIPTION_WINDOW: int = 3600  # 5 per hour per IP (M3)
 
+    # Bulk operations (report gen, platform impersonation, analytics)
+    RATE_LIMIT_BULK_REQUESTS: int = 10
+    RATE_LIMIT_BULK_WINDOW: int = 60  # 10 per minute
+
     # =========================
     # Subscription / Trial
     # =========================
     TRIAL_DAYS: int = 90
     TRIAL_GRACE_PERIOD_DAYS: int = 7  # Read-only grace period after trial/subscription expires
+    CANCELLED_DATA_RETENTION_DAYS: int = 90  # Days to keep data after tenant cancellation before hard purge
+
+    # =========================
+    # MFA (TOTP)
+    # =========================
+    MFA_SECRET_ENCRYPTION_KEY: str = ""  # 32-byte Fernet key (base64-encoded)
+    MFA_PENDING_TOKEN_EXPIRY_MINUTES: int = 5
+    MFA_ISSUER_NAME: str = "SIMS Plus"
+    MFA_BACKUP_CODES_COUNT: int = 10
+
+    # =========================
+    # Platform Admin
+    # =========================
+    PLATFORM_TENANT_ID: str = "00000000-0000-0000-0000-000000000001"
+    PLATFORM_IMPERSONATION_EXPIRY_MINUTES: int = 30
 
     # =========================
     # Sentry

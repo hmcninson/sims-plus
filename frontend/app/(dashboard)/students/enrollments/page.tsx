@@ -1,9 +1,5 @@
-import { PlaceholderPage } from "@/components/placeholder-page";
-
-export const metadata = {
-  title: "Enrollments",
-};
+import { redirect } from "next/navigation";
 
 export default function EnrollmentsPage() {
-  return <PlaceholderPage title="Enrollments" description="Manage student enrollments and admissions." />;
+  redirect("/admissions/enrollment");
 }

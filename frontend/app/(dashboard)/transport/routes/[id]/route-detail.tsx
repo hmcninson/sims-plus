@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
@@ -155,7 +155,7 @@ export function RouteDetailView({ route: initialRoute }: Props) {
   // ─── Stop Form ─────────────────────────────────────────────────────────────
 
   const stopForm = useForm<StopFormData>({
-    resolver: zodResolver(stopSchema),
+    resolver: zodResolver(stopSchema) as Resolver<StopFormData>,
     defaultValues: {
       stop_name: "",
       stop_order: sortedStops.length + 1,
@@ -281,7 +281,7 @@ export function RouteDetailView({ route: initialRoute }: Props) {
   // ─── Route Edit Form ──────────────────────────────────────────────────────
 
   const routeEditForm = useForm<RouteEditFormData>({
-    resolver: zodResolver(routeEditSchema),
+    resolver: zodResolver(routeEditSchema) as Resolver<RouteEditFormData>,
     defaultValues: {
       name: route.name,
       route_code: route.route_code,

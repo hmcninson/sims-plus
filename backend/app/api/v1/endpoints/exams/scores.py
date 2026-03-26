@@ -73,6 +73,7 @@ async def update_score(
         grade=score.grade,
         grade_point=score.grade_point,
         grade_remark=score.grade_remark,
+        effort_grade=score.effort_grade,
         is_absent=score.is_absent,
         teacher_remark=score.teacher_remark,
         entered_by=score.entered_by,

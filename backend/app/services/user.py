@@ -4,15 +4,44 @@ SIMS Plus - User Service
 Business logic for user management.
 """
 
+import csv
+import io
+import re
+import secrets
+import string
 from typing import Optional
 from uuid import UUID
 
+import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
+from app.models.school import School
 from app.models.user import User, UserRole, UserStatus
+from app.models.user_school import UserSchool
 from app.utils.sanitize import escape_ilike
+
+logger = structlog.get_logger()
+
+# Basic email format validation
+_EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+# Staff roles allowed for CSV import (no platform_admin, chain_admin, parent, student, applicant)
+IMPORTABLE_ROLES = frozenset({
+    "school_admin",
+    "academic_head",
+    "finance_officer",
+    "hr_officer",
+    "teacher",
+    "house_parent",
+    "transport_officer",
+})
+
+MAX_IMPORT_ROWS = 200
+
+# Characters for temp password generation — includes letters, digits, and safe specials
+_PASSWORD_ALPHABET = string.ascii_letters + string.digits + "!@#$%^&*"
 
 
 class UserServiceError(Exception):
@@ -308,3 +337,294 @@ class UserService:
             counts[role.value] = count
 
         return counts
+
+    # =========================================================================
+    # Bulk CSV Import
+    # =========================================================================
+
+    async def import_users_from_file(
+        self,
+        tenant_id: UUID,
+        school_id: Optional[UUID],
+        file_content: bytes,
+        preview_only: bool = False,
+        created_by_id: Optional[UUID] = None,
+    ) -> dict:
+        """
+        Import users from a CSV file.
+
+        CSV columns: email (req), first_name (req), last_name (req), role (req), phone (opt).
+
+        In preview mode, validates all rows without creating users. In create mode,
+        bulk-creates valid users with PENDING status and auto-generated temp passwords.
+
+        Returns a dict with total, valid, created, errors, preview, and credentials.
+        """
+        # --- 1. Parse CSV (utf-8-sig handles BOM from Excel) ---
+        try:
+            text_content = file_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise UserServiceError(
+                "File encoding not supported. Please save as UTF-8 CSV.",
+                "invalid_encoding",
+            )
+
+        reader = csv.DictReader(io.StringIO(text_content))
+
+        # --- 2. Validate header row ---
+        if reader.fieldnames is None:
+            raise UserServiceError("CSV file is empty or has no header row", "empty_file")
+
+        # Normalize headers (strip whitespace, lowercase)
+        normalized_headers = {h.strip().lower() for h in reader.fieldnames}
+        required_columns = {"email", "first_name", "last_name", "role"}
+        missing = required_columns - normalized_headers
+        if missing:
+            raise UserServiceError(
+                f"Missing required columns: {', '.join(sorted(missing))}",
+                "missing_columns",
+            )
+
+        # --- 3. Read rows and enforce max limit ---
+        rows = list(reader)
+        if not rows:
+            raise UserServiceError("CSV file contains no data rows", "empty_file")
+
+        if len(rows) > MAX_IMPORT_ROWS:
+            raise UserServiceError(
+                f"Maximum {MAX_IMPORT_ROWS} rows per import (file has {len(rows)})",
+                "import_limit_exceeded",
+            )
+
+        # --- 4. Check subscription limit before processing ---
+        # Only check in create mode to avoid blocking previews unnecessarily
+        if not preview_only:
+            from app.services.subscription import SubscriptionService, LimitExceededError
+            sub_service = SubscriptionService(self.db)
+            # Pre-check with max possible users (actual valid count determined below,
+            # but we'll re-check after validation)
+
+        # --- 5. Validate each row ---
+        preview = []
+        errors = []
+        valid_rows = []
+        seen_emails: set[str] = set()
+
+        for i, row in enumerate(rows, start=2):  # Row 1 is the header
+            row_errors: list[str] = []
+
+            email = (row.get("email") or "").strip().lower()
+            first_name = (row.get("first_name") or "").strip()
+            last_name = (row.get("last_name") or "").strip()
+            role = (row.get("role") or "").strip().lower()
+            phone = (row.get("phone") or "").strip() or None
+
+            # Required field checks
+            if not email:
+                row_errors.append("Email is required")
+            elif not _EMAIL_PATTERN.match(email):
+                row_errors.append("Invalid email format")
+            elif email in seen_emails:
+                row_errors.append("Duplicate email in file")
+
+            if not first_name:
+                row_errors.append("First name is required")
+            elif len(first_name) > 100:
+                row_errors.append("First name must be 100 characters or less")
+
+            if not last_name:
+                row_errors.append("Last name is required")
+            elif len(last_name) > 100:
+                row_errors.append("Last name must be 100 characters or less")
+
+            if not role:
+                row_errors.append("Role is required")
+            elif role not in IMPORTABLE_ROLES:
+                row_errors.append(
+                    f"Invalid role. Must be one of: {', '.join(sorted(IMPORTABLE_ROLES))}"
+                )
+
+            # Check email uniqueness in database (skip if already has errors)
+            if email and not row_errors:
+                existing = await self.db.execute(
+                    select(User.id).where(
+                        User.email == email,
+                        # Defense-in-depth: always scope by tenant_id
+                        User.tenant_id == tenant_id,
+                        User.deleted_at.is_(None),
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    row_errors.append("Email already exists in this school")
+
+            seen_emails.add(email)
+
+            is_valid = len(row_errors) == 0
+            preview.append({
+                "row_number": i,
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+                "role": role,
+                "phone": phone,
+                "valid": is_valid,
+                "errors": row_errors,
+            })
+
+            if is_valid:
+                valid_rows.append({
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "role": role,
+                    "phone": phone,
+                })
+
+            for err in row_errors:
+                errors.append({"row": i, "field": "row", "error": err})
+
+        # --- 6. Preview mode: return validation results without creating users ---
+        if preview_only:
+            return {
+                "total": len(rows),
+                "valid": len(valid_rows),
+                "created": 0,
+                "errors": errors,
+                "preview": preview,
+                "credentials": None,
+            }
+
+        # --- 7. Check subscription limit with actual valid count ---
+        if valid_rows:
+            from app.services.subscription import SubscriptionService, LimitExceededError
+            sub_service = SubscriptionService(self.db)
+            try:
+                await sub_service.check_user_limit(tenant_id, additional=len(valid_rows))
+            except LimitExceededError:
+                raise UserServiceError(
+                    f"Cannot import {len(valid_rows)} users: would exceed your plan's user limit. "
+                    "Upgrade your subscription or reduce the number of users.",
+                    "user_limit_exceeded",
+                )
+
+        # --- 8. Create users ---
+        credentials = []
+        created_count = 0
+
+        for row_data in valid_rows:
+            # Generate 16-char temporary password that guarantees all 4 character
+            # classes required by the password policy (random selection alone
+            # does not guarantee at least one from each class)
+            password_chars = [
+                secrets.choice(string.ascii_uppercase),
+                secrets.choice(string.ascii_lowercase),
+                secrets.choice(string.digits),
+                secrets.choice("!@#$%^&*"),
+            ]
+            password_chars += [
+                secrets.choice(_PASSWORD_ALPHABET) for _ in range(12)
+            ]
+            secrets.SystemRandom().shuffle(password_chars)
+            temp_password = "".join(password_chars)
+
+            user = User(
+                tenant_id=tenant_id,
+                school_id=school_id,
+                email=row_data["email"],
+                first_name=row_data["first_name"],
+                last_name=row_data["last_name"],
+                role=UserRole(row_data["role"]),
+                phone=row_data["phone"],
+                password_hash=hash_password(temp_password),
+                status=UserStatus.PENDING,
+                email_verified=False,
+            )
+            self.db.add(user)
+            credentials.append({
+                "email": row_data["email"],
+                "temporary_password": temp_password,
+            })
+            created_count += 1
+
+        await self.db.flush()
+
+        logger.info(
+            "bulk_user_import_complete",
+            tenant_id=str(tenant_id),
+            total=len(rows),
+            valid=len(valid_rows),
+            created=created_count,
+            errors=len(errors),
+            created_by=str(created_by_id) if created_by_id else None,
+        )
+
+        return {
+            "total": len(rows),
+            "valid": len(valid_rows),
+            "created": created_count,
+            "errors": errors,
+            "preview": preview,
+            "credentials": credentials,
+        }
+
+    async def get_user_school_roles(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> list[dict]:
+        """Return the schools and roles for a user within their tenant.
+
+        For single-school tenants with no user_schools entries, falls back
+        to returning the single school from the schools table.
+        """
+        # Defense-in-depth: filter by tenant_id even though RLS handles isolation
+        result = await self.db.execute(
+            select(
+                UserSchool.school_id,
+                School.name.label("school_name"),
+                UserSchool.role_at_school,
+                UserSchool.is_primary,
+                UserSchool.is_active,
+            )
+            .join(School, UserSchool.school_id == School.id)
+            .where(UserSchool.tenant_id == tenant_id)
+            .where(UserSchool.user_id == user_id)
+            .where(School.deleted_at.is_(None))
+            .order_by(UserSchool.is_primary.desc(), School.name)
+        )
+        rows = result.all()
+
+        if rows:
+            return [
+                {
+                    "school_id": row.school_id,
+                    "school_name": row.school_name,
+                    "role_at_school": row.role_at_school,
+                    "is_primary": row.is_primary,
+                    "is_active": row.is_active,
+                }
+                for row in rows
+            ]
+
+        # Fallback for single-school tenants without user_schools entries:
+        # return the lone active school in the tenant.
+        school_result = await self.db.execute(
+            select(School.id, School.name)
+            .where(School.tenant_id == tenant_id)
+            .where(School.deleted_at.is_(None))
+            .where(School.is_active.is_(True))
+            .limit(1)
+        )
+        school = school_result.first()
+        if school:
+            return [
+                {
+                    "school_id": school.id,
+                    "school_name": school.name,
+                    "role_at_school": None,
+                    "is_primary": True,
+                    "is_active": True,
+                }
+            ]
+
+        return []

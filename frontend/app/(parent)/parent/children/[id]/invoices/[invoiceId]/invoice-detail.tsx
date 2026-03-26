@@ -10,7 +10,7 @@ import {
   Receipt,
   CheckCircle2,
 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -409,7 +409,7 @@ function PaymentDialog({
   const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<PaymentFormValues>({
-    resolver: zodResolver(paymentSchema),
+    resolver: zodResolver(paymentSchema) as Resolver<PaymentFormValues>,
     defaultValues: {
       method: "mobile_money",
       amount: balance,

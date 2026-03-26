@@ -14,6 +14,7 @@ from .scholarships import router as scholarships_router
 from .credit_notes import router as credit_notes_router
 from .dashboard import router as dashboard_router
 from .reports import router as reports_router
+from .siblings import router as siblings_router
 
 router = APIRouter()
 
@@ -26,3 +27,4 @@ router.include_router(payments_router)
 router.include_router(scholarships_router)
 router.include_router(credit_notes_router)
 router.include_router(reports_router)
+router.include_router(siblings_router)

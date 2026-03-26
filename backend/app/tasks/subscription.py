@@ -1,11 +1,8 @@
 """
 SIMS Plus - Subscription Background Tasks
 
-Scheduled via Celery Beat to run daily.
+Scheduled via Celery Beat to run daily at 08:00 UTC.
 Sends warning notifications at 7 days and 1 day before trial expiration.
-
-TODO: Wire to Celery once celery worker + beat are configured.
-      For now, can be called directly as async functions.
 """
 
 import structlog
@@ -158,3 +155,24 @@ async def _send_trial_warning(
             tenant_id=str(tenant.id),
             admin_email=admin.email,
         )
+
+
+# ---------------------------------------------------------------------------
+# Celery task wrapper
+# ---------------------------------------------------------------------------
+
+from app.celery_app import celery_app  # noqa: E402
+from app.tasks.utils import run_async  # noqa: E402
+
+
+@celery_app.task(name="app.tasks.subscription.check_trial_expirations_task")
+def check_trial_expirations_task() -> None:
+    """
+    Celery beat task: check trial expirations and send warning emails.
+
+    This task manages its own DB session (see check_trial_expirations).
+    The tenants table is not RLS-scoped, so no tenant context is needed
+    for the initial query. Per-tenant context is set inline when querying
+    that tenant's users.
+    """
+    run_async(check_trial_expirations())

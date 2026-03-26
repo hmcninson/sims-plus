@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfigurationSettings, LearningAreas, RatingScales } from "@/components/preschool";
+import { CaregiverRatioConfig } from "@/components/preschool/CaregiverRatioConfig";
 
 export const metadata = {
   title: "Preschool Settings",
@@ -22,10 +23,11 @@ export default function PreschoolSettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="configuration" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="configuration">Configuration</TabsTrigger>
           <TabsTrigger value="learning-areas">Learning Areas</TabsTrigger>
           <TabsTrigger value="rating-scales">Rating Scales</TabsTrigger>
+          <TabsTrigger value="ratios">Ratios</TabsTrigger>
         </TabsList>
 
         {/* Configuration Tab */}
@@ -46,6 +48,13 @@ export default function PreschoolSettingsPage() {
         <TabsContent value="rating-scales" className="space-y-6">
           <Suspense fallback={<LoadingCard />}>
             <RatingScales />
+          </Suspense>
+        </TabsContent>
+
+        {/* Ratios Tab */}
+        <TabsContent value="ratios" className="space-y-6">
+          <Suspense fallback={<LoadingCard />}>
+            <CaregiverRatioConfig />
           </Suspense>
         </TabsContent>
       </Tabs>

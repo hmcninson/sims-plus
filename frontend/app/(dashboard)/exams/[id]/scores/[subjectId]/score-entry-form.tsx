@@ -79,6 +79,7 @@ interface StudentScoreEntry {
   is_absent: boolean;
   teacher_remark: string;
   grade?: string;
+  effort_grade: string;
 }
 
 export function ScoreEntryForm({
@@ -99,6 +100,9 @@ export function ScoreEntryForm({
   );
   const selectedScale = gradingScales.find((s) => s.id === selectedScaleId);
 
+  // Determine if effort grade column should be shown
+  const showEffortGrade = scoreForm.show_effort_grade === true;
+
   // Initialize scores from form data
   const [scores, setScores] = useState<Record<string, StudentScoreEntry>>(() => {
     const initial: Record<string, StudentScoreEntry> = {};
@@ -109,6 +113,7 @@ export function ScoreEntryForm({
         is_absent: student.is_absent,
         teacher_remark: student.teacher_remark || "",
         grade: student.current_grade,
+        effort_grade: student.effort_grade || "",
       };
     }
     return initial;
@@ -195,9 +200,12 @@ export function ScoreEntryForm({
         if (value) {
           studentScore.score = "";
           studentScore.grade = undefined;
+          studentScore.effort_grade = "";
         }
       } else if (field === "teacher_remark" && typeof value === "string") {
         studentScore.teacher_remark = value;
+      } else if (field === "effort_grade" && typeof value === "string") {
+        studentScore.effort_grade = value;
       }
 
       updated[studentId] = studentScore;
@@ -215,6 +223,7 @@ export function ScoreEntryForm({
         score: s.score !== "" ? parseFloat(s.score) : undefined,
         is_absent: s.is_absent,
         teacher_remark: s.teacher_remark || undefined,
+        effort_grade: s.effort_grade || null,
       }));
 
     if (scoreEntries.length === 0) {
@@ -468,6 +477,9 @@ export function ScoreEntryForm({
                     Score (/{scoreForm.max_score})
                   </TableHead>
                   <TableHead className="w-[100px]">Grade</TableHead>
+                  {showEffortGrade && (
+                    <TableHead className="hidden sm:table-cell w-[120px]">Effort</TableHead>
+                  )}
                   <TableHead className="w-[80px]">Absent</TableHead>
                   <TableHead>Remark</TableHead>
                 </TableRow>
@@ -475,7 +487,7 @@ export function ScoreEntryForm({
               <TableBody>
                 {filteredStudents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={showEffortGrade ? 7 : 6} className="text-center py-8 text-muted-foreground">
                       {searchQuery ? "No students match your search" : "No students found"}
                     </TableCell>
                   </TableRow>
@@ -558,6 +570,28 @@ export function ScoreEntryForm({
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
+                      {showEffortGrade && (
+                        <TableCell className="hidden sm:table-cell">
+                          <Select
+                            value={scoreEntry.effort_grade || ""}
+                            onValueChange={(val) =>
+                              updateScore(student.student_id, "effort_grade", val)
+                            }
+                            disabled={scoreEntry.is_absent}
+                          >
+                            <SelectTrigger className="w-20">
+                              <SelectValue placeholder="-" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1 - Excellent</SelectItem>
+                              <SelectItem value="2">2 - Good</SelectItem>
+                              <SelectItem value="3">3 - Satisfactory</SelectItem>
+                              <SelectItem value="4">4 - Needs Improvement</SelectItem>
+                              <SelectItem value="5">5 - Unacceptable</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Checkbox
                           checked={scoreEntry.is_absent}

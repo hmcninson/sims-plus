@@ -2,7 +2,7 @@
 Tests for SMS messaging endpoints.
 
 Verifies send, bulk send, history, stats, phone validation, tenant isolation,
-and permission enforcement. Hubtel HTTP calls are always mocked.
+and permission enforcement. Arkesel HTTP calls are always mocked.
 """
 
 import pytest
@@ -274,7 +274,7 @@ async def test_send_sms_to_specific_phones(sms_client):
     assert len(data) == 2
     assert data[0]["recipient_phone"] == "+233241234567"
     assert data[1]["recipient_phone"] == "0201234567"
-    # Status should be pending (Hubtel not configured in tests)
+    # Status should be pending (Arkesel not configured in tests)
     assert data[0]["status"] in ("pending", "sent")
 
 
@@ -463,16 +463,16 @@ async def test_send_sms_requires_communications_send_permission(sms_tenant):
 
 
 @pytest.mark.asyncio
-async def test_hubtel_not_called_when_not_configured(sms_client):
-    """When Hubtel credentials are not set, send_sms should still log but not call Hubtel."""
-    with patch("app.services.sms._hubtel_client") as mock_hubtel:
-        mock_hubtel.is_configured = False
+async def test_arkesel_not_called_when_not_configured(sms_client):
+    """When Arkesel API key is not set, send_sms should still log but not call Arkesel."""
+    with patch("app.services.sms._sms_client") as mock_arkesel:
+        mock_arkesel.is_configured = False
 
         resp = await sms_client.post(
             "/api/v1/messaging/sms/send",
-            json={"recipient_phones": ["+233241000099"], "message": "No Hubtel"},
+            json={"recipient_phones": ["+233241000099"], "message": "No Arkesel"},
         )
         assert resp.status_code == 201
 
         # send_sms should NOT have been called on the mock
-        mock_hubtel.send_sms.assert_not_called()
+        mock_arkesel.send_sms.assert_not_called()

@@ -21,6 +21,12 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
 import { Check, ChevronsUpDown, School, Loader2 } from "lucide-react";
+import { formatRoleLabel } from "@/lib/utils";
+
+interface SchoolSwitcherProps {
+  /** Per-school role overrides (school UUID -> role string). */
+  schoolRoles?: Record<string, string>;
+}
 
 /**
  * School switcher for the sidebar.
@@ -28,7 +34,7 @@ import { Check, ChevronsUpDown, School, Loader2 } from "lucide-react";
  * Only renders when `isChain` is true and there are multiple schools.
  * Single-school tenants never see this component.
  */
-export function SchoolSwitcher() {
+export function SchoolSwitcher({ schoolRoles }: SchoolSwitcherProps = {}) {
   const { activeSchoolId, accessibleSchools, isChain, isSwitching, switchSchool } =
     useSchool();
 
@@ -58,7 +64,10 @@ export function SchoolSwitcher() {
               {activeSchool?.name ?? "Select School"}
             </span>
             <span className="truncate text-xs text-muted-foreground">
-              {activeSchool?.code ?? "Switch school"}
+              {/* Show the user's role at this school if available, otherwise school code */}
+              {activeSchoolId && schoolRoles?.[activeSchoolId]
+                ? formatRoleLabel(schoolRoles[activeSchoolId])
+                : activeSchool?.code ?? "Switch school"}
             </span>
           </div>
           <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
@@ -83,13 +92,17 @@ export function SchoolSwitcher() {
             <div className="flex aspect-square size-6 items-center justify-center rounded bg-muted text-muted-foreground">
               <School className="size-3.5" />
             </div>
-            <div className="flex-1 truncate">
-              <span className="text-sm">{school.name}</span>
-              {school.code && (
-                <span className="ml-1 text-xs text-muted-foreground">
-                  ({school.code})
-                </span>
-              )}
+            <div className="flex-1 min-w-0">
+              <div className="truncate text-sm">{school.name}</div>
+              {schoolRoles?.[school.id] ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {formatRoleLabel(schoolRoles[school.id])}
+                </div>
+              ) : school.code ? (
+                <div className="truncate text-xs text-muted-foreground">
+                  {school.code}
+                </div>
+              ) : null}
             </div>
             {school.id === activeSchoolId && (
               <Check className="size-4 shrink-0 text-primary" />

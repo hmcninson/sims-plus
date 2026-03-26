@@ -5,13 +5,17 @@ Redis-based token blacklisting for secure logout.
 """
 
 import hashlib
+import logging
 from datetime import UTC, datetime
 from typing import Optional
 
 import redis.asyncio as redis
 from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class TokenBlacklistService:
@@ -139,6 +143,123 @@ class TokenBlacklistService:
             if settings.ENVIRONMENT == "production":
                 return True
             return False
+
+    async def blacklist_jti(self, jti: str) -> bool:
+        """
+        Blacklist a refresh token by its JTI (JWT ID).
+
+        Used when terminating sessions -- we know the JTI but not the
+        full token string. The JTI is stored for the full refresh token
+        lifetime so any attempt to use a token with this JTI is rejected.
+
+        Args:
+            jti: JWT ID to blacklist
+
+        Returns:
+            True if successfully blacklisted, False if Redis unavailable
+        """
+        redis_client = await self._get_redis()
+        if redis_client is None:
+            return False
+
+        try:
+            key = f"jti_blacklist:{jti}"
+            # Keep for full refresh token duration
+            ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+            await redis_client.setex(key, ttl, "1")
+            return True
+        except Exception:
+            return False
+
+    async def is_jti_blacklisted(
+        self,
+        jti: str,
+        db: Optional[AsyncSession] = None,
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Check if a JTI has been blacklisted.
+
+        Fail-closed: when Redis is unavailable, falls back to checking the
+        user_sessions table. If the session is inactive or missing, the JTI
+        is treated as blacklisted. If both Redis and DB are unavailable,
+        returns True (blocked) for security.
+
+        Args:
+            jti: JWT ID to check
+            db: Optional database session for fallback when Redis is down
+            tenant_id: Optional tenant ID for defense-in-depth filtering on DB fallback
+
+        Returns:
+            True if blacklisted, False otherwise
+        """
+        redis_client = await self._get_redis()
+        if redis_client is not None:
+            try:
+                key = f"jti_blacklist:{jti}"
+                result = await redis_client.exists(key)
+                return result > 0
+            except Exception:
+                # Redis command failed -- fall through to DB fallback
+                logger.warning(
+                    "Redis command failed for JTI blacklist check, "
+                    "falling back to database",
+                    extra={"jti": jti[:8]},
+                )
+
+        # Redis unavailable or command failed -- use DB fallback
+        return await self._check_jti_via_db(jti, db, tenant_id=tenant_id)
+
+    async def _check_jti_via_db(
+        self,
+        jti: str,
+        db: Optional[AsyncSession],
+        tenant_id: Optional[str] = None,
+    ) -> bool:
+        """
+        Database fallback for JTI blacklist check.
+
+        Queries user_sessions to determine if the session is still active.
+        If the session is inactive or not found, returns True (blocked).
+        If DB is unavailable, returns True (fail closed for security).
+        """
+        if db is None:
+            # No DB session available -- fail closed
+            logger.warning(
+                "No DB session for JTI blacklist fallback, failing closed",
+                extra={"jti": jti[:8]},
+            )
+            return True
+
+        try:
+            from app.models.user_session import UserSession
+            from sqlalchemy import select
+
+            query = (
+                select(UserSession.is_active)
+                .where(UserSession.jti == jti)
+            )
+            # Defense-in-depth: scope to tenant even though RLS enforces isolation
+            if tenant_id is not None:
+                query = query.where(UserSession.tenant_id == tenant_id)
+
+            result = await db.execute(query)
+            session_active = result.scalar_one_or_none()
+
+            if session_active is None:
+                # Session not found -- treat as revoked
+                return True
+
+            # Session found -- blocked if inactive
+            return not session_active
+
+        except Exception:
+            # DB query failed -- fail closed for security
+            logger.error(
+                "DB fallback for JTI blacklist check failed, failing closed",
+                extra={"jti": jti[:8]},
+            )
+            return True
 
     async def blacklist_user_tokens(self, user_id: str) -> bool:
         """

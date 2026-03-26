@@ -41,13 +41,18 @@ async function getActiveSchoolFromCookie(): Promise<string | undefined> {
  * 401 unauthorized from 429 rate limited).
  */
 export class ApiError extends Error {
+  /** True when the server explicitly flagged the 401 as an inactivity timeout */
+  public readonly sessionExpired: boolean;
+
   constructor(
     message: string,
     public readonly status: number,
     public readonly requestId?: string,
+    sessionExpired = false,
   ) {
     super(message);
     this.name = "ApiError";
+    this.sessionExpired = sessionExpired;
   }
 }
 
@@ -80,6 +85,7 @@ const SUBSCRIPTION_ERROR_CODES = new Set([
   "TRIAL_GRACE_PERIOD",
   "SUBSCRIPTION_GRACE_PERIOD",
   "TENANT_SUSPENDED",
+  "TENANT_CANCELLED",
   "STUDENT_LIMIT_EXCEEDED",
   "USER_LIMIT_EXCEEDED",
   "SMS_LIMIT_EXCEEDED",
@@ -180,10 +186,16 @@ export async function apiFetch<T>(
       }
     }
 
+    // Detect inactivity-based session expiry from the X-Session-Expired header
+    const isSessionExpired =
+      response.status === 401 &&
+      response.headers.get("X-Session-Expired") === "inactivity";
+
     throw new ApiError(
       errorMessage,
       response.status,
       requestId,
+      isSessionExpired,
     );
   }
 

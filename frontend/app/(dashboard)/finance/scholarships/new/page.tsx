@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -162,7 +162,7 @@ export default function NewScholarshipPage() {
   const [feeTypes, setFeeTypes] = useState<FeeType[]>([]);
 
   const form = useForm<ScholarshipFormData>({
-    resolver: zodResolver(scholarshipSchema),
+    resolver: zodResolver(scholarshipSchema) as Resolver<ScholarshipFormData>,
     defaultValues: {
       name: "",
       code: "",

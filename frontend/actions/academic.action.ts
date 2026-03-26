@@ -235,11 +235,11 @@ export async function getTerm(id: string): Promise<ActionResult<Term>> {
   }
 }
 
-export async function createTerm(data: TermCreate): Promise<ActionResult<Term>> {
+export async function createTerm(data: TermCreate): Promise<ActionResult<Term & { warning?: string | null }>> {
   try {
     const { token, subdomain } = await getAuthContext();
-    const response = await apiPost<Term>("/academic/terms", data, { token, subdomain });
-    return { success: true, data: response };
+    const response = await apiPost<{ term: Term; warning: string | null }>("/academic/terms", data, { token, subdomain });
+    return { success: true, data: { ...response.term, warning: response.warning } };
   } catch (error) {
     return {
       success: false,

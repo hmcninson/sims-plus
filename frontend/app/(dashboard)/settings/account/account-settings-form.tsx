@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Key, Loader2, Shield, Smartphone, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff, Key, Loader2, Shield, Smartphone, AlertTriangle, Phone, CheckCircle2, Monitor, Globe, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -28,12 +28,35 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { changePassword } from "@/actions/user.action";
-import { logout } from "@/actions/auth.action";
+import { logout, getActiveSessions, terminateSession, terminateAllOtherSessions } from "@/actions/auth.action";
+import { sendPhoneOTP, verifyPhone } from "@/actions/otp.action";
 import { clearOfflineData } from "@/lib/offline/db";
+import { MFASetupDialog } from "@/components/mfa/mfa-setup-dialog";
+import { MFADisableDialog } from "@/components/mfa/mfa-disable-dialog";
+import { BackupCodesDialog } from "@/components/mfa/backup-codes-dialog";
+
+import type { UserSession } from "@/types";
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 interface AccountSettingsFormProps {
   user: {
     email: string;
+    phone: string | null;
+    phone_verified: boolean;
     mfa_enabled: boolean;
     created_at: string;
   };
@@ -51,6 +74,92 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     confirmPassword: "",
   });
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+
+  // MFA dialog state
+  const [mfaSetupOpen, setMfaSetupOpen] = useState(false);
+  const [mfaDisableOpen, setMfaDisableOpen] = useState(false);
+  const [backupCodesOpen, setBackupCodesOpen] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(user.mfa_enabled);
+
+  // Auto-open MFA setup when enforcement redirect is detected
+  const searchParams = useSearchParams();
+  const mfaRequired = searchParams.get("setup_mfa") === "required";
+
+  useEffect(() => {
+    if (mfaRequired && !mfaEnabled) {
+      setMfaSetupOpen(true);
+    }
+  }, [mfaRequired, mfaEnabled]);
+
+  // Phone verification state
+  const [showOTPInput, setShowOTPInput] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [isSendingOTP, setIsSendingOTP] = useState(false);
+  const [isVerifyingPhone, setIsVerifyingPhone] = useState(false);
+
+  // Session management state
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [terminatingSessionId, setTerminatingSessionId] = useState<string | null>(null);
+  const [isTerminatingAll, setIsTerminatingAll] = useState(false);
+
+  // Cooldown timer effect
+  useEffect(() => {
+    if (otpCooldown > 0) {
+      const timer = setTimeout(() => setOtpCooldown(otpCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [otpCooldown]);
+
+  // Fetch active sessions on mount
+  const fetchSessions = useCallback(async () => {
+    setIsLoadingSessions(true);
+    const result = await getActiveSessions();
+    if (result.success && result.data) {
+      setSessions(result.data.sessions);
+    }
+    setIsLoadingSessions(false);
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+
+  const handleSendPhoneOTP = useCallback(async () => {
+    setIsSendingOTP(true);
+    const result = await sendPhoneOTP();
+    setIsSendingOTP(false);
+
+    if (result.success) {
+      setShowOTPInput(true);
+      setOtpCooldown(60);
+      toast.success("Verification code sent to your phone");
+    } else {
+      toast.error(result.error || "Failed to send verification code");
+    }
+  }, []);
+
+  const handleVerifyPhone = useCallback(async () => {
+    if (otpCode.length !== 6) {
+      toast.error("Please enter the 6-digit code");
+      return;
+    }
+
+    setIsVerifyingPhone(true);
+    const result = await verifyPhone(otpCode);
+    setIsVerifyingPhone(false);
+
+    if (result.success) {
+      toast.success("Phone number verified successfully");
+      setShowOTPInput(false);
+      setOtpCode("");
+      // Refresh the page to get updated user data
+      router.refresh();
+    } else {
+      toast.error(result.error || "Verification failed");
+    }
+  }, [otpCode, router]);
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = [];
@@ -145,6 +254,35 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
     try { await clearOfflineData(); } catch { /* ignore */ }
     await logout();
   };
+
+  const handleTerminateSession = async (sessionId: string) => {
+    setTerminatingSessionId(sessionId);
+    const result = await terminateSession(sessionId);
+
+    if (result.success) {
+      toast.success("Session terminated");
+      await fetchSessions();
+    } else {
+      toast.error(result.error || "Failed to terminate session");
+    }
+    setTerminatingSessionId(null);
+  };
+
+  const handleTerminateAllOtherSessions = async () => {
+    setIsTerminatingAll(true);
+    const result = await terminateAllOtherSessions();
+
+    if (result.success) {
+      const count = result.data?.terminated ?? 0;
+      toast.success(`Terminated ${count} session(s)`);
+      await fetchSessions();
+    } else {
+      toast.error(result.error || "Failed to terminate sessions");
+    }
+    setIsTerminatingAll(false);
+  };
+
+  const otherSessions = sessions.filter((s) => !s.is_current);
 
   const memberSince = new Date(user.created_at).toLocaleDateString("en-US", {
     year: "numeric",
@@ -289,85 +427,346 @@ export function AccountSettingsForm({ user }: AccountSettingsFormProps) {
         </CardContent>
       </Card>
 
-      {/* Two-Factor Authentication */}
+      {/* Phone Verification */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            Two-Factor Authentication
+            <Phone className="h-5 w-5" />
+            Phone Verification
           </CardTitle>
           <CardDescription>
-            Add an extra layer of security to your account.
+            Verify your phone number to receive SMS notifications and enable SMS-based password recovery.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                <Smartphone className="h-5 w-5" />
+          {user.phone ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium">{user.phone}</span>
+                {user.phone_verified ? (
+                  <Badge variant="default" className="bg-green-600">
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    Verified
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">Unverified</Badge>
+                )}
               </div>
-              <div>
-                <p className="font-medium">Authenticator App</p>
-                <p className="text-sm text-muted-foreground">
-                  Use an app like Google Authenticator or Authy.
-                </p>
-              </div>
+
+              {!user.phone_verified && (
+                <>
+                  {!showOTPInput ? (
+                    <Button
+                      onClick={handleSendPhoneOTP}
+                      disabled={otpCooldown > 0 || isSendingOTP}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {isSendingOTP ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : otpCooldown > 0 ? (
+                        `Resend in ${otpCooldown}s`
+                      ) : (
+                        "Send Verification Code"
+                      )}
+                    </Button>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Enter the 6-digit code sent to {user.phone}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          placeholder="000000"
+                          value={otpCode}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, "");
+                            setOtpCode(value);
+                          }}
+                          className="w-32 text-center text-lg tracking-widest"
+                          aria-label="Verification code"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleVerifyPhone}
+                          size="sm"
+                          disabled={otpCode.length !== 6 || isVerifyingPhone}
+                        >
+                          {isVerifyingPhone ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Verifying...
+                            </>
+                          ) : (
+                            "Verify"
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleSendPhoneOTP}
+                          variant="ghost"
+                          size="sm"
+                          disabled={otpCooldown > 0 || isSendingOTP}
+                        >
+                          {otpCooldown > 0
+                            ? `Resend in ${otpCooldown}s`
+                            : "Resend Code"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            {user.mfa_enabled ? (
-              <Badge variant="default" className="bg-green-600">Enabled</Badge>
-            ) : (
-              <Badge variant="secondary">Coming soon</Badge>
-            )}
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No phone number on your profile. Add one in your profile settings to enable phone verification.
+            </p>
+          )}
         </CardContent>
       </Card>
+
+      {/* Two-Factor Authentication */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Two-Factor Authentication
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Add an extra layer of security to your account using an
+                authenticator app.
+              </CardDescription>
+            </div>
+            {mfaEnabled && (
+              <Badge variant="default" className="bg-green-600 shrink-0">
+                Enabled
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {mfaEnabled ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4 rounded-lg border p-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                  <Smartphone className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium">Authenticator App</p>
+                  <p className="text-sm text-muted-foreground">
+                    Your account is secured with two-factor authentication.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => setBackupCodesOpen(true)}
+                >
+                  Regenerate Backup Codes
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setMfaDisableOpen(true)}
+                >
+                  Disable 2FA
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                  <Smartphone className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Authenticator App</p>
+                  <p className="text-sm text-muted-foreground">
+                    Use an app like Google Authenticator or Authy.
+                  </p>
+                </div>
+              </div>
+              <Button onClick={() => setMfaSetupOpen(true)}>
+                Enable 2FA
+              </Button>
+            </div>
+          )}
+
+          {mfaRequired && !mfaEnabled && (
+            <p className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-400">
+              Your administrator requires two-factor authentication for your
+              role. Please enable 2FA to continue.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* MFA Dialogs */}
+      <MFASetupDialog
+        open={mfaSetupOpen}
+        onOpenChange={setMfaSetupOpen}
+        onSuccess={() => {
+          setMfaEnabled(true);
+          router.refresh();
+        }}
+        required={mfaRequired}
+      />
+      <MFADisableDialog
+        open={mfaDisableOpen}
+        onOpenChange={setMfaDisableOpen}
+        onSuccess={() => {
+          setMfaEnabled(false);
+          router.refresh();
+        }}
+      />
+      <BackupCodesDialog
+        open={backupCodesOpen}
+        onOpenChange={setBackupCodesOpen}
+      />
 
       {/* Active Sessions */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5" />
-            Active Sessions
-          </CardTitle>
-          <CardDescription>
-            Manage devices where you&apos;re currently logged in.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">Current Session</p>
-              <p className="text-sm text-muted-foreground">
-                This device · Last active now
-              </p>
+              <CardTitle className="flex items-center gap-2">
+                <Monitor className="h-5 w-5" />
+                Active Sessions
+              </CardTitle>
+              <CardDescription>
+                Manage devices where you&apos;re currently logged in.
+              </CardDescription>
             </div>
-            <Badge variant="outline" className="text-green-600 border-green-600">
-              Active
-            </Badge>
+            {otherSessions.length > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isTerminatingAll}
+                  >
+                    {isTerminatingAll ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Terminating...
+                      </>
+                    ) : (
+                      "Terminate All Others"
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Terminate all other sessions?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will sign you out of all other devices. Only your
+                      current session will remain active.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleTerminateAllOtherSessions}>
+                      Terminate All
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" className="w-full">
-                Sign Out All Sessions
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Sign out of all sessions?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will sign you out of all devices, including this one.
-                  You&apos;ll need to log in again.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleLogoutAllSessions}>
-                  Sign Out All
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLoadingSessions ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : sessions.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No active sessions found.
+            </p>
+          ) : (
+            sessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex items-center justify-between rounded-lg border p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <Monitor className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm">
+                        {session.device_info || "Unknown device"}
+                      </p>
+                      {session.is_current && (
+                        <Badge variant="outline" className="text-green-600 border-green-600 shrink-0">
+                          Current
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {session.ip_address && (
+                        <span className="flex items-center gap-1">
+                          <Globe className="h-3 w-3" />
+                          {session.ip_address}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {formatRelativeTime(session.last_activity_at)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {!session.is_current && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-destructive hover:text-destructive"
+                        disabled={terminatingSessionId === session.id}
+                      >
+                        {terminatingSessionId === session.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Terminate"
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Terminate this session?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will sign out the device running{" "}
+                          <strong>{session.device_info || "this session"}</strong>.
+                          They will need to log in again.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleTerminateSession(session.id)}
+                        >
+                          Terminate
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 

@@ -37,6 +37,10 @@ interface TenantContextState {
   isLoading: boolean;
   /** Error message if tenant validation failed */
   error: string | null;
+  /** Whether the tenant is suspended (middleware returned 403 TENANT_SUSPENDED) */
+  isSuspended: boolean;
+  /** Suspension notice message from the backend */
+  suspensionMessage: string | null;
   /** Whether we're on a valid tenant subdomain */
   isTenantContext: boolean;
   /** Refresh tenant data */
@@ -51,6 +55,8 @@ const defaultContext: TenantContextState = {
   subdomain: null,
   isLoading: true,
   error: null,
+  isSuspended: false,
+  suspensionMessage: null,
   isTenantContext: false,
   refreshTenant: async () => {},
 };
@@ -79,9 +85,16 @@ function getSubdomainFromCookie(): string | null {
 }
 
 /**
- * Fetch tenant data from API.
+ * Result of tenant validation, extended with suspension info.
  */
-async function fetchTenant(subdomain: string): Promise<TenantValidationResponse> {
+interface FetchTenantResult extends TenantValidationResponse {
+  /** Set when the validate response includes code TENANT_SUSPENDED */
+  isSuspended?: boolean;
+  /** Suspension message from the backend */
+  suspensionMessage?: string;
+}
+
+async function fetchTenant(subdomain: string): Promise<FetchTenantResult> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
   try {
@@ -101,7 +114,23 @@ async function fetchTenant(subdomain: string): Promise<TenantValidationResponse>
       };
     }
 
-    return await response.json();
+    const data: TenantValidationResponse = await response.json();
+
+    // Detect suspended tenant from the response body code field.
+    // The validate endpoint is a public path so the TenantMiddleware's
+    // status-aware routing never fires for it — suspension must be
+    // detected from the response payload instead.
+    if (data.code === "TENANT_SUSPENDED") {
+      return {
+        ...data,
+        isSuspended: true,
+        suspensionMessage:
+          data.error ||
+          "This school account has been suspended. Contact your administrator.",
+      };
+    }
+
+    return data;
   } catch (error) {
     console.error("Failed to fetch tenant:", error);
     return {
@@ -164,6 +193,8 @@ export function TenantProvider({
   const [subdomain, setSubdomain] = useState<string | null>(initialSubdomain);
   const [isLoading, setIsLoading] = useState(!initialTenant);
   const [error, setError] = useState<string | null>(null);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [suspensionMessage, setSuspensionMessage] = useState<string | null>(null);
 
   /**
    * Load tenant data from API.
@@ -171,10 +202,18 @@ export function TenantProvider({
   const loadTenant = useCallback(async (subdomainToLoad: string) => {
     setIsLoading(true);
     setError(null);
+    setIsSuspended(false);
+    setSuspensionMessage(null);
 
     const result = await fetchTenant(subdomainToLoad);
 
-    if (result.valid && result.tenant) {
+    if (result.isSuspended) {
+      // Tenant exists but is suspended — show suspension notice instead of login
+      setTenant(null);
+      setIsSuspended(true);
+      setSuspensionMessage(result.suspensionMessage || null);
+      setError(null);
+    } else if (result.valid && result.tenant) {
       setTenant(result.tenant);
       setError(null);
     } else {
@@ -232,6 +271,8 @@ export function TenantProvider({
     subdomain,
     isLoading,
     error,
+    isSuspended,
+    suspensionMessage,
     isTenantContext: !!tenant,
     refreshTenant,
   };

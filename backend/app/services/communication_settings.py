@@ -94,14 +94,14 @@ class CommunicationSettingsService:
             else _DEFAULT_SETTINGS
         )
 
-        # Merge only the sections that the caller provided
-        merged = current.model_copy(
-            update={
-                k: v
-                for k, v in update_data.model_dump(exclude_none=True).items()
-                if v is not None
-            }
-        )
+        # Merge only the sections that the caller provided.
+        # Re-validate through model_validate so raw dicts are coerced
+        # into proper nested Pydantic models (avoids serializer warnings).
+        merged_data = current.model_dump()
+        for k, v in update_data.model_dump(exclude_none=True).items():
+            if v is not None:
+                merged_data[k] = v
+        merged = CommunicationSettings.model_validate(merged_data)
 
         # Persist back as plain dict so it serializes to JSONB
         school.communication_settings = merged.model_dump()

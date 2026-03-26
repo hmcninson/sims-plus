@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transfer Certificate - {{ student_name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 3px solid {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 20px;
+        }
+
+        .school-logo {
+            max-height: 70px;
+            max-width: 70px;
+            margin-bottom: 5px;
+        }
+
+        .school-name {
+            font-size: 20pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin-bottom: 3px;
+        }
+
+        .school-address {
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .document-title {
+            font-size: 16pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Student Info */
+        .student-info {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 20px;
+        }
+
+        .info-item {
+            font-size: 10pt;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: {{ school.primary_color or '#1B4F72' }};
+            color: white;
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+
+        .section-title {
+            font-size: 12pt;
+            font-weight: bold;
+            color: {{ school.primary_color or '#1B4F72' }};
+            margin: 20px 0 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        /* Body text */
+        .body-text {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        /* Signature block */
+        .signature-section {
+            margin-top: 50px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .signature-block {
+            text-align: center;
+        }
+
+        .signature-line {
+            border-top: 1px solid #333;
+            margin-top: 50px;
+            padding-top: 5px;
+            font-size: 10pt;
+        }
+
+        .date-line {
+            font-size: 10pt;
+            margin-top: 10px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 8pt;
+            color: #999;
+            border-top: 1px solid #e9ecef;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- School Header -->
+        <div class="header">
+            {% if school.logo_url %}
+            <img src="{{ school.logo_url }}" alt="School Logo" class="school-logo">
+            {% endif %}
+            <div class="school-name">{{ school_name }}</div>
+            {% if school.address %}
+            <div class="school-address">{{ school.address }}</div>
+            {% endif %}
+            {% if school.phone %}
+            <div class="school-address">Tel: {{ school.phone }}</div>
+            {% endif %}
+            <div class="document-title">Transfer Certificate</div>
+        </div>
+
+        <!-- Certificate Body -->
+        <div class="body-text">
+            This is to certify that <strong>{{ student_name }}</strong>
+            (Student ID: {{ student_id }})
+            {% if date_of_birth %}born on {{ date_of_birth.strftime('%d/%m/%Y') }}{% endif %}
+            {% if admission_date %}admitted on {{ admission_date.strftime('%d/%m/%Y') }}{% endif %}
+            was a student of <strong>{{ school_name }}</strong>
+            {% if class_name %}in <strong>{{ class_name }}</strong>{% endif %}.
+        </div>
+
+        <!-- Student Information -->
+        <div class="section-title">Student Information</div>
+        <div class="student-info">
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Full Name:</span> {{ student_name }}
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Student ID:</span> {{ student_id }}
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Date of Birth:</span>
+                    {{ date_of_birth.strftime('%d/%m/%Y') if date_of_birth else '-' }}
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Gender:</span>
+                    {{ student.gender.value | capitalize if student.gender else '-' }}
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Date of Admission:</span>
+                    {{ admission_date.strftime('%d/%m/%Y') if admission_date else '-' }}
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Last Class:</span>
+                    {{ class_name or '-' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Class History -->
+        {% if class_history %}
+        <div class="section-title">Class History</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Academic Year</th>
+                    <th>Class</th>
+                    <th>Section</th>
+                    <th>Enrolled</th>
+                    <th>Left</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in class_history %}
+                <tr>
+                    <td>{{ record.academic_year_name or '-' }}</td>
+                    <td>{{ record.class_name or '-' }}</td>
+                    <td>{{ record.section_name or '-' }}</td>
+                    <td>{{ record.enrolled_date.strftime('%d/%m/%Y') if record.enrolled_date else '-' }}</td>
+                    <td>{{ record.left_date.strftime('%d/%m/%Y') if record.left_date else 'Current' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Academic Summary -->
+        {% if latest_report %}
+        <div class="section-title">Academic Summary (Latest Term)</div>
+        <div class="student-info">
+            <div class="info-grid">
+                {% if latest_report.average_score is not none %}
+                <div class="info-item">
+                    <span class="info-label">Average Score:</span>
+                    {{ '%.1f' | format(latest_report.average_score) }}
+                </div>
+                {% endif %}
+                {% if latest_report.class_position %}
+                <div class="info-item">
+                    <span class="info-label">Class Position:</span>
+                    {{ latest_report.class_position }}
+                </div>
+                {% endif %}
+                {% if latest_report.conduct %}
+                <div class="info-item">
+                    <span class="info-label">Conduct:</span>
+                    {{ latest_report.conduct }}
+                </div>
+                {% endif %}
+                {% if latest_report.interest %}
+                <div class="info-item">
+                    <span class="info-label">Interest:</span>
+                    {{ latest_report.interest }}
+                </div>
+                {% endif %}
+            </div>
+            {% if latest_report.teacher_remarks %}
+            <div class="info-item" style="margin-top: 10px;">
+                <span class="info-label">Teacher Remarks:</span>
+                {{ latest_report.teacher_remarks }}
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Character/Conduct -->
+        <div class="body-text" style="margin-top: 20px;">
+            {% if latest_report and latest_report.conduct %}
+            The student's conduct was assessed as <strong>{{ latest_report.conduct }}</strong>.
+            {% endif %}
+            This certificate is issued upon the request of the student/guardian for the
+            purpose of transfer to another educational institution.
+        </div>
+
+        <!-- Signature -->
+        <div class="signature-section">
+            <div class="signature-block">
+                <div class="signature-line">Head Teacher / Principal</div>
+                <div class="date-line">Date: {{ current_date }}</div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line">School Stamp</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            Generated on {{ current_date }} | {{ school_name }}
+        </div>
+    </div>
+</body>
+</html>

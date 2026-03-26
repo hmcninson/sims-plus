@@ -18,8 +18,10 @@ VALID_SCHOOL_ROLES = Literal[
     "school_admin",
     "academic_head",
     "finance_officer",
+    "hr_officer",
     "teacher",
     "house_parent",
+    "transport_officer",
 ]
 
 

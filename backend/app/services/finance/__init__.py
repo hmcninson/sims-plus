@@ -19,6 +19,7 @@ from app.services.finance.dashboard_service import FinanceDashboardService
 from app.services.finance.audit_service import FinanceAuditService
 from app.services.finance.credit_note_service import CreditNoteService
 from app.services.finance.reports import FinanceReportService, FinanceReportError
+from app.services.finance.sibling_service import SiblingService
 
 __all__ = [
     "FinanceServiceError",
@@ -34,4 +35,5 @@ __all__ = [
     "CreditNoteService",
     "FinanceReportService",
     "FinanceReportError",
+    "SiblingService",
 ]

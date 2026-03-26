@@ -113,6 +113,9 @@ class SchoolRegistrationRequest(BaseSchema):
         if subdomain.startswith("-") or subdomain.endswith("-"):
             raise ValueError("Subdomain cannot start or end with a hyphen")
 
+        if "--" in subdomain:
+            raise ValueError("Subdomain cannot contain consecutive hyphens")
+
         return subdomain
 
     @field_validator("school_type")

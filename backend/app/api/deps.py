@@ -47,6 +47,9 @@ _PUBLIC_PATH_PREFIXES = (
     "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
     "/api/v1/admissions/public/",  # Public application form — no JWT, tenant from subdomain
     "/api/v1/subscription/webhook/",  # Subscription webhook — tenant from metadata, not subdomain
+    "/api/v1/platform/login",  # Platform admin login (no tenant context)
+    "/api/v1/platform/refresh",  # Platform admin token refresh
+    "/api/v1/platform/mfa/",  # MFA verify/setup/generate (no tenant context)
 )
 
 
@@ -128,6 +131,12 @@ async def get_unscoped_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+        except HTTPException:
+            # Commit before re-raising HTTP exceptions so that side effects
+            # (e.g. incrementing failed_login_attempts in platform admin login)
+            # are persisted even when the endpoint returns an error response.
+            await session.commit()
+            raise
         except Exception:
             await session.rollback()
             raise
@@ -357,6 +366,25 @@ async def validate_token_tenant(
 
         # Compare tenant IDs (convert to string for comparison)
         if str(token_tenant_id) != str(request_tenant_id):
+            # Audit log cross-tenant access attempt for security monitoring
+            try:
+                from app.services.audit import AuditService, AuditEventType
+
+                audit = AuditService(None)
+                await audit.log(
+                    event_type=AuditEventType.CROSS_TENANT_REJECTED,
+                    tenant_id=UUID(str(request_tenant_id)),
+                    user_id=UUID(payload["sub"]) if payload.get("sub") else None,
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                    details={
+                        "token_tenant_id": str(token_tenant_id),
+                        "request_tenant_id": str(request_tenant_id),
+                        "outcome": "rejected",
+                    },
+                )
+            except Exception:
+                pass  # Audit failure must not block security response
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token not valid for this school",
@@ -441,6 +469,25 @@ async def get_validated_current_user(
 
         if request_tenant_id and token_tenant_id:
             if str(token_tenant_id) != str(request_tenant_id):
+                # Audit log cross-tenant access attempt for security monitoring
+                try:
+                    from app.services.audit import AuditService, AuditEventType
+
+                    audit = AuditService(None)
+                    await audit.log(
+                        event_type=AuditEventType.CROSS_TENANT_REJECTED,
+                        tenant_id=UUID(str(request_tenant_id)),
+                        user_id=UUID(user_id) if user_id else None,
+                        ip_address=request.client.host if request.client else None,
+                        user_agent=request.headers.get("user-agent"),
+                        details={
+                            "token_tenant_id": str(token_tenant_id),
+                            "request_tenant_id": str(request_tenant_id),
+                            "outcome": "rejected",
+                        },
+                    )
+                except Exception:
+                    pass  # Audit failure must not block security response
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Token not valid for this school. Please login again.",
@@ -461,6 +508,8 @@ async def get_validated_current_user(
             # Chain support: tenant_type and accessible schools from JWT
             "tenant_type": payload.get("tenant_type", "single_school"),
             "accessible_school_ids": payload.get("accessible_school_ids", []),
+            # Per-school role mapping for chain tenants (WP-2.1)
+            "school_roles": payload.get("school_roles", {}),
         }
 
     except JWTError:
@@ -483,6 +532,7 @@ _SUBSCRIPTION_EXEMPT_PATHS = (
     "/api/v1/tenant/",
     "/api/v1/onboarding/",
     "/api/v1/settings/subscription",
+    "/api/v1/platform/",  # Platform admin endpoints are not tenant-subscription-gated
 )
 
 # HTTP methods allowed during grace period (read-only access)
@@ -536,12 +586,16 @@ async def enforce_subscription(
 
     now = datetime.now(timezone.utc)
 
-    # 1. Suspended or cancelled — hard block
-    if tenant_status in ("suspended", "cancelled"):
+    # 1. Suspended or cancelled — hard block (differentiated codes for frontend)
+    if tenant_status in ("cancelled", "suspended"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account has been suspended. Contact support.",
-            headers={"X-Subscription-Code": "TENANT_SUSPENDED"},
+            detail="Your school account is no longer active. Contact support.",
+            headers={
+                "X-Subscription-Code": "TENANT_CANCELLED"
+                if tenant_status == "cancelled"
+                else "TENANT_SUSPENDED"
+            },
         )
 
     # 2. Trial tenant — check expiration
@@ -646,6 +700,7 @@ def require_permissions(*required_permissions: str):
         Dependency function
     """
     async def check_permissions(
+        request: Request,
         user: ValidatedUser,
     ) -> None:
         user_permissions = user.get("permissions", [])
@@ -653,6 +708,24 @@ def require_permissions(*required_permissions: str):
         # Platform admin has all permissions
         if "*" in user_permissions:
             return
+
+        # Self-contained school-scoped permission resolution: for chain tenants
+        # where the user has a different role at the active school, override
+        # permissions from the JWT with that school-specific role's permissions.
+        # This avoids a dependency-ordering bug where get_school_context() runs
+        # AFTER require_permissions() in FastAPI's dependency graph.
+        school_roles = user.get("school_roles", {})
+        active_school = request.headers.get("X-Active-School")
+        if active_school and school_roles:
+            role_at_school = school_roles.get(active_school)
+            if role_at_school and role_at_school != user.get("role"):
+                from app.services.auth import AuthService
+                # Only allow known system roles — prevents a stored "platform_admin"
+                # value in user_schools from granting wildcard permissions.
+                if role_at_school not in AuthService.ROLE_PERMISSIONS:
+                    role_at_school = None
+                else:
+                    user_permissions = AuthService.get_role_permissions(role_at_school)
 
         for required in required_permissions:
             # Check for exact match
@@ -698,14 +771,28 @@ class SchoolContext:
     school_id: UUID
     tenant_id: UUID
     school_name: str
+    # The user's role at this specific school (from JWT school_roles claim).
+    # None means the user uses their global role at this school.
+    role_at_school: str | None = None
 
     @classmethod
-    def from_explicit(cls, school_id: UUID, tenant_id: UUID, school_name: str = "") -> "SchoolContext":
+    def from_explicit(
+        cls,
+        school_id: UUID,
+        tenant_id: UUID,
+        school_name: str = "",
+        role_at_school: str | None = None,
+    ) -> "SchoolContext":
         """
         Create a SchoolContext from explicit values (for Celery tasks
         and other non-HTTP contexts where no request header exists).
         """
-        return cls(school_id=school_id, tenant_id=tenant_id, school_name=school_name)
+        return cls(
+            school_id=school_id,
+            tenant_id=tenant_id,
+            school_name=school_name,
+            role_at_school=role_at_school,
+        )
 
 
 async def get_school_context(
@@ -739,6 +826,8 @@ async def get_school_context(
     tenant_id = UUID(tenant_id_str)
     tenant_type = user.get("tenant_type", "single_school")
     accessible_ids: list[str] = user.get("accessible_school_ids", [])
+    # Per-school role mapping from JWT (WP-2.1): {school_id_str: role_name}
+    school_roles: dict[str, str] = user.get("school_roles", {})
 
     # Wildcard sentinel: ["*"] means the user has access to ALL schools in this
     # tenant but the full list was too large for the JWT.  The DB query below
@@ -763,6 +852,24 @@ async def get_school_context(
             if not has_full_chain_access:
                 # Normal path: check the specific list from the JWT
                 if not accessible_ids or str(active_school_id) not in accessible_ids:
+                    # Audit log unauthorized school access attempt
+                    try:
+                        from app.services.audit import AuditService, AuditEventType
+
+                        audit = AuditService(None)
+                        await audit.log(
+                            event_type=AuditEventType.SCHOOL_ACCESS_DENIED,
+                            tenant_id=tenant_id,
+                            user_id=UUID(user.get("user_id")) if user.get("user_id") else None,
+                            ip_address=request.client.host if request.client else None,
+                            details={
+                                "requested_school_id": str(active_school_id),
+                                "tenant_type": tenant_type,
+                                "outcome": "rejected",
+                            },
+                        )
+                    except Exception:
+                        pass  # Audit failure must not block security response
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="You do not have access to the requested school",
@@ -771,6 +878,24 @@ async def get_school_context(
             # The defense-in-depth DB query below validates tenant membership.
         elif accessible_ids and str(active_school_id) not in accessible_ids:
             # Single-school tenants with explicit accessible_ids: validate too
+            # Audit log unauthorized school access attempt
+            try:
+                from app.services.audit import AuditService, AuditEventType
+
+                audit = AuditService(None)
+                await audit.log(
+                    event_type=AuditEventType.SCHOOL_ACCESS_DENIED,
+                    tenant_id=tenant_id,
+                    user_id=UUID(user.get("user_id")) if user.get("user_id") else None,
+                    ip_address=request.client.host if request.client else None,
+                    details={
+                        "requested_school_id": str(active_school_id),
+                        "tenant_type": tenant_type,
+                        "outcome": "rejected",
+                    },
+                )
+            except Exception:
+                pass  # Audit failure must not block security response
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to the requested school",
@@ -790,11 +915,14 @@ async def get_school_context(
                 detail="School not found in this tenant",
             )
 
-        return SchoolContext(
+        ctx = SchoolContext(
             school_id=school.id,
             tenant_id=tenant_id,
             school_name=school.name,
+            # Resolve the user's role at this specific school from the JWT claim
+            role_at_school=school_roles.get(str(school.id)),
         )
+        return ctx
 
     # No header -- auto-resolve for single-school tenants
     if tenant_type == "school_chain":
@@ -817,11 +945,14 @@ async def get_school_context(
             detail="No school found for this tenant",
         )
 
-    return SchoolContext(
+    ctx = SchoolContext(
         school_id=school.id,
         tenant_id=tenant_id,
         school_name=school.name,
+        # For single-school tenants, look up role too (backward-compatible: defaults to None)
+        role_at_school=school_roles.get(str(school.id)),
     )
+    return ctx
 
 
 async def get_optional_school_context(
@@ -955,3 +1086,139 @@ async def get_applicant_user(
 
 # Type alias for applicant user dependency
 ApplicantUser = Annotated[dict, Depends(get_applicant_user)]
+
+
+# =========================
+# Platform Admin User (Role-Validated)
+# =========================
+
+
+async def get_platform_admin_user(
+    request: Request,
+    token: Annotated[str, Depends(oauth2_scheme)],
+) -> dict:
+    """
+    Dependency that validates the caller is a platform admin.
+
+    Validates:
+    1. JWT is valid, not expired, not blacklisted
+    2. Token type is "access" (rejects mfa_pending tokens)
+    3. role == "platform_admin"
+    4. is_platform == true claim exists
+    5. tenant_id matches PLATFORM_TENANT_ID
+    6. is_impersonation is NOT set (impersonation tokens cannot access /platform/*)
+    7. mfa_setup_required is NOT set (setup tokens can only access MFA setup endpoints)
+    8. User still exists and is active in the database (cached 60s in Redis)
+
+    Does NOT check ValidatedTokenTenant (no subdomain-based tenant context
+    for platform admin requests).
+
+    Returns:
+        dict with user_id, email, role, tenant_id
+    """
+    from app.models.user import User, UserRole, UserStatus
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Platform admin authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+    except JWTError:
+        raise credentials_exception
+
+    # Validate token type — reject refresh/mfa_pending tokens
+    if payload.get("type") != "access":
+        raise credentials_exception
+
+    # Validate platform admin claims
+    if payload.get("role") != "platform_admin":
+        raise credentials_exception
+    if not payload.get("is_platform"):
+        raise credentials_exception
+    if str(payload.get("tenant_id")) != str(settings.PLATFORM_TENANT_ID):
+        raise credentials_exception
+
+    # SECURITY: Reject impersonation tokens at /platform/* endpoints.
+    # Impersonation tokens have tenant_id=<target>, so they would fail the
+    # PLATFORM_TENANT_ID check above. But defense-in-depth: explicitly reject.
+    if payload.get("is_impersonation"):
+        raise credentials_exception
+
+    # SECURITY: Reject MFA setup tokens. These are issued on first login
+    # before MFA is configured. They must ONLY be used at MFA setup endpoints,
+    # not for full platform admin access.
+    if payload.get("mfa_setup_required"):
+        raise credentials_exception
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+
+    # Check token blacklist
+    blacklist_service = await get_token_blacklist_service()
+    if await blacklist_service.is_blacklisted(token):
+        raise credentials_exception
+
+    # Check mass-revocation
+    token_iat = payload.get("iat")
+    if token_iat and await blacklist_service.is_user_token_revoked(user_id, token_iat):
+        raise credentials_exception
+
+    # SECURITY: Verify user still exists and is active in the database.
+    # Uses Redis cache (60s TTL) to avoid hitting DB on every request.
+    redis_client = getattr(request.app.state, "redis", None)
+    is_active = None
+    cache_key = f"platform_admin_active:{user_id}"
+
+    if redis_client:
+        try:
+            cached = await redis_client.get(cache_key)
+            if cached is not None:
+                is_active = cached == "1"
+        except Exception:
+            pass
+
+    if is_active is None:
+        # DB check — use app session with platform tenant context
+        async with async_session_maker() as check_session:
+            await check_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
+                {"tid": str(settings.PLATFORM_TENANT_ID)},
+            )
+            result = await check_session.execute(
+                select(User.status).where(
+                    User.id == UUID(user_id),
+                    User.role == UserRole.PLATFORM_ADMIN,
+                    User.deleted_at.is_(None),
+                )
+            )
+            user_status = result.scalar_one_or_none()
+            is_active = user_status == UserStatus.ACTIVE if user_status else False
+
+            # Cache the result for 60 seconds
+            if redis_client:
+                try:
+                    await redis_client.set(cache_key, "1" if is_active else "0", ex=60)
+                except Exception:
+                    pass
+
+    if not is_active:
+        raise credentials_exception
+
+    return {
+        "user_id": user_id,
+        "email": payload.get("email"),
+        "role": "platform_admin",
+        "tenant_id": str(settings.PLATFORM_TENANT_ID),
+    }
+
+
+# Type alias for use in endpoint signatures
+PlatformAdmin = Annotated[dict, Depends(get_platform_admin_user)]

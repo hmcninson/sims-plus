@@ -64,6 +64,21 @@ const STAFF_STATUSES = [
   { value: "retired", label: "Retired" },
 ];
 
+const EMPLOYMENT_TYPES = [
+  { value: "full_time", label: "Full Time" },
+  { value: "part_time", label: "Part Time" },
+  { value: "contract", label: "Contract" },
+  { value: "temporary", label: "Temporary" },
+  { value: "intern", label: "Intern" },
+];
+
+const MARITAL_STATUSES = [
+  { value: "single", label: "Single" },
+  { value: "married", label: "Married" },
+  { value: "divorced", label: "Divorced" },
+  { value: "widowed", label: "Widowed" },
+];
+
 const staffFormSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
   middle_name: z.string().optional(),
@@ -84,10 +99,15 @@ const staffFormSchema = z.object({
   teacher_license_number: z.string().optional(),
   staff_type: z.enum(["teaching", "non_teaching", "administrative"]),
   status: z.enum(["active", "on_leave", "suspended", "terminated", "retired"]),
+  employment_type: z.string().optional(),
   job_title: z.string().min(1, "Job title is required"),
   department: z.string().optional(),
   employment_date: z.string().min(1, "Employment date is required"),
   termination_date: z.string().optional(),
+  ges_staff_id: z.string().optional(),
+  tin_number: z.string().optional(),
+  nationality: z.string().optional(),
+  marital_status: z.string().optional(),
   bank_name: z.string().optional(),
   bank_branch: z.string().optional(),
   account_number: z.string().optional(),
@@ -113,7 +133,7 @@ const steps = [
     id: 3,
     title: "Employment",
     icon: Briefcase,
-    fields: ["staff_type", "status", "job_title", "department", "employment_date", "termination_date", "ghana_card_number", "ssnit_number", "teacher_license_number"],
+    fields: ["staff_type", "status", "employment_type", "job_title", "department", "employment_date", "termination_date", "ges_staff_id", "tin_number", "nationality", "marital_status", "ghana_card_number", "ssnit_number", "teacher_license_number"],
   },
   {
     id: 4,
@@ -161,10 +181,15 @@ export default function EditStaffPage() {
       teacher_license_number: "",
       staff_type: "teaching",
       status: "active",
+      employment_type: "",
       job_title: "",
       department: "",
       employment_date: "",
       termination_date: "",
+      ges_staff_id: "",
+      tin_number: "",
+      nationality: "",
+      marital_status: "",
       bank_name: "",
       bank_branch: "",
       account_number: "",
@@ -207,8 +232,13 @@ export default function EditStaffPage() {
           status: staff.status as "active" | "on_leave" | "suspended" | "terminated" | "retired",
           job_title: staff.job_title,
           department: staff.department || "",
+          employment_type: staff.employment_type || "",
           employment_date: staff.employment_date,
           termination_date: staff.termination_date || "",
+          ges_staff_id: staff.ges_staff_id || "",
+          tin_number: staff.tin_number || "",
+          nationality: staff.nationality || "",
+          marital_status: staff.marital_status || "",
           bank_name: staff.bank_name || "",
           bank_branch: staff.bank_branch || "",
           account_number: staff.account_number || "",
@@ -270,7 +300,12 @@ export default function EditStaffPage() {
       ssnit_number: data.ssnit_number || undefined,
       teacher_license_number: data.teacher_license_number || undefined,
       department: data.department || undefined,
+      employment_type: (data.employment_type || undefined) as "full_time" | "part_time" | "contract" | "temporary" | "intern" | undefined,
       termination_date: data.termination_date || undefined,
+      ges_staff_id: data.ges_staff_id || undefined,
+      tin_number: data.tin_number || undefined,
+      nationality: data.nationality || undefined,
+      marital_status: data.marital_status || undefined,
       bank_name: data.bank_name || undefined,
       bank_branch: data.bank_branch || undefined,
       account_number: data.account_number || undefined,
@@ -811,6 +846,58 @@ export default function EditStaffPage() {
                         />
                       </div>
 
+                      {/* Employment Type and Marital Status */}
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <FormField
+                          control={form.control}
+                          name="employment_type"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Employment Type</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Select employment type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {EMPLOYMENT_TYPES.map((type) => (
+                                    <SelectItem key={type.value} value={type.value}>
+                                      {type.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="marital_status"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Marital Status</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue placeholder="Select marital status" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {MARITAL_STATUSES.map((ms) => (
+                                    <SelectItem key={ms.value} value={ms.value}>
+                                      {ms.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
                       <div className="grid gap-4 sm:grid-cols-2">
                         <FormField
                           control={form.control}
@@ -833,6 +920,49 @@ export default function EditStaffPage() {
                               <FormLabel>Termination Date</FormLabel>
                               <FormControl>
                                 <Input type="date" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* GES Staff ID, TIN, Nationality */}
+                      <div className="grid gap-4 sm:grid-cols-3">
+                        <FormField
+                          control={form.control}
+                          name="ges_staff_id"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>GES Staff ID</FormLabel>
+                              <FormControl>
+                                <Input placeholder="GES staff ID (public schools)" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="tin_number"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>TIN Number</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Tax Identification Number" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="nationality"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nationality</FormLabel>
+                              <FormControl>
+                                <Input placeholder="e.g. Ghanaian" {...field} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1058,6 +1188,36 @@ export default function EditStaffPage() {
                             <div>
                               <span className="text-muted-foreground">Termination Date:</span>{" "}
                               <span className="font-medium">{formValues.termination_date}</span>
+                            </div>
+                          )}
+                          {formValues.employment_type && (
+                            <div>
+                              <span className="text-muted-foreground">Employment Type:</span>{" "}
+                              <span className="font-medium capitalize">{formValues.employment_type.replace("_", " ")}</span>
+                            </div>
+                          )}
+                          {formValues.nationality && (
+                            <div>
+                              <span className="text-muted-foreground">Nationality:</span>{" "}
+                              <span className="font-medium">{formValues.nationality}</span>
+                            </div>
+                          )}
+                          {formValues.marital_status && (
+                            <div>
+                              <span className="text-muted-foreground">Marital Status:</span>{" "}
+                              <span className="font-medium capitalize">{formValues.marital_status}</span>
+                            </div>
+                          )}
+                          {formValues.ges_staff_id && (
+                            <div>
+                              <span className="text-muted-foreground">GES Staff ID:</span>{" "}
+                              <span className="font-medium">{formValues.ges_staff_id}</span>
+                            </div>
+                          )}
+                          {formValues.tin_number && (
+                            <div>
+                              <span className="text-muted-foreground">TIN Number:</span>{" "}
+                              <span className="font-medium">{formValues.tin_number}</span>
                             </div>
                           )}
                         </div>

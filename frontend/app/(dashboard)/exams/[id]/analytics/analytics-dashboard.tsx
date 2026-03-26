@@ -101,6 +101,51 @@ const POSITION_ICONS: Record<number, { icon: React.ElementType; color: string }>
   3: { icon: Award, color: "text-amber-600" },
 };
 
+/**
+ * Format a score value based on the score_display_mode from the analytics response.
+ * Falls back to percentage format when no display mode is specified (backward compat).
+ */
+function formatAnalyticsScore(
+  value: number | null | undefined,
+  displayMode: string | undefined
+): string {
+  if (value == null) return "N/A";
+  const num = Number(value);
+
+  switch (displayMode) {
+    case "gpa":
+      return num.toFixed(2);
+    case "level":
+      return `Level ${Math.round(num)}`;
+    case "grade_only":
+    case "narrative":
+    case "mention":
+      return num.toFixed(1);
+    case "percentage":
+    case "grade_and_score":
+    default:
+      return `${num.toFixed(1)}%`;
+  }
+}
+
+/**
+ * Get the score unit label for display in charts/headers.
+ */
+function getScoreUnitLabel(displayMode: string | undefined): string {
+  switch (displayMode) {
+    case "gpa":
+      return "GPA";
+    case "level":
+      return "Level";
+    case "narrative":
+      return "Score";
+    case "mention":
+      return "Average";
+    default:
+      return "%";
+  }
+}
+
 export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboardProps) {
   const [isPending, startTransition] = useTransition();
 
@@ -333,7 +378,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                   <CardDescription>Class Average</CardDescription>
                   <CardTitle className="text-2xl flex items-center gap-2 text-blue-600">
                     <BarChart3 className="h-5 w-5" />
-                    {classStats.class_average != null ? Number(classStats.class_average).toFixed(1) : "N/A"}%
+                    {formatAnalyticsScore(classStats.class_average, classStats.score_display_mode)}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -342,7 +387,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                   <CardDescription>Highest Score</CardDescription>
                   <CardTitle className="text-2xl flex items-center gap-2 text-green-600">
                     <TrendingUp className="h-5 w-5" />
-                    {classStats.highest_score != null ? Number(classStats.highest_score).toFixed(1) : "N/A"}%
+                    {formatAnalyticsScore(classStats.highest_score, classStats.score_display_mode)}
                   </CardTitle>
                 </CardHeader>
               </Card>
@@ -351,20 +396,27 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                   <CardDescription>Lowest Score</CardDescription>
                   <CardTitle className="text-2xl flex items-center gap-2 text-red-600">
                     <TrendingDown className="h-5 w-5" />
-                    {classStats.lowest_score != null ? Number(classStats.lowest_score).toFixed(1) : "N/A"}%
+                    {formatAnalyticsScore(classStats.lowest_score, classStats.score_display_mode)}
                   </CardTitle>
                 </CardHeader>
               </Card>
             </div>
 
-            {/* Pass/Fail Stats */}
+            {/* Pass/Fail Stats + Grade Distribution */}
             <div className="grid gap-4 md:grid-cols-2">
+              {/* Pass/Fail Stats — hidden for Montessori (narrative-based, no pass/fail) */}
+              {classStats.pass_mark !== null && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Target className="h-5 w-5" />
                     Pass/Fail Statistics
                   </CardTitle>
+                  {classStats.curriculum_type && classStats.curriculum_type !== "ges" && (
+                    <p className="text-xs text-muted-foreground">
+                      Pass mark: {formatAnalyticsScore(classStats.pass_mark, classStats.score_display_mode)}
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4 mb-4">
@@ -423,6 +475,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                   )}
                 </CardContent>
               </Card>
+              )}
 
               <Card>
                 <CardHeader>
@@ -507,14 +560,14 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                                   : "destructive"
                               }
                             >
-                              {subject.average_score != null ? Number(subject.average_score).toFixed(1) : "N/A"}%
+                              {formatAnalyticsScore(subject.average_score, classStats.score_display_mode)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center text-green-600 font-medium">
-                            {subject.highest_score != null ? Number(subject.highest_score).toFixed(1) : "N/A"}
+                            {formatAnalyticsScore(subject.highest_score, classStats.score_display_mode)}
                           </TableCell>
                           <TableCell className="text-center text-red-600 font-medium">
-                            {subject.lowest_score != null ? Number(subject.lowest_score).toFixed(1) : "N/A"}
+                            {formatAnalyticsScore(subject.lowest_score, classStats.score_display_mode)}
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex items-center gap-2">
@@ -614,7 +667,7 @@ export function AnalyticsDashboard({ exam, classes, subjects }: AnalyticsDashboa
                             </div>
                           </TableCell>
                           <TableCell className="text-center font-semibold">
-                            {student.score != null ? Number(student.score).toFixed(1) : "N/A"}
+                            {formatAnalyticsScore(student.score, classStats?.score_display_mode)}
                           </TableCell>
                           <TableCell className="text-center">
                             {student.grade ? (

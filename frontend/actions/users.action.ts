@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiUpload } from "@/lib/api";
 import { getValidAccessToken } from "./auth.action";
 import type {
   ActionResult,
@@ -9,8 +9,10 @@ import type {
   UserCreate,
   UserUpdate,
   UserListResponse,
+  UserImportResult,
   UserRole,
   UserStatus,
+  MySchoolRole,
 } from "@/types";
 
 /**
@@ -120,6 +122,26 @@ export async function deleteUser(id: string): Promise<ActionResult<void>> {
 }
 
 // =========================
+// Self-Service Actions
+// =========================
+
+export async function getMySchools(): Promise<ActionResult<MySchoolRole[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiGet<MySchoolRole[]>("/users/me/schools", {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch school roles",
+    };
+  }
+}
+
+// =========================
 // Role & Status Actions
 // =========================
 
@@ -200,6 +222,58 @@ export async function getUserStatsByRole(): Promise<ActionResult<Record<string, 
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to fetch user stats",
+    };
+  }
+}
+
+// =========================
+// Bulk Import Actions
+// =========================
+
+/**
+ * Preview a bulk user import (validation only, no creation).
+ */
+export async function previewUserImport(
+  formData: FormData,
+): Promise<ActionResult<UserImportResult>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    // Ensure preview flag is set
+    formData.set("preview", "true");
+    const response = await apiUpload<UserImportResult>("/users/import", formData, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Preview failed",
+    };
+  }
+}
+
+/**
+ * Execute a bulk user import (creates users).
+ *
+ * The credentials field in the response is one-time only.
+ * It is NOT stored anywhere. If the admin misses the download,
+ * they must use individual password reset per user.
+ */
+export async function importUsers(
+  formData: FormData,
+): Promise<ActionResult<UserImportResult>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const response = await apiUpload<UserImportResult>("/users/import", formData, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Import failed",
     };
   }
 }

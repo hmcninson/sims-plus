@@ -222,7 +222,7 @@ export function StudentsManagement({
 
       console.log("Export result:", JSON.stringify(result, null, 2));
 
-      if (result.success && result.data) {
+      if (result.success) {
         // Handle empty data
         if (result.data.length === 0) {
           toast.info("No students to export");
@@ -273,13 +273,7 @@ export function StudentsManagement({
         toast.success(`Exported ${result.data.length} students`);
       } else {
         console.log("Export failed, error:", result.error, typeof result.error);
-        let errorMsg = "Export failed";
-        if (typeof result.error === 'string') {
-          errorMsg = result.error;
-        } else if (result.error && typeof result.error === 'object') {
-          errorMsg = JSON.stringify(result.error);
-        }
-        toast.error(errorMsg);
+        toast.error(result.error || "Export failed");
       }
     } catch (error) {
       console.log("Export exception:", error);

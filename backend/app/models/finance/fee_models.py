@@ -146,6 +146,11 @@ class FeeStructure(Base, TenantMixin, SoftDeleteMixin):
         server_default="all",
         comment="Student type: all, boarding, day",
     )
+    session_type: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Preschool session type: half_day_morning, half_day_afternoon, full_day, extended. NULL = applies to all sessions.",
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

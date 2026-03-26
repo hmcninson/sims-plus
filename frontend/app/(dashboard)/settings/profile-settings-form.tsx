@@ -26,6 +26,7 @@ const ROLE_CONFIG: Record<string, { label: string; variant: "default" | "seconda
   school_admin: { label: "School Admin", variant: "default" },
   academic_head: { label: "Academic Head", variant: "default" },
   finance_officer: { label: "Finance Officer", variant: "secondary" },
+  hr_officer: { label: "HR Officer", variant: "secondary" },
   teacher: { label: "Teacher", variant: "secondary" },
   house_parent: { label: "House Parent", variant: "secondary" },
   parent: { label: "Parent", variant: "outline" },

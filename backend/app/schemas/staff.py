@@ -117,6 +117,16 @@ class StaffCreate(BaseSchema):
     school_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
 
+    # HR gap closure fields
+    tin_number: Optional[str] = Field(None, max_length=50)
+    employment_type: Optional[str] = Field(
+        None,
+        pattern="^(full_time|part_time|contract|temporary|intern)$",
+    )
+    ges_staff_id: Optional[str] = Field(None, max_length=50)
+    nationality: Optional[str] = Field(None, max_length=100)
+    marital_status: Optional[str] = Field(None, max_length=20)
+
 
 class StaffUpdate(BaseSchema):
     """Update staff request."""
@@ -153,6 +163,16 @@ class StaffUpdate(BaseSchema):
     notes: Optional[str] = None
     school_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
+
+    # HR gap closure fields
+    tin_number: Optional[str] = Field(None, max_length=50)
+    employment_type: Optional[str] = Field(
+        None,
+        pattern="^(full_time|part_time|contract|temporary|intern)$",
+    )
+    ges_staff_id: Optional[str] = Field(None, max_length=50)
+    nationality: Optional[str] = Field(None, max_length=100)
+    marital_status: Optional[str] = Field(None, max_length=20)
 
 
 class StaffResponse(BaseSchema):
@@ -194,6 +214,13 @@ class StaffResponse(BaseSchema):
     user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+
+    # HR gap closure fields
+    tin_number: Optional[str] = None
+    employment_type: Optional[str] = None
+    ges_staff_id: Optional[str] = None
+    nationality: Optional[str] = None
+    marital_status: Optional[str] = None
 
     # Extended fields from relationships
     school_name: Optional[str] = None
@@ -276,3 +303,120 @@ class StaffWithAssignmentsResponse(StaffResponse):
     """Staff response with class assignments."""
 
     assignments: list[StaffAssignmentResponse] = []
+
+
+# =========================
+# Sensitive Fields Schema
+# =========================
+
+
+class StaffSensitiveFieldsResponse(BaseSchema):
+    """
+    Unmasked sensitive fields, returned only by the dedicated
+    GET /staff/{id}/sensitive-fields endpoint (payroll.read or staff.update).
+    """
+
+    id: UUID
+    tin_number: Optional[str] = None
+    ssnit_number: Optional[str] = None
+    ghana_card_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_branch: Optional[str] = None
+    account_number: Optional[str] = None
+
+
+# =========================
+# Staff Document Schemas
+# =========================
+
+
+class StaffDocumentResponse(BaseSchema):
+    """Staff document response with presigned download URL."""
+
+    id: UUID
+    staff_id: UUID
+    document_type: str
+    file_name: str
+    file_size: int
+    mime_type: str
+    description: Optional[str] = None
+    download_url: str
+    uploaded_by: Optional[UUID] = None
+    created_at: datetime
+
+
+# =========================
+# Staff Employment History Schemas
+# =========================
+
+
+class StaffEmploymentHistoryCreate(BaseSchema):
+    """Create a manual employment history event."""
+
+    event_type: str = Field(..., min_length=1, max_length=50)
+    effective_date: date
+    previous_value: Optional[str] = Field(None, max_length=255)
+    new_value: Optional[str] = Field(None, max_length=255)
+    previous_department_id: Optional[UUID] = None
+    new_department_id: Optional[UUID] = None
+    previous_job_title: Optional[str] = Field(None, max_length=100)
+    new_job_title: Optional[str] = Field(None, max_length=100)
+    notes: Optional[str] = None
+
+
+# =========================
+# Workload Schemas
+# =========================
+
+
+class StaffWorkloadSection(BaseSchema):
+    """Section detail within a staff workload response."""
+
+    section_id: UUID
+    section_name: str
+    class_name: str
+    subject_name: Optional[str] = None
+    is_class_teacher: bool
+    periods_per_week: int
+
+
+class StaffWorkloadResponse(BaseSchema):
+    """Full workload detail for a single staff member."""
+
+    staff_id: UUID
+    staff_name: str
+    total_periods_per_week: int
+    total_sections: int
+    class_teacher_of: Optional[str] = None
+    subjects_taught: list[str]
+    sections: list[StaffWorkloadSection]
+
+
+class StaffWorkloadSummaryItem(BaseSchema):
+    """Workload summary for the all-staff overview."""
+
+    staff_id: UUID
+    staff_name: str
+    department: Optional[str] = None
+    total_sections: int
+    total_periods_per_week: int
+    is_class_teacher: bool
+    class_teacher_of: Optional[str] = None
+
+
+class StaffEmploymentHistoryResponse(BaseSchema):
+    """Staff employment history event response."""
+
+    id: UUID
+    staff_id: UUID
+    event_type: str
+    effective_date: date
+    previous_value: Optional[str] = None
+    new_value: Optional[str] = None
+    previous_department_id: Optional[UUID] = None
+    new_department_id: Optional[UUID] = None
+    previous_job_title: Optional[str] = None
+    new_job_title: Optional[str] = None
+    notes: Optional[str] = None
+    recorded_by: Optional[UUID] = None
+    created_at: datetime

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -352,27 +352,29 @@ export function Classes({ initialData }: ClassesProps) {
   };
 
   // Filter classes based on search and level filter
-  const filteredClasses = classes
-    .filter((cls) => {
-      // Apply level filter
-      if (levelFilter !== "all") {
-        const category = getLevelCategory(cls.level);
-        if (category !== levelFilter) return false;
-      }
-      // Apply search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesName = cls.name.toLowerCase().includes(query);
-        const matchesShortName = cls.short_name?.toLowerCase().includes(query);
-        const matchesSection = cls.sections?.some(s =>
-          s.name.toLowerCase().includes(query) ||
-          `${cls.name} ${s.name}`.toLowerCase().includes(query)
-        );
-        return matchesName || matchesShortName || matchesSection;
-      }
-      return true;
-    })
-    .sort((a, b) => a.sequence - b.sequence);
+  const filteredClasses = useMemo(() => {
+    return classes
+      .filter((cls) => {
+        // Apply level filter
+        if (levelFilter !== "all") {
+          const category = getLevelCategory(cls.level);
+          if (category !== levelFilter) return false;
+        }
+        // Apply search filter
+        if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase();
+          const matchesName = cls.name.toLowerCase().includes(query);
+          const matchesShortName = cls.short_name?.toLowerCase().includes(query);
+          const matchesSection = cls.sections?.some(s =>
+            s.name.toLowerCase().includes(query) ||
+            `${cls.name} ${s.name}`.toLowerCase().includes(query)
+          );
+          return matchesName || matchesShortName || matchesSection;
+        }
+        return true;
+      })
+      .sort((a, b) => a.sequence - b.sequence);
+  }, [classes, searchQuery, levelFilter]);
 
   // Level filter tabs configuration
   const levelTabs = [

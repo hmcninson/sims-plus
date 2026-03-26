@@ -3,7 +3,7 @@
 import { useCallback, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -238,7 +238,7 @@ export function HouseDetailView({ house, initialDormitories }: Props) {
   // ===========================
 
   const editHouseForm = useForm<EditHouseFormData>({
-    resolver: zodResolver(editHouseSchema),
+    resolver: zodResolver(editHouseSchema) as Resolver<EditHouseFormData>,
     defaultValues: {
       name: house.name,
       house_code: house.house_code,
@@ -249,17 +249,17 @@ export function HouseDetailView({ house, initialDormitories }: Props) {
   });
 
   const dormForm = useForm<DormFormData>({
-    resolver: zodResolver(dormitorySchema),
+    resolver: zodResolver(dormitorySchema) as Resolver<DormFormData>,
     defaultValues: { name: "", floor: "", capacity: 20, dormitory_type: "room" },
   });
 
   const bulkBedForm = useForm<BulkBedFormData>({
-    resolver: zodResolver(bulkBedSchema),
+    resolver: zodResolver(bulkBedSchema) as Resolver<BulkBedFormData>,
     defaultValues: { dormitory_id: "", bed_type: "single", count: 10, prefix: "" },
   });
 
   const editBedForm = useForm<EditBedFormData>({
-    resolver: zodResolver(editBedSchema),
+    resolver: zodResolver(editBedSchema) as Resolver<EditBedFormData>,
     defaultValues: { bed_number: "", bed_type: "single", status: "available" },
   });
 

@@ -19,6 +19,8 @@ services:
     image: postgres:16-alpine
     container_name: sims-plus-db
     restart: unless-stopped
+    # Raise max_connections for parallel test runs that open many sessions
+    command: postgres -c max_connections=300
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -134,6 +136,78 @@ services:
       retries: 5
       start_period: 30s
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # =========================
+  # Celery Worker (Background Tasks)
+  # Processes tasks dispatched by the backend and beat scheduler.
+  # Uses the same image and env as backend but runs the celery worker command.
+  # =========================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: sims-plus-celery-worker
+    restart: unless-stopped
+    environment:
+      # Same credentials as backend — worker needs DB and Redis access
+      DATABASE_URL: postgresql+asyncpg://sims_app_user:${APP_DB_PASSWORD:-app_password}@db:5432/${POSTGRES_DB:-sims_plus}
+      ALEMBIC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sims_plus}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-only-not-for-production-change-me-openssl-rand-base64-64-minimum-64-chars}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # SMTP (same as backend for email tasks)
+      SMTP_HOST: mailhog
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      SMTP_START_TLS: ${SMTP_START_TLS:-false}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@simsplus.io}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-SIMS Plus}
+      # Error tracking
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
+
+  # =========================
+  # Celery Beat (Task Scheduler)
+  # Dispatches periodic tasks on schedule (trial warnings, cleanup, reminders).
+  # Only ONE beat instance should run at a time to avoid duplicate scheduling.
+  # =========================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: sims-plus-celery-beat
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sims_app_user:${APP_DB_PASSWORD:-app_password}@db:5432/${POSTGRES_DB:-sims_plus}
+      ALEMBIC_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sims_plus}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-only-not-for-production-change-me-openssl-rand-base64-64-minimum-64-chars}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # SMTP not needed for beat (it only dispatches, worker sends)
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    command: celery -A app.celery_app beat --loglevel=info
 
   # =========================
   # Frontend (Next.js 16)

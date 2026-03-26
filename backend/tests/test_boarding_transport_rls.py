@@ -426,7 +426,7 @@ class TestBoardingTenantIsolation:
             house_id=house.id,
             roll_call_date=date.today(),
             roll_call_type="morning",
-            conducted_by_id=fixtures_a["staff_id"],
+            conducted_by_id=fixtures_a["user_id"],
             entries=[
                 {"student_id": fixtures_a["student_id"], "status": "present"},
             ],

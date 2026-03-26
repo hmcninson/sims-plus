@@ -11,7 +11,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Loader2, Settings, Baby, Utensils, Moon, Droplets, Camera, Bell, CheckCircle2 } from "lucide-react";
+import { Loader2, Settings, Baby, Utensils, Moon, Droplets, Camera, Bell, CheckCircle2, AlertTriangle, UserCheck, Heart, Clock, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { getPreschoolSettings, updatePreschoolSettings } from "@/actions/school.action";
 import { getRatingScales } from "@/actions/preschool.action";
 import type { PreschoolSettings, PreschoolSettingsUpdate } from "@/types/school.type";
@@ -68,6 +70,15 @@ export function ConfigurationSettings() {
     observation_photos_enabled: true,
     parent_daily_updates: true,
     default_rating_scale_id: undefined,
+    incident_tracking_enabled: true,
+    pickup_verification_enabled: true,
+    allergy_alerts_enabled: true,
+    extended_care_enabled: false,
+    extended_care_rate_type: "hourly" as "hourly" | "flat",
+    extended_care_rate_per_hour: undefined as number | undefined,
+    extended_care_flat_rate: undefined as number | undefined,
+    daily_report_auto_send: false,
+    daily_report_send_time: "15:00",
   });
 
   useEffect(() => {
@@ -252,6 +263,188 @@ export function ConfigurationSettings() {
               disabled={!formState.enabled}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Safety & Security */}
+      <Card className={!formState.enabled ? "opacity-60" : ""}>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-lg">Safety & Security</CardTitle>
+              <CardDescription>
+                Configure safety and security features
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <SettingRow
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label="Incident Tracking"
+              description="Enable incident/accident reporting and tracking"
+              checked={formState.incident_tracking_enabled}
+              onCheckedChange={(checked) => handleChange("incident_tracking_enabled", checked)}
+              disabled={!formState.enabled}
+            />
+            <SettingRow
+              icon={<UserCheck className="h-4 w-4" />}
+              label="Pickup Verification"
+              description="Enable authorized pickup person management and logging"
+              checked={formState.pickup_verification_enabled}
+              onCheckedChange={(checked) => handleChange("pickup_verification_enabled", checked)}
+              disabled={!formState.enabled}
+            />
+            <SettingRow
+              icon={<Heart className="h-4 w-4" />}
+              label="Allergy Alerts"
+              description="Show allergy alerts when recording daily activities"
+              checked={formState.allergy_alerts_enabled}
+              onCheckedChange={(checked) => handleChange("allergy_alerts_enabled", checked)}
+              disabled={!formState.enabled}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Extended Care */}
+      <Card className={!formState.enabled ? "opacity-60" : ""}>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-lg">Extended Care</CardTitle>
+              <CardDescription>
+                Configure before/after school care tracking and billing
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <SettingRow
+              icon={<Clock className="h-4 w-4" />}
+              label="Extended Care"
+              description="Enable before/after school care tracking"
+              checked={formState.extended_care_enabled}
+              onCheckedChange={(checked) => handleChange("extended_care_enabled", checked)}
+              disabled={!formState.enabled}
+            />
+          </div>
+
+          {formState.extended_care_enabled && formState.enabled && (
+            <div className="mt-4 ml-7 space-y-4 border-l-2 border-muted pl-4">
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Billing Rate Type</Label>
+                <RadioGroup
+                  value={formState.extended_care_rate_type || "hourly"}
+                  onValueChange={(value) =>
+                    handleChange("extended_care_rate_type", value)
+                  }
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="hourly" id="rate-hourly" />
+                    <Label htmlFor="rate-hourly" className="text-sm">Charge by hour</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="flat" id="rate-flat" />
+                    <Label htmlFor="rate-flat" className="text-sm">Flat rate per session</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {formState.extended_care_rate_type === "hourly" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Rate per Hour (GHS)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="e.g. 5.00"
+                    value={formState.extended_care_rate_per_hour ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? Number(e.target.value) : undefined;
+                      setFormState((prev) => ({ ...prev, extended_care_rate_per_hour: val }));
+                      setHasChanges(true);
+                      setSaveSuccess(false);
+                    }}
+                    className="w-full max-w-[200px]"
+                  />
+                </div>
+              )}
+
+              {formState.extended_care_rate_type === "flat" && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Flat Rate per Session (GHS)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="e.g. 10.00"
+                    value={formState.extended_care_flat_rate ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? Number(e.target.value) : undefined;
+                      setFormState((prev) => ({ ...prev, extended_care_flat_rate: val }));
+                      setHasChanges(true);
+                      setSaveSuccess(false);
+                    }}
+                    className="w-full max-w-[200px]"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Daily Report Auto-Send */}
+      <Card className={!formState.enabled ? "opacity-60" : ""}>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <Send className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-lg">Daily Report Automation</CardTitle>
+              <CardDescription>
+                Automatically send daily activity reports to parents
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <SettingRow
+              icon={<Send className="h-4 w-4" />}
+              label="Auto-Send Daily Reports"
+              description="Automatically send daily activity reports to parents at a scheduled time"
+              checked={formState.daily_report_auto_send}
+              onCheckedChange={(checked) => handleChange("daily_report_auto_send", checked)}
+              disabled={!formState.enabled}
+            />
+          </div>
+
+          {formState.daily_report_auto_send && formState.enabled && (
+            <div className="mt-4 ml-7 border-l-2 border-muted pl-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Send Time</Label>
+                <Input
+                  type="time"
+                  value={formState.daily_report_send_time || "15:00"}
+                  onChange={(e) => {
+                    setFormState((prev) => ({ ...prev, daily_report_send_time: e.target.value }));
+                    setHasChanges(true);
+                    setSaveSuccess(false);
+                  }}
+                  className="w-full max-w-[200px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Reports will be sent to parents at this time daily.
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

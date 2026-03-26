@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -118,7 +118,7 @@ export default function HousesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<HouseFormData>({
-    resolver: zodResolver(houseSchema),
+    resolver: zodResolver(houseSchema) as Resolver<HouseFormData>,
     defaultValues: {
       name: "",
       house_code: "",

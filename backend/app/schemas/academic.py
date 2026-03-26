@@ -146,6 +146,15 @@ class TermResponse(BaseSchema):
     updated_at: datetime
 
 
+class TermCreateResponse(BaseSchema):
+    """Term creation response — wraps a TermResponse with an optional
+    calendar-validation warning when the term count exceeds the
+    curriculum profile's expected periods_per_year."""
+
+    term: TermResponse
+    warning: Optional[str] = None
+
+
 # =========================
 # Class Schemas
 # =========================

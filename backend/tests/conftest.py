@@ -104,6 +104,8 @@ TENANT_SCOPED_TABLES = [
     "user_schools",
     # Email log (messaging module)
     "email_log",
+    # Session management (auth gap closure)
+    "user_sessions",
     # Admissions (Sprint 19-20)
     "admission_periods",
     "admission_form_configs",
@@ -133,6 +135,65 @@ TENANT_SCOPED_TABLES = [
     "external_exam_registrations",
     "student_credit_accumulations",
     "predicted_grades",
+    # User Management & Access Control
+    "custom_roles",
+    # Preschool Phase 1 (Gap Closure)
+    "preschool_incidents", "authorized_pickups", "pickup_logs",
+    # Preschool Phase 2 (Gap Closure)
+    "learning_stories", "extended_care_sessions", "class_caregiver_ratios",
+    # Preschool Phase 3 (Gap Closure)
+    "preschool_supplies",
+    # Enrollment Gap Closure Phase 1
+    "inquiries",
+    "inquiry_communications",
+    "inquiry_follow_ups",
+    "interviews",
+    "screening_checklists",
+    # Enrollment Gap Closure Phase 3
+    "enrollment_checklists",
+    "enrollment_checklist_items",
+    # Enrollment Gap Closure Phase 4
+    "enrollment_targets",
+    "school_events",
+    "event_registrations",
+    # Student Management Gap Closure Phase 1
+    "student_class_history",
+    "student_status_changes",
+    # Student Management Gap Closure Phase 2
+    "withdrawal_clearances",
+    # Student Management Gap Closure Phase 3
+    "student_documents",
+    "previous_schools",
+    # Student Management Gap Closure Phase 4
+    "promotion_rules",
+    # Staff HR Gap Closure Phase 1
+    "staff_documents",
+    "staff_employment_history",
+    # Staff HR Gap Closure Phase 3 (Leave Management)
+    "leave_types",
+    "leave_balances",
+    "leave_requests",
+    # Staff HR Gap Closure Phase 4 (Payroll)
+    "salary_grades",
+    "allowance_types",
+    "deduction_types",
+    "tax_brackets",
+    "staff_salary_configs",
+    "staff_allowances",
+    "staff_deductions",
+    "payroll_runs",
+    "payroll_items",
+    "payroll_item_earnings",
+    "payroll_item_deductions",
+    "payroll_approvals",
+    "bank_file_configs",
+    "payroll_audit_log",
+    # Staff HR Gap Closure Phase 5 (Loan Management)
+    "loan_types",
+    "staff_loans",
+    "loan_installments",
+    "loan_guarantors",
+    "loan_payments",
 ]
 
 # Tables with tenant_id that intentionally do NOT use RLS.
@@ -875,7 +936,702 @@ async def _fix_schema_mismatches():
                         ADD COLUMN school_id UUID REFERENCES schools(id) ON DELETE SET NULL
                     """))
 
+        # ---- Add 'hr_officer' value to userrole enum if missing (User Management Sprint) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM pg_enum
+                JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+                WHERE pg_type.typname = 'userrole'
+                AND pg_enum.enumlabel = 'hr_officer'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(
+                text("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'hr_officer'")
+            )
+            await conn.commit()
+
+        # ---- Add 'transport_officer' value to userrole enum if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM pg_enum
+                JOIN pg_type ON pg_enum.enumtypid = pg_type.oid
+                WHERE pg_type.typname = 'userrole'
+                AND pg_enum.enumlabel = 'transport_officer'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(
+                text("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'transport_officer'")
+            )
+            await conn.commit()
+
+        # ---- Create custom_roles table if missing (User Management Phase 4) ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'custom_roles'
+                AND table_schema = 'public'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE custom_roles (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    name VARCHAR(100) NOT NULL,
+                    slug VARCHAR(100) NOT NULL,
+                    description TEXT,
+                    base_role userrole NOT NULL,
+                    permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    is_system BOOLEAN NOT NULL DEFAULT false,
+                    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+
+            # Partial unique index on (tenant_id, slug) where not deleted
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_custom_roles_tenant_slug
+                ON custom_roles (tenant_id, slug) WHERE deleted_at IS NULL
+            """))
+
+            # Enable RLS
+            await conn.execute(text("ALTER TABLE custom_roles ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE custom_roles FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_custom_roles ON custom_roles
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON custom_roles TO sims_app_user"))
+
+        # ---- Add custom_role_id column to users if missing ----
+        result = await conn.execute(
+            text("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'users'
+                AND column_name = 'custom_role_id'
+            """)
+        )
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE users
+                ADD COLUMN custom_role_id UUID REFERENCES custom_roles(id) ON DELETE SET NULL
+            """))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_custom_role_id ON users (custom_role_id)"
+            ))
+
+        # ---- Add phone_verified / phone_verified_at columns to users if missing ----
+        for col, col_type in [
+            ("phone_verified", "BOOLEAN NOT NULL DEFAULT false"),
+            ("phone_verified_at", "TIMESTAMPTZ"),
+            ("last_activity_at", "TIMESTAMPTZ"),
+            ("mfa_secret", "VARCHAR(255)"),
+            ("mfa_backup_codes_hash", "TEXT"),
+            ("mfa_setup_pending_secret", "TEXT"),
+        ]:
+            result = await conn.execute(text(f"""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = '{col}'
+            """))
+            if result.fetchone() is None:
+                await conn.execute(text(f"""
+                    ALTER TABLE users ADD COLUMN {col} {col_type}
+                """))
+
+        # ---- Preschool Phase 1: Add columns + tables if missing (Sprint 20.5) ----
+        # enrollment_session + dietary_requirements on students
+        for col, col_type in [
+            ("enrollment_session", "VARCHAR(20)"),
+            ("dietary_requirements", "JSONB"),
+        ]:
+            result = await conn.execute(text(f"""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'students' AND column_name = '{col}'
+            """))
+            if result.fetchone() is None:
+                await conn.execute(text(f"""
+                    ALTER TABLE students ADD COLUMN {col} {col_type}
+                """))
+
+        # session_type on fee_structures
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'fee_structures' AND column_name = 'session_type'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                ALTER TABLE fee_structures ADD COLUMN session_type VARCHAR(20)
+            """))
+
+        # preschool_incidents table
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'preschool_incidents' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE preschool_incidents (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    incident_type VARCHAR(30) NOT NULL,
+                    severity VARCHAR(20) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'reported',
+                    incident_date DATE NOT NULL,
+                    incident_time TIME,
+                    location VARCHAR(255),
+                    description TEXT NOT NULL,
+                    action_taken TEXT,
+                    first_aid_given BOOLEAN NOT NULL DEFAULT false,
+                    medical_attention_required BOOLEAN NOT NULL DEFAULT false,
+                    parent_notified_at TIMESTAMPTZ,
+                    parent_notified_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    witnesses JSONB,
+                    attachments JSONB,
+                    follow_up_notes TEXT,
+                    resolved_at TIMESTAMPTZ,
+                    resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    reported_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("ALTER TABLE preschool_incidents ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE preschool_incidents FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_preschool_incidents ON preschool_incidents
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON preschool_incidents TO sims_app_user"))
+
+        # authorized_pickups table
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'authorized_pickups' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE authorized_pickups (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    full_name VARCHAR(200) NOT NULL,
+                    phone VARCHAR(20) NOT NULL,
+                    relationship_to_student VARCHAR(100),
+                    photo_url VARCHAR(500),
+                    id_document_url VARCHAR(500),
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    notes TEXT,
+                    added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_authorized_pickup_phone
+                ON authorized_pickups (tenant_id, student_id, phone)
+                WHERE deleted_at IS NULL
+            """))
+            await conn.execute(text("ALTER TABLE authorized_pickups ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE authorized_pickups FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_authorized_pickups ON authorized_pickups
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON authorized_pickups TO sims_app_user"))
+
+        # pickup_logs table
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'pickup_logs' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE pickup_logs (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    pickup_date DATE NOT NULL,
+                    pickup_time TIME NOT NULL,
+                    picked_up_by_type VARCHAR(20) NOT NULL,
+                    picked_up_by_guardian_id UUID REFERENCES guardians(id) ON DELETE SET NULL,
+                    picked_up_by_authorized_id UUID REFERENCES authorized_pickups(id) ON DELETE SET NULL,
+                    verified_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            await conn.execute(text("ALTER TABLE pickup_logs ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE pickup_logs FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_pickup_logs ON pickup_logs
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON pickup_logs TO sims_app_user"))
+
+        # learning_stories table (Phase 2)
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'learning_stories' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE learning_stories (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    term_id UUID REFERENCES terms(id) ON DELETE SET NULL,
+                    title VARCHAR(255) NOT NULL,
+                    narrative TEXT NOT NULL,
+                    learning_area_ids JSONB,
+                    skill_ids JSONB,
+                    observation_ids JSONB,
+                    attachments JSONB,
+                    is_shared_with_parents BOOLEAN NOT NULL DEFAULT true,
+                    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("ALTER TABLE learning_stories ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE learning_stories FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_learning_stories ON learning_stories
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON learning_stories TO sims_app_user"))
+
+        # extended_care_sessions table (Phase 2)
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'extended_care_sessions' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE extended_care_sessions (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    session_date DATE NOT NULL,
+                    session_type VARCHAR(20) NOT NULL,
+                    check_in_time TIME NOT NULL,
+                    check_out_time TIME,
+                    duration_minutes INTEGER,
+                    checked_in_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    checked_out_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT ck_session_type CHECK (session_type IN ('before_care', 'after_care')),
+                    CONSTRAINT ck_duration_positive CHECK (duration_minutes >= 0),
+                    CONSTRAINT ck_checkout_after_checkin CHECK (check_out_time >= check_in_time)
+                )
+            """))
+            await conn.execute(text("ALTER TABLE extended_care_sessions ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE extended_care_sessions FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_extended_care_sessions ON extended_care_sessions
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON extended_care_sessions TO sims_app_user"))
+
+        # class_caregiver_ratios table (Phase 2)
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'class_caregiver_ratios' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE class_caregiver_ratios (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+                    academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                    max_children_per_caregiver INTEGER NOT NULL,
+                    current_caregiver_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (tenant_id, class_id, academic_year_id)
+                )
+            """))
+            await conn.execute(text("ALTER TABLE class_caregiver_ratios ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE class_caregiver_ratios FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_class_caregiver_ratios ON class_caregiver_ratios
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON class_caregiver_ratios TO sims_app_user"))
+
+        # preschool_reports columns (Phase 2)
+        for col, col_type in [
+            ("report_type", "VARCHAR(20) NOT NULL DEFAULT 'term'"),
+            ("photo_urls", "JSONB"),
+            ("chart_data", "JSONB"),
+        ]:
+            result = await conn.execute(text(f"""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'preschool_reports' AND column_name = '{col}'
+            """))
+            if result.fetchone() is None:
+                await conn.execute(text(f"""
+                    ALTER TABLE preschool_reports ADD COLUMN {col} {col_type}
+                """))
+
+        # preschool_supplies table (Phase 3)
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'preschool_supplies' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE preschool_supplies (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    item_name VARCHAR(100) NOT NULL,
+                    quantity_remaining INTEGER NOT NULL DEFAULT 0,
+                    low_stock_threshold INTEGER NOT NULL DEFAULT 3,
+                    last_restocked_at TIMESTAMPTZ,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ,
+                    CONSTRAINT ck_quantity_non_negative CHECK (quantity_remaining >= 0),
+                    CONSTRAINT ck_threshold_non_negative CHECK (low_stock_threshold >= 0)
+                )
+            """))
+            await conn.execute(text("ALTER TABLE preschool_supplies ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE preschool_supplies FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_preschool_supplies ON preschool_supplies
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON preschool_supplies TO sims_app_user"))
+
+        # ---- Student Management Gap Closure Phase 2: withdrawal_clearances ----
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'withdrawal_clearances' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE withdrawal_clearances (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                    status_change_id UUID REFERENCES student_status_changes(id) ON DELETE CASCADE,
+                    type VARCHAR(20) NOT NULL,
+                    library_cleared BOOLEAN NOT NULL DEFAULT false,
+                    finance_cleared BOOLEAN NOT NULL DEFAULT false,
+                    property_cleared BOOLEAN NOT NULL DEFAULT false,
+                    boarding_cleared BOOLEAN,
+                    outstanding_fees NUMERIC(12, 2),
+                    fee_override BOOLEAN NOT NULL DEFAULT false,
+                    notes TEXT,
+                    is_complete BOOLEAN NOT NULL DEFAULT false,
+                    cleared_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    cleared_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT ck_wc_type CHECK (type IN ('withdrawal', 'transfer'))
+                )
+            """))
+            await conn.execute(text("ALTER TABLE withdrawal_clearances ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE withdrawal_clearances FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_withdrawal_clearances ON withdrawal_clearances
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE ON withdrawal_clearances TO sims_app_user"))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_wc_student_active
+                ON withdrawal_clearances(student_id, tenant_id)
+                WHERE is_complete = false
+            """))
+
+        # ---- Student Management Gap Closure Phase 3: student_documents ----
+        # Create enum type first
+        result = await conn.execute(text(
+            "SELECT 1 FROM pg_type WHERE typname = 'studentdocumenttype'"
+        ))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TYPE studentdocumenttype AS ENUM (
+                    'birth_certificate', 'medical_record', 'transfer_letter',
+                    'report_card', 'id_card', 'leaving_certificate', 'photo', 'other'
+                )
+            """))
+
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'student_documents' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE student_documents (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                    document_type studentdocumenttype NOT NULL,
+                    title VARCHAR(255) NOT NULL,
+                    file_url VARCHAR(500) NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    mime_type VARCHAR(100) NOT NULL,
+                    uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("ALTER TABLE student_documents ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE student_documents FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_student_documents ON student_documents
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON student_documents TO sims_app_user"))
+
+        # ---- Student Management Gap Closure Phase 3: previous_schools ----
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'previous_schools' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE previous_schools (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                    school_name VARCHAR(255) NOT NULL,
+                    school_address TEXT,
+                    last_class VARCHAR(100),
+                    years_attended VARCHAR(50),
+                    transfer_reason TEXT,
+                    leaving_certificate_ref VARCHAR(100),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            await conn.execute(text("ALTER TABLE previous_schools ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE previous_schools FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_previous_schools ON previous_schools
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON previous_schools TO sims_app_user"))
+
+        # ---- Student Management Gap Closure Phase 3: columns on students ----
+        result = await conn.execute(text("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'students'
+        """))
+        stu_cols = {r[0] for r in result.fetchall()}
+
+        if "birth_certificate_number" not in stu_cols:
+            await conn.execute(text(
+                "ALTER TABLE students ADD COLUMN birth_certificate_number VARCHAR(50)"
+            ))
+        if "structured_medical" not in stu_cols:
+            await conn.execute(text(
+                "ALTER TABLE students ADD COLUMN structured_medical JSONB"
+            ))
+
+        # ---- Student Management Gap Closure Phase 4: promotion_rules ----
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'promotion_rules' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            await conn.execute(text("""
+                CREATE TABLE promotion_rules (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+                    academic_year_id UUID REFERENCES academic_years(id) ON DELETE CASCADE,
+                    class_id UUID REFERENCES classes(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    min_average NUMERIC(5, 2),
+                    min_attendance_pct NUMERIC(5, 2),
+                    core_subject_pass_count INTEGER,
+                    pass_mark NUMERIC(5, 2) DEFAULT 50.00,
+                    auto_apply BOOLEAN NOT NULL DEFAULT false,
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("ALTER TABLE promotion_rules ENABLE ROW LEVEL SECURITY"))
+            await conn.execute(text("ALTER TABLE promotion_rules FORCE ROW LEVEL SECURITY"))
+            await conn.execute(text("""
+                CREATE POLICY tenant_isolation_promotion_rules ON promotion_rules
+                    FOR ALL TO sims_app_user
+                    USING (tenant_id = get_current_tenant_id())
+                    WITH CHECK (tenant_id = get_current_tenant_id())
+            """))
+            await conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON promotion_rules TO sims_app_user"))
+
+        # ---- Create leave management tables if missing (Staff HR Phase 3) ----
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'leave_types' AND table_schema = 'public'
+        """))
+        if result.fetchone() is None:
+            # Create leaverequeststatus enum if missing
+            check = await conn.execute(
+                text("SELECT 1 FROM pg_type WHERE typname = 'leaverequeststatus'"),
+            )
+            if check.fetchone() is None:
+                await conn.execute(text(
+                    "CREATE TYPE leaverequeststatus AS ENUM ('pending', 'approved', 'rejected', 'cancelled')"
+                ))
+
+            await conn.execute(text("""
+                CREATE TABLE leave_types (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    name VARCHAR(100) NOT NULL,
+                    code VARCHAR(20) NOT NULL,
+                    description TEXT,
+                    default_days_per_year NUMERIC(5, 1) NOT NULL,
+                    max_carryover_days NUMERIC(5, 1) DEFAULT 0,
+                    is_paid BOOLEAN NOT NULL DEFAULT true,
+                    requires_approval BOOLEAN NOT NULL DEFAULT true,
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    color VARCHAR(7),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMPTZ
+                )
+            """))
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX uq_leave_type_code_tenant
+                ON leave_types (tenant_id, code) WHERE deleted_at IS NULL
+            """))
+
+            await conn.execute(text("""
+                CREATE TABLE leave_balances (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+                    leave_type_id UUID NOT NULL REFERENCES leave_types(id) ON DELETE CASCADE,
+                    academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE CASCADE,
+                    entitled_days NUMERIC(5, 1) NOT NULL,
+                    used_days NUMERIC(5, 1) NOT NULL DEFAULT 0,
+                    pending_days NUMERIC(5, 1) NOT NULL DEFAULT 0,
+                    carried_over NUMERIC(5, 1) NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (tenant_id, staff_id, leave_type_id, academic_year_id)
+                )
+            """))
+
+            await conn.execute(text("""
+                CREATE TABLE leave_requests (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    school_id UUID REFERENCES schools(id) ON DELETE SET NULL,
+                    staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+                    leave_type_id UUID NOT NULL REFERENCES leave_types(id) ON DELETE RESTRICT,
+                    academic_year_id UUID NOT NULL REFERENCES academic_years(id) ON DELETE RESTRICT,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    days_requested NUMERIC(5, 1) NOT NULL,
+                    reason TEXT NOT NULL,
+                    status leaverequeststatus NOT NULL DEFAULT 'pending',
+                    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    reviewed_at TIMESTAMPTZ,
+                    review_notes TEXT,
+                    attachment_key VARCHAR(500),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+            # Indexes
+            await conn.execute(text("CREATE INDEX ix_leave_requests_staff ON leave_requests (tenant_id, staff_id)"))
+            await conn.execute(text("CREATE INDEX ix_leave_requests_status ON leave_requests (tenant_id, status)"))
+            await conn.execute(text("CREATE INDEX ix_leave_requests_dates ON leave_requests (tenant_id, start_date, end_date)"))
+
+            # Enable RLS on all 3 tables
+            for tbl in ["leave_types", "leave_balances", "leave_requests"]:
+                await conn.execute(text(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY"))
+                await conn.execute(text(f"ALTER TABLE {tbl} FORCE ROW LEVEL SECURITY"))
+                await conn.execute(text(f"""
+                    CREATE POLICY tenant_isolation_{tbl} ON {tbl}
+                        FOR ALL TO sims_app_user
+                        USING (tenant_id = get_current_tenant_id())
+                        WITH CHECK (tenant_id = get_current_tenant_id())
+                """))
+                await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {tbl} TO sims_app_user"))
+
+        # ---- Restrict payroll_audit_log to SELECT+INSERT only (append-only) ----
+        # init-db.sql's ALTER DEFAULT PRIVILEGES grants full DML on all tables.
+        # The migration's GRANT SELECT, INSERT is overridden. We REVOKE to enforce.
+        result = await conn.execute(text("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_name = 'payroll_audit_log' AND table_schema = 'public'
+        """))
+        if result.fetchone() is not None:
+            await conn.execute(text(
+                "REVOKE UPDATE, DELETE ON payroll_audit_log FROM sims_app_user"
+            ))
+
         await conn.commit()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _dispose_engines():
+    """Dispose engines at the end of the test session to release all connections.
+
+    Without this, lingering connections can exhaust PostgreSQL's max_connections
+    when the full test suite runs.
+    """
+    yield
+    await app_engine.dispose()
+    await admin_engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="function")

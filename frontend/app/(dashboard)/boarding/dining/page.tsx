@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,7 +65,7 @@ export default function DiningPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<MealFormData>({
-    resolver: zodResolver(mealSchema),
+    resolver: zodResolver(mealSchema) as Resolver<MealFormData>,
     defaultValues: {
       date: new Date().toISOString().split("T")[0],
       meal_type: "lunch",

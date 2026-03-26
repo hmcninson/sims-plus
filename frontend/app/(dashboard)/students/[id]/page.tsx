@@ -40,6 +40,12 @@ import {
   Loader2,
   FilePlus2,
   Award,
+  LogOut,
+  ArrowRightLeft,
+  Building2,
+  Download,
+  FileDown,
+  FileJson,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,10 +83,38 @@ import { Progress } from "@/components/ui/progress";
 
 import { getStudent, deleteStudent, updateStudent, unlinkGuardian } from "@/actions/students.action";
 import { uploadStudentPhoto } from "@/actions/media.action";
+import {
+  getCurriculumProfiles,
+  getExternalExamRegistrations,
+  getPredictedGrades,
+} from "@/actions/curriculum.action";
 import type { StudentWithGuardians, StudentGuardianLink } from "@/types";
+import type {
+  CurriculumProfile,
+  ExternalExamRegistration,
+  PredictedGrade,
+} from "@/types/curriculum.type";
+import { ExternalExamRegistrationTable } from "@/components/curriculum/ExternalExamRegistrationTable";
+import { SupplyInventory } from "@/components/preschool/SupplyInventory";
+import { StudentHistory } from "./student-history";
+import { StudentDocuments } from "./student-documents";
+import { PreviousSchools } from "./previous-schools";
+import { StudentMedical } from "./student-medical";
 import { AddNotesDialog } from "./add-notes-dialog";
 import { AddGuardianDialog } from "./add-guardian-dialog";
 import { LinkGuardianDialog } from "./link-guardian-dialog";
+import { WithdrawalDialog } from "./withdrawal-dialog";
+import { TransferDialog } from "./transfer-dialog";
+import { ChainTransferDialog } from "./chain-transfer-dialog";
+import { useTenant } from "@/components/providers/TenantProvider";
+import {
+  downloadTransferCertificate,
+  exportStudentRecord,
+  downloadGraduationCertificate,
+} from "@/actions/students.action";
+
+// Preschool class levels for supply tracking
+const PRESCHOOL_LEVELS = ["creche", "nursery 1", "nursery 2", "kg 1", "kg 2", "preschool"];
 
 // Helper functions
 function formatDate(dateStr: string): string {
@@ -353,7 +387,30 @@ export default function StudentDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUnlinkingGuardian, setIsUnlinkingGuardian] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [withdrawalDialogOpen, setWithdrawalDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [chainTransferDialogOpen, setChainTransferDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { tenant } = useTenant();
+  const isChainTenant = tenant?.tenant_type === "school_chain";
+
+  // Curriculum-related state
+  const [curriculumProfiles, setCurriculumProfiles] = useState<CurriculumProfile[]>([]);
+  const [externalExams, setExternalExams] = useState<ExternalExamRegistration[]>([]);
+  const [predictedGrades, setPredictedGrades] = useState<PredictedGrade[]>([]);
+  const [showCreditsTab, setShowCreditsTab] = useState(false);
+  const [showTranscriptTab, setShowTranscriptTab] = useState(false);
+  const [showPredictedTab, setShowPredictedTab] = useState(false);
+  const [showExternalExamsTab, setShowExternalExamsTab] = useState(false);
+
+  // Preschool detection: student has enrollment_session OR class_name matches preschool levels
+  const isPreschoolStudent = student
+    ? Boolean(student.enrollment_session) ||
+      (student.class_name
+        ? PRESCHOOL_LEVELS.includes(student.class_name.toLowerCase())
+        : false)
+    : false;
 
   const fetchStudent = async () => {
     setLoading(true);
@@ -370,6 +427,41 @@ export default function StudentDetailPage() {
   useEffect(() => {
     fetchStudent();
   }, [studentId]);
+
+  // Load curriculum-related data once student is loaded
+  useEffect(() => {
+    if (!student) return;
+    async function loadCurriculumData() {
+      const [profilesRes, examsRes, predictedRes] = await Promise.all([
+        getCurriculumProfiles(),
+        getExternalExamRegistrations({ student_id: studentId }),
+        getPredictedGrades({ student_id: studentId }),
+      ]);
+
+      if (profilesRes.success && profilesRes.data) {
+        const profiles = profilesRes.data;
+        setCurriculumProfiles(profiles);
+        const hasCredits = profiles.some((p) => p.use_credits || p.use_gpa);
+        const hasTranscript = profiles.some((p) => p.use_credits);
+        const hasPredicted = profiles.some((p) =>
+          ["cambridge", "edexcel", "ib"].includes(p.curriculum_type),
+        );
+        setShowCreditsTab(hasCredits);
+        setShowTranscriptTab(hasTranscript);
+        setShowPredictedTab(hasPredicted);
+      }
+
+      if (examsRes.success && examsRes.data && examsRes.data.items.length > 0) {
+        setExternalExams(examsRes.data.items);
+        setShowExternalExamsTab(true);
+      }
+
+      if (predictedRes.success && predictedRes.data) {
+        setPredictedGrades(predictedRes.data.items);
+      }
+    }
+    loadCurriculumData();
+  }, [student, studentId]);
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -448,6 +540,71 @@ export default function StudentDetailPage() {
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDownloadTransferCertificate = async () => {
+    const result = await downloadTransferCertificate(studentId);
+    if (result.success && result.data) {
+      const url = URL.createObjectURL(result.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `transfer-certificate-${studentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Transfer certificate downloaded");
+    } else {
+      toast.error(result.error || "Failed to download certificate");
+    }
+  };
+
+  const handleExportRecord = async (format: "json" | "pdf") => {
+    const result = await exportStudentRecord(studentId, format);
+    if (result.success && result.data) {
+      if (format === "pdf" && result.data instanceof Blob) {
+        const url = URL.createObjectURL(result.data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `student-record-${studentId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const blob = new Blob([JSON.stringify(result.data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `student-record-${studentId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      toast.success(`Student record exported as ${format.toUpperCase()}`);
+    } else {
+      toast.error(result.error || "Failed to export record");
+    }
+  };
+
+  const handleDownloadGraduationCertificate = async () => {
+    const result = await downloadGraduationCertificate(studentId);
+    if (result.success && result.data) {
+      const url = URL.createObjectURL(result.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `graduation-certificate-${studentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Graduation certificate downloaded");
+    } else {
+      toast.error(result.error || "Failed to download certificate");
     }
   };
 
@@ -552,6 +709,72 @@ export default function StudentDetailPage() {
                 Print Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {student.status === "active" && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => setWithdrawalDialogOpen(true)}
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Withdraw Student
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setTransferDialogOpen(true)}
+                  >
+                    <ArrowRightLeft className="h-4 w-4 mr-2" />
+                    Transfer Student
+                  </DropdownMenuItem>
+                  {isChainTenant && (
+                    <DropdownMenuItem
+                      onClick={() => setChainTransferDialogOpen(true)}
+                    >
+                      <Building2 className="h-4 w-4 mr-2" />
+                      Transfer Within Chain
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {(student.status === "transferred" ||
+                student.status === "withdrawn") && (
+                <>
+                  <DropdownMenuItem
+                    onClick={handleDownloadTransferCertificate}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Transfer Certificate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleExportRecord("pdf")}
+                  >
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Export Record (PDF)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleExportRecord("json")}
+                  >
+                    <FileJson className="h-4 w-4 mr-2" />
+                    Export Record (JSON)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              {student.status === "graduated" && (
+                <>
+                  <DropdownMenuItem
+                    onClick={handleDownloadGraduationCertificate}
+                  >
+                    <GraduationCap className="h-4 w-4 mr-2" />
+                    Download Graduation Certificate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleExportRecord("pdf")}
+                  >
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Export Record (PDF)
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 className="text-red-600"
                 onClick={() => setDeleteDialogOpen(true)}
@@ -805,7 +1028,7 @@ export default function StudentDetailPage() {
         {/* Right Column - Tabs */}
         <div className="lg:col-span-2">
           <Tabs defaultValue="contact" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-4 print:hidden">
+            <TabsList className="flex flex-wrap w-full print:hidden">
               <TabsTrigger value="contact">Contact</TabsTrigger>
               <TabsTrigger value="guardians">
                 Guardians
@@ -816,7 +1039,25 @@ export default function StudentDetailPage() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="medical">Medical</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
+              <TabsTrigger value="prev-schools">Prev. Schools</TabsTrigger>
               <TabsTrigger value="notes">Notes</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+              {isPreschoolStudent && (
+                <TabsTrigger value="supplies">Supplies</TabsTrigger>
+              )}
+              {showExternalExamsTab && (
+                <TabsTrigger value="external-exams">External Exams</TabsTrigger>
+              )}
+              {showPredictedTab && (
+                <TabsTrigger value="predicted-grades">Predicted</TabsTrigger>
+              )}
+              {showCreditsTab && (
+                <TabsTrigger value="credits">Credits & GPA</TabsTrigger>
+              )}
+              {showTranscriptTab && (
+                <TabsTrigger value="transcript">Transcript</TabsTrigger>
+              )}
             </TabsList>
 
             {/* Contact Tab */}
@@ -1083,77 +1324,17 @@ export default function StudentDetailPage() {
 
             {/* Medical Tab */}
             <TabsContent value="medical">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Heart className="h-4 w-4" />
-                    Medical Information
-                  </CardTitle>
-                  <CardDescription>
-                    Health records, allergies, and medical conditions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {student.blood_group || student.medical_conditions || student.allergies ? (
-                    <div className="space-y-6">
-                      {student.blood_group && (
-                        <div className="flex items-center gap-4 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900">
-                          <div className="rounded-full bg-red-100 dark:bg-red-900/50 p-3">
-                            <Droplet className="h-6 w-6 text-red-600 dark:text-red-400" />
-                          </div>
-                          <div>
-                            <p className="text-sm text-muted-foreground">Blood Group</p>
-                            <p className="text-2xl font-bold text-red-600 dark:text-red-400">{student.blood_group}</p>
-                          </div>
-                        </div>
-                      )}
+              <StudentMedical student={student} onUpdate={fetchStudent} />
+            </TabsContent>
 
-                      {student.medical_conditions && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900/30 p-1.5">
-                              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                            </div>
-                            <h4 className="font-medium">Medical Conditions</h4>
-                          </div>
-                          <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-lg p-4">
-                            <p className="whitespace-pre-wrap">{student.medical_conditions}</p>
-                          </div>
-                        </div>
-                      )}
+            {/* Documents Tab */}
+            <TabsContent value="documents">
+              <StudentDocuments studentId={studentId} />
+            </TabsContent>
 
-                      {student.allergies && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-3">
-                            <div className="rounded-lg bg-orange-100 dark:bg-orange-900/30 p-1.5">
-                              <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-                            </div>
-                            <h4 className="font-medium">Allergies</h4>
-                          </div>
-                          <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg p-4">
-                            <p className="whitespace-pre-wrap">{student.allergies}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <div className="mx-auto w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                        <Heart className="h-7 w-7 text-muted-foreground" />
-                      </div>
-                      <h3 className="font-semibold mb-1">No Medical Information</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Add blood group, medical conditions, and allergy information.
-                      </p>
-                      <Button variant="outline" asChild>
-                        <Link href={`/students/${studentId}/edit?step=health`}>
-                          Add Medical Info
-                        </Link>
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            {/* Previous Schools Tab */}
+            <TabsContent value="prev-schools">
+              <PreviousSchools studentId={studentId} />
             </TabsContent>
 
             {/* Notes Tab */}
@@ -1200,6 +1381,163 @@ export default function StudentDetailPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* History Tab */}
+            <TabsContent value="history">
+              <StudentHistory studentId={studentId} />
+            </TabsContent>
+
+            {/* Supplies Tab (Preschool only) */}
+            {isPreschoolStudent && (
+              <TabsContent value="supplies">
+                <SupplyInventory studentId={student.id} />
+              </TabsContent>
+            )}
+
+            {/* External Exams Tab */}
+            {showExternalExamsTab && (
+              <TabsContent value="external-exams">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">External Exam Registrations</CardTitle>
+                    <CardDescription>
+                      {externalExams.length} registration(s) for external exams
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ExternalExamRegistrationTable
+                      registrations={externalExams}
+                      onEdit={() => {}}
+                      onRefresh={async () => {
+                        const res = await getExternalExamRegistrations({ student_id: studentId });
+                        if (res.success && res.data) setExternalExams(res.data.items);
+                      }}
+                      compact
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+
+            {/* Predicted Grades Tab */}
+            {showPredictedTab && (
+              <TabsContent value="predicted-grades">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Predicted Grades</CardTitle>
+                    <CardDescription>
+                      Predicted and target grades for this student
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {predictedGrades.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <TrendingUp className="mb-2 size-8 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">
+                          No predicted grades set for this student yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="pb-2 font-medium">Subject</th>
+                              <th className="pb-2 font-medium">Predicted</th>
+                              <th className="pb-2 font-medium">Target</th>
+                              <th className="pb-2 font-medium hidden sm:table-cell">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {predictedGrades.map((pg) => (
+                              <tr key={pg.id} className="border-b last:border-0">
+                                <td className="py-2 font-medium">{pg.subject_name ?? "—"}</td>
+                                <td className="py-2">
+                                  {pg.predicted_grade ? (
+                                    <Badge variant="outline">{pg.predicted_grade}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">&mdash;</span>
+                                  )}
+                                </td>
+                                <td className="py-2">
+                                  {pg.target_grade ? (
+                                    <Badge variant="secondary">{pg.target_grade}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">&mdash;</span>
+                                  )}
+                                </td>
+                                <td className="py-2 hidden sm:table-cell text-muted-foreground">
+                                  {pg.notes ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+
+            {/* Credits & GPA Tab */}
+            {showCreditsTab && (
+              <TabsContent value="credits">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base">Credits & GPA</CardTitle>
+                        <CardDescription>
+                          Credit accumulation and GPA summary
+                        </CardDescription>
+                      </div>
+                      <Link href={`/students/${studentId}/credits`}>
+                        <Button variant="outline" size="sm">
+                          <ChevronRight className="mr-1 size-4" />
+                          Full Dashboard
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      View the full credits dashboard for detailed GPA tracking, credit
+                      breakdown, and trend analysis.
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+
+            {/* Transcript Tab */}
+            {showTranscriptTab && (
+              <TabsContent value="transcript">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base">Academic Transcript</CardTitle>
+                        <CardDescription>
+                          Official academic record with credits and GPA
+                        </CardDescription>
+                      </div>
+                      <Link href={`/students/${studentId}/transcript`}>
+                        <Button variant="outline" size="sm">
+                          <ChevronRight className="mr-1 size-4" />
+                          View Transcript
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      View and print the official academic transcript for this student.
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>
@@ -1284,6 +1622,37 @@ export default function StudentDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Withdrawal Dialog */}
+      <WithdrawalDialog
+        studentId={studentId}
+        studentName={fullName}
+        isBoarder={student.is_boarder === true}
+        open={withdrawalDialogOpen}
+        onOpenChange={setWithdrawalDialogOpen}
+        onSuccess={fetchStudent}
+      />
+
+      {/* Transfer Dialog */}
+      <TransferDialog
+        studentId={studentId}
+        studentName={fullName}
+        isBoarder={student.is_boarder === true}
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
+        onSuccess={fetchStudent}
+      />
+
+      {/* Chain Transfer Dialog */}
+      {isChainTenant && (
+        <ChainTransferDialog
+          studentId={studentId}
+          studentName={fullName}
+          open={chainTransferDialogOpen}
+          onOpenChange={setChainTransferDialogOpen}
+          onSuccess={fetchStudent}
+        />
+      )}
     </div>
   );
 }

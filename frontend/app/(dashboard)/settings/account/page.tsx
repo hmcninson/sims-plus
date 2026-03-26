@@ -52,6 +52,8 @@ async function AccountSettingsContent() {
     <AccountSettingsForm
       user={{
         email: user.email,
+        phone: user.phone || null,
+        phone_verified: user.phone_verified,
         mfa_enabled: user.mfa_enabled,
         created_at: user.created_at,
       }}

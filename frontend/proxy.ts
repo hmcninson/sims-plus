@@ -31,6 +31,10 @@ function isValidSubdomainFormat(subdomain: string): boolean {
   if (subdomain.length < 4 || subdomain.length > 63) {
     return false;
   }
+  // Reject consecutive hyphens (not caught by the regex below)
+  if (subdomain.includes("--")) {
+    return false;
+  }
   const pattern = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]+$/;
   return pattern.test(subdomain);
 }
@@ -145,6 +149,47 @@ export default function proxy(request: NextRequest): NextResponse {
     || "";
   const pathname = request.nextUrl.pathname;
   const searchParams = request.nextUrl.searchParams;
+  const hostWithoutPort = hostname.split(":")[0];
+
+  // ============================================================
+  // Platform Admin Portal (admin.simsplus.io or admin.localhost)
+  // Must be checked BEFORE extractSubdomain() to intercept the
+  // "admin" subdomain before it hits the RESERVED_SUBDOMAINS check.
+  // "admin" remains in RESERVED_SUBDOMAINS (R-BC3) to prevent
+  // ?subdomain=admin from persisting as a cookie in dev mode.
+  // ============================================================
+  const isAdminDomain =
+    hostWithoutPort === "admin.simsplus.io" ||
+    hostWithoutPort === "admin.staging.simsplus.io" ||
+    hostWithoutPort.startsWith("admin.localhost") ||
+    (hostWithoutPort === "localhost" &&
+      searchParams.get("subdomain") === "admin");
+
+  if (isAdminDomain) {
+    const requestHeaders = new Headers(request.headers);
+    // Platform admin portal -- do NOT set x-subdomain
+    requestHeaders.set("x-platform-admin", "true");
+    requestHeaders.set("x-pathname", pathname);
+
+    // Redirect non-login platform paths without auth cookie to login
+    const platformToken = request.cookies.get("platform_access_token")?.value;
+    const isPublicPath =
+      pathname.startsWith("/platform-login") ||
+      pathname.startsWith("/platform/mfa") ||
+      pathname.startsWith("/_next") ||
+      pathname.startsWith("/api") ||
+      pathname === "/favicon.ico";
+
+    if (!platformToken && !isPublicPath) {
+      return NextResponse.redirect(
+        new URL("/platform-login", request.url)
+      );
+    }
+
+    return NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+  }
 
   // Extract subdomain from hostname (with dev mode support via query param or cookie)
   const subdomain = extractSubdomain(hostname, searchParams, request);
@@ -178,6 +223,19 @@ export default function proxy(request: NextRequest): NextResponse {
 
   // For tenant subdomains, validate and proceed
   if (subdomain) {
+    // Applicant dashboard routes require applicant auth cookie
+    if (pathname.startsWith("/apply/dashboard")) {
+      const accessToken = request.cookies.get("applicant_access_token")?.value;
+      if (!accessToken) {
+        return NextResponse.redirect(
+          new URL("/apply/login?error=session_expired", request.url)
+        );
+      }
+    }
+
+    // Set pathname header for server components to read
+    requestHeaders.set("x-pathname", pathname);
+
     // Set subdomain in headers for server components to access
     const response = NextResponse.next({
       request: {

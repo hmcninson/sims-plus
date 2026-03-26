@@ -18,6 +18,8 @@ import type {
   StaffAttendanceMark,
   BulkStaffAttendanceMark,
   StaffAttendanceSummary,
+  StaffAttendanceEntry,
+  StaffAttendanceReportData,
 } from "@/types";
 
 /**
@@ -350,6 +352,65 @@ export async function deleteStaffAttendance(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to delete staff attendance record",
+    };
+  }
+}
+
+// =========================
+// Staff Attendance Helpers
+// =========================
+
+export async function getStaffForAttendance(
+  date: string,
+  departmentId?: string,
+  staffType?: string
+): Promise<ActionResult<StaffAttendanceEntry[]>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const params = new URLSearchParams();
+    params.append("date", date);
+    if (departmentId) params.append("department_id", departmentId);
+    if (staffType) params.append("staff_type", staffType);
+
+    const url = `/attendance/staff/for-marking?${params.toString()}`;
+    const response = await apiGet<StaffAttendanceEntry[]>(url, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch staff for attendance",
+    };
+  }
+}
+
+export async function getStaffAttendanceReport(params: {
+  start_date: string;
+  end_date: string;
+  department_id?: string;
+  staff_type?: string;
+}): Promise<ActionResult<StaffAttendanceReportData>> {
+  try {
+    const { token, subdomain } = await getAuthContext();
+    const searchParams = new URLSearchParams();
+    searchParams.append("type", "staff");
+    searchParams.append("start_date", params.start_date);
+    searchParams.append("end_date", params.end_date);
+    if (params.department_id) searchParams.append("department_id", params.department_id);
+    if (params.staff_type) searchParams.append("staff_type", params.staff_type);
+
+    const url = `/attendance/reports/daily?${searchParams.toString()}`;
+    const response = await apiGet<StaffAttendanceReportData>(url, {
+      token,
+      subdomain,
+    });
+    return { success: true, data: response };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch staff attendance report",
     };
   }
 }

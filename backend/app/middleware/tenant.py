@@ -91,8 +91,11 @@ def clear_tenant_context() -> None:
 SUBDOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]+$")
 
 # Reserved subdomains -- MUST match database seed data AND frontend/proxy.ts
+# NOTE: "admin" removed from this set — admin.simsplus.io is now routed to
+# the platform admin portal by proxy.ts (Phase 3). The "admin" row in the
+# reserved_subdomains DB table is kept so schools cannot register it.
 RESERVED_SUBDOMAINS = {
-    "www", "app", "api", "admin", "mail", "ftp", "status", "blog",
+    "www", "app", "api", "mail", "ftp", "status", "blog",
     "help", "support", "docs", "cdn", "assets", "staging", "dev",
     "test", "demo", "sandbox", "beta", "alpha", "portal", "login",
     "register", "signup", "dashboard", "billing", "payments",
@@ -109,18 +112,22 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/api/v1/status",
     "/api/v1/tenant/check-subdomain",
+    "/api/v1/auth/reset-password",  # Email-based password reset (uses token, not tenant context)
+    "/api/v1/auth/validate-reset-token",  # Token validation doesn't need tenant
 }
 
 # Path prefixes that don't require tenant context
 PUBLIC_PATH_PREFIXES = (
     "/api/v1/tenant/",  # Tenant validation endpoints are public
     "/api/v1/auth/register",  # Registration is public
-    "/api/v1/auth/validate-reset-token",  # Token validation doesn't need tenant
-    "/api/v1/auth/reset-password",  # Password reset uses token for tenant context
+    # NOTE: /api/v1/auth/reset-password and /api/v1/auth/validate-reset-token
+    # moved to PUBLIC_PATHS (exact match) to avoid prefix-matching
+    # /api/v1/auth/reset-password-sms which REQUIRES tenant context.
     "/api/v1/onboarding/",  # Onboarding is public
     "/api/v1/parent/webhook/",  # Paystack webhook (no subdomain; signature-verified)
     "/api/v1/admissions/public/webhook/",  # Paystack webhook — tenant from metadata, not subdomain
     "/api/v1/subscription/webhook/",  # Subscription webhook — tenant from metadata, not subdomain
+    "/api/v1/platform/",  # Platform admin endpoints bypass tenant resolution
 )
 
 
@@ -163,6 +170,10 @@ def extract_subdomain_from_host(host: str) -> Optional[str]:
 
     # Validate format
     if not SUBDOMAIN_PATTERN.match(subdomain):
+        return None
+
+    # Reject consecutive hyphens (not caught by regex)
+    if "--" in subdomain:
         return None
 
     if len(subdomain) < 4 or len(subdomain) > 63:
@@ -245,6 +256,24 @@ class TenantMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     status_code=status.HTTP_404_NOT_FOUND,
                     content={"detail": f"School '{subdomain}' not found"},
+                )
+
+            # Status-aware tenant validation: differentiate cancelled vs suspended
+            tenant_status = tenant.get("status")
+            if tenant_status == "cancelled":
+                # Cancelled tenants appear as "not found" to prevent enumeration
+                return JSONResponse(
+                    status_code=404,
+                    content={"detail": "School not found"},
+                )
+
+            if tenant_status == "suspended":
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "This school account has been suspended. Contact your administrator.",
+                        "code": "TENANT_SUSPENDED",
+                    },
                 )
 
             if not tenant["is_active"]:

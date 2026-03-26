@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useForm } from "react-hook-form";
+import { useForm , type Resolver} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
@@ -80,7 +80,7 @@ export default function VehiclesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<VehicleFormData>({
-    resolver: zodResolver(vehicleSchema),
+    resolver: zodResolver(vehicleSchema) as Resolver<VehicleFormData>,
     defaultValues: {
       registration_number: "",
       vehicle_type: "bus",
